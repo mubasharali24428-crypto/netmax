@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netmax"
+version = "0.3.0"
+description = "Netmax: single-module network max/measure CLI toolkit"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+charts = ["matplotlib"]
+
+[project.scripts]
+netmax = "netmax:main"
+
+[tool.setuptools]
+py-modules = ["netmax"]

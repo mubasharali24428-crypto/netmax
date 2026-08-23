@@ -1,0 +1,4 @@
+line-length = 100
+
+[per-file-ignores]
+"tests/**" = ["E501"]

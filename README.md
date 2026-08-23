@@ -1,0 +1,74 @@
+# NetMax
+
+**Honest bandwidth maximizer for macOS.** NetMax squeezes every bit your plan
+actually pays for: it measures true single-stream throughput, claims a larger
+per-flow share of a *contended* WiFi pipe using N parallel TCP streams
+(standard fairness, no tricks), ranks public DNS resolvers by latency, and
+grades your connection's bufferbloat on the Waveform A+–F rubric.
+
+## Honest limits — read this first
+
+- **NetMax cannot exceed your ISP cap.** No software can — the cap is enforced
+  on the provider's side. Anyone promising "10x your speed" is selling scamware.
+- Gains from `turbo`/`boost` appear **only when the pipe is contended** (other
+  devices are pulling traffic). On an idle line, baseline is already the plan.
+- Router-side QoS caps override everything here; only the router admin or a
+  plan upgrade changes those.
+- Zero-throughput windows on shared WiFi are real (airtime starvation). NetMax
+  reports them as dropouts rather than inventing a flattering percentage.
+
+## Install & run
+
+No package install needed — it's plain Python + curl. Use the interpreter at
+`/Users/user/1/bin/python` (has matplotlib/Tkinter; the default `python3` venv
+lacks them), or point `NETMAX_PYTHON` at any interpreter that does:
+
+```bash
+export NETMAX_PYTHON=/Users/user/1/bin/python   # optional override
+cd ~/netmax
+$NETMAX_PYTHON netmax.py full --seconds 10      # or the explicit path
+```
+
+Requires: Python 3.10+, `curl`, and network access for live measurements.
+
+## CLI examples
+
+```bash
+/Users/user/1/bin/python netmax.py baseline --seconds 8    # single-stream Mbps
+/Users/user/1/bin/python netmax.py turbo --streams 6       # parallel-stream share
+/Users/user/1/bin/python netmax.py boost --streams 4       # baseline vs turbo, gain %
+/Users/user/1/bin/python netmax.py dns                     # rank resolvers by latency
+/Users/user/1/bin/python netmax.py bloat --seconds 12      # bufferbloat grade (A+–F)
+/Users/user/1/bin/python netmax.py full --seconds 10       # everything + verdict
+```
+
+### GUI
+
+```bash
+/Users/user/1/bin/python netmax_gui.py
+```
+
+Tkinter desktop app wrapping the CLI; each command runs in an isolated
+subprocess so a failed measurement can never take down the UI.
+
+## Tests
+
+68 offline tests (network fully mocked — safe to run anywhere):
+
+```bash
+cd ~/netmax
+/Users/user/1/bin/python -m pytest            # engine + GUI suites
+/Users/user/1/bin/python -m pytest tests/test_netmax.py -v        # engine only
+/Users/user/1/bin/python -m pytest tests/test_netmax_gui.py -v    # GUI only
+```
+
+## Project structure
+
+| Path | Role |
+|---|---|
+| `netmax.py` | Engine + CLI: `baseline / turbo / boost / dns / bloat / full`, `--streams`, `--seconds` |
+| `netmax_gui.py` | Tkinter desktop app wrapping the CLI |
+| `measure.py` | Live measurement run → `results.json` + `results.png` charts |
+| `tests/test_netmax.py` | Offline pytest suite for the engine |
+| `tests/test_netmax_gui.py` | Headless GUI tests |
+| `PROJECT_LOG.md` | Build log, verified results, debugging notes |

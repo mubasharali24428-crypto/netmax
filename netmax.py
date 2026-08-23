@@ -88,8 +88,26 @@ def throughput(streams: int, seconds: float) -> tuple[float, float]:
 
 # ── DNS ───────────────────────────────────────────────────────────────────────
 
+# RFC 1035 §4.1.1 RCODE values (low 4 bits of byte 3 in the header).
+DNS_RCODE_NOERROR = 0
+DNS_RCODE_SERVFAIL = 2
+DNS_RCODE_NXDOMAIN = 3
+DNS_RCODE_REFUSED = 5
+DNS_RCODE_NAMES = {
+    DNS_RCODE_SERVFAIL: "SERVFAIL",
+    DNS_RCODE_REFUSED: "REFUSED",
+    1: "FORMERR", 4: "NOTIMP", 6: "YXDOMAIN", 7: "YXRRSET", 8: "NXRRSET",
+}
+
+
 def _udp_query(server: str, name: str, timeout: float = 2.0) -> float:
-    """One UDP A-record lookup; return RTT in seconds. Raises on timeout."""
+    """One UDP A-record lookup; return RTT in seconds. Raises on timeout.
+
+    RCODE-aware per RFC 1035 §4.1.1: only a real answer (RCODE 0) or an
+    authoritative negative (NXDOMAIN, RCODE 3) proves the resolver is alive.
+    SERVFAIL (2) / REFUSED (5) / any other code raise NetMaxError so a broken
+    resolver can never rank as "fastest".
+    """
     txid = random.getrandbits(16)
     header = struct.pack(">HHHHHH", txid, 0x0100, 1, 0, 0, 0)   # RD set, 1 question
     qname = b"".join(
@@ -105,7 +123,14 @@ def _udp_query(server: str, name: str, timeout: float = 2.0) -> float:
         while True:                                              # skip late stragglers
             data, _ = sock.recvfrom(512)
             if len(data) >= 12 and struct.unpack(">H", data[:2])[0] == txid:
-                return time.perf_counter() - sent_at
+                rcode = data[3] & 0x0F
+                if rcode == DNS_RCODE_NXDOMAIN:
+                    return time.perf_counter() - sent_at         # alive, name absent
+                if rcode != DNS_RCODE_NOERROR:
+                    raise NetMaxError(
+                        f"resolver {server} returned {DNS_RCODE_NAMES.get(rcode, rcode)}"
+                    )
+                return time.perf_counter() - sent_at             # normal A answer
     except socket.timeout as exc:
         raise NetMaxError(f"resolver {server} timed out") from exc
     finally:
@@ -129,10 +154,13 @@ def _median_rtt_ms(server: str | None, attempts: int = 3) -> float:
             else:
                 _udp_query(server, _fresh_name())
         except (socket.gaierror, NetMaxError) as exc:
-            # Random names never resolve, so a FAST negative reply (NXDOMAIN)
-            # still proves the resolver answered — count it as a sample.
-            # Only a slow failure means the resolver/link is actually down.
             elapsed_ms = (time.perf_counter() - started) * 1000
+            if isinstance(exc, NetMaxError):
+                # RCODE-level failure (SERVFAIL/REFUSED/timeout): the resolver
+                # answered but is broken — never a valid latency sample.
+                raise NetMaxError(f"resolver {server} unfit: {exc}") from exc
+            # System-resolver path: random names never resolve, so a FAST
+            # gaierror still proves resolution happened — valid sample.
             if elapsed_ms >= 2000:
                 raise NetMaxError(f"resolver unreachable ({exc})") from exc
         else:
@@ -143,8 +171,19 @@ def _median_rtt_ms(server: str | None, attempts: int = 3) -> float:
 
 
 def dns_ranking() -> list[tuple[str, float]]:
-    rows = [("System default", _median_rtt_ms(None))]
-    rows += [(label, _median_rtt_ms(ip)) for label, ip in RESOLVERS.items()]
+    """Rank resolvers by median RTT; unfit resolvers are skipped, not fatal."""
+    rows: list[tuple[str, float]] = []
+    try:
+        rows.append(("System default", _median_rtt_ms(None)))
+    except NetMaxError:
+        pass  # system path unusable — still rank the public resolvers
+    for label, ip in RESOLVERS.items():
+        try:
+            rows.append((label, _median_rtt_ms(ip)))
+        except NetMaxError as exc:
+            print(f"   ({label} skipped — {exc})")
+    if not rows:
+        raise NetMaxError("no DNS resolver reachable")
     return sorted(rows, key=lambda row: row[1])
 
 

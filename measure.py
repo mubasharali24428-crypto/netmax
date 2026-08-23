@@ -6,6 +6,8 @@ from __future__ import annotations
 import json
 import statistics
 import sys
+from datetime import datetime
+from pathlib import Path
 
 sys.path.insert(0, "/Users/user/netmax")
 import netmax  # noqa: E402
@@ -20,6 +22,8 @@ SECONDS = 8
 
 
 def main() -> None:
+    out_dir = Path("/Users/user/netmax/results") / datetime.now().strftime("%Y%m%dT%H%M%S")
+    out_dir.mkdir(parents=True, exist_ok=True)
     rounds = 3
     base_samples, turbo_samples = [], []
     base_mb_total, turbo_mb_total = 0.0, 0.0
@@ -50,7 +54,7 @@ def main() -> None:
         "dropped": dropped,
         "dns": [(name, round(ms, 1)) for name, ms in dns],
     }
-    with open("/Users/user/netmax/results.json", "w", encoding="utf-8") as fh:
+    with open(out_dir / "results.json", "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.2), dpi=130)
@@ -99,7 +103,7 @@ def main() -> None:
     ax2.tick_params(colors=HEADER)
 
     fig.tight_layout()
-    fig.savefig("/Users/user/netmax/results.png", facecolor=CARD, bbox_inches="tight")
+    fig.savefig(out_dir / "results.png", facecolor=CARD, bbox_inches="tight")
     print(json.dumps(data, indent=2))
 
 

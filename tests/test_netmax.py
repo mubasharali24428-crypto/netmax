@@ -192,8 +192,19 @@ class TestMedianRtt:
             raise netmax.NetMaxError(f"resolver {server} timed out")
 
         monkeypatch.setattr(netmax, "_udp_query", hanging_query)
-        with pytest.raises(netmax.NetMaxError, match="unreachable"):
+        with pytest.raises(netmax.NetMaxError, match="unfit"):
             netmax._median_rtt_ms("1.1.1.1", attempts=1)
+
+    def test_refused_rcode_raises_unfit_immediately(self, monkeypatch):
+        """A REFUSED/SERVFAIL reply is never a valid latency sample (F2 fix)."""
+        monkeypatch.setattr(
+            netmax, "_udp_query",
+            lambda s, n, timeout=2.0: (_ for _ in ()).throw(
+                netmax.NetMaxError(f"resolver {s} returned REFUSED")
+            ),
+        )
+        with pytest.raises(netmax.NetMaxError, match="unfit.*REFUSED|REFUSED"):
+            netmax._median_rtt_ms("1.1.1.1", attempts=3)
 
 
 class TestDnsRanking:
