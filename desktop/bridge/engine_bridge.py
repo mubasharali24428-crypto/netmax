@@ -40,6 +40,12 @@ from typing import Any
 #   dev checkout:   <repo>/desktop/bridge/engine_bridge.py → parents[2]
 #   bundled .app:   NetMaxDesktop.app/Contents/Resources/engine/engine_bridge.py
 #                   → engine modules sit BESIDE the bridge (Resources/engine/)
+def _is_bundled() -> bool:
+    """True when this bridge file lives inside a .app Resources/engine/ dir."""
+    here = Path(__file__).resolve()
+    return here.parent.name == "engine" and here.parent.parent.name == "Resources"
+
+
 def _resolve_engine_root() -> Path:
     here = Path(__file__).resolve()
     if here.parent.name == "engine" and here.parent.parent.name == "Resources":
@@ -49,6 +55,7 @@ def _resolve_engine_root() -> Path:
 
 REPO_ROOT = _resolve_engine_root()
 ENGINE_SCRIPT = "netmax.py"
+ENGINE_PATH = REPO_ROOT / ENGINE_SCRIPT
 TIMEOUT_S = 180
 STDERR_TAIL_CHARS = 400
 
@@ -89,14 +96,28 @@ def build_command(
     count: int | None = None,
     *,
     python: str | None = None,
+    bundled: bool | None = None,
 ) -> list[str]:
-    """Full argv for the engine call; only mode-supported flags forwarded."""
+    """Full argv for the engine call; only mode-supported flags forwarded.
+
+    Uses the ABSOLUTE path to netmax.py so the engine subprocess cannot fail
+    due to inherited cwd (GUI apps may spawn us from anywhere). `bundled`
+    defaults to auto-detection; selftest passes it explicitly so checks are
+    location-independent.
+    """
     given: dict[str, int | None] = {
         "streams": streams,
         "seconds": seconds,
         "count": count,
     }
-    cmd = [python if python is not None else resolve_interpreter(), ENGINE_SCRIPT, mode]
+    is_bundled = _is_bundled() if bundled is None else bundled
+    cmd = [python if python is not None else resolve_interpreter()]
+    if is_bundled:
+        # Inside a signed .app bundle: disable bytecode writes so no
+        # __pycache__ appears in Contents/Resources/engine/ (a single .pyc
+        # invalidates the code signature).
+        cmd.append("-B")
+    cmd += [str(ENGINE_PATH), mode]
     for key in MODE_FLAGS[mode]:
         value = given[key]
         if value is not None:
@@ -211,19 +232,27 @@ def run_engine(
 
 def _check_arg_mapping() -> None:
     fixed_py = "/opt/fake-python/bin/python"
-    expectations = [
-        (("turbo", {"streams": 4, "seconds": 9}), [fixed_py, "netmax.py", "turbo", "--streams", "4", "--seconds", "9"]),
-        (("baseline", {"seconds": 7}), [fixed_py, "netmax.py", "baseline", "--seconds", "7"]),
-        (("dns", {}), [fixed_py, "netmax.py", "dns"]),
-        (("loss", {"count": 20}), [fixed_py, "netmax.py", "loss", "--count", "20"]),
-        (("wifi", {}), [fixed_py, "netmax.py", "wifi"]),
+    engine = str(ENGINE_PATH)
+    expectations: list[tuple[tuple[str, dict[str, int]], list[str]]] = [
+        (
+            ("turbo", {"streams": 4, "seconds": 9}),
+            [fixed_py, engine, "turbo", "--streams", "4", "--seconds", "9"],
+        ),
+        (("baseline", {"seconds": 7}), [fixed_py, engine, "baseline", "--seconds", "7"]),
+        (("dns", {}), [fixed_py, engine, "dns"]),
+        (("loss", {"count": 20}), [fixed_py, engine, "loss", "--count", "20"]),
+        (("wifi", {}), [fixed_py, engine, "wifi"]),
         # Unsupported flag for the mode is never forwarded.
-        (("turbo", {"count": 99}), [fixed_py, "netmax.py", "turbo"]),
+        (("turbo", {"count": 99}), [fixed_py, engine, "turbo"]),
     ]
     for (mode, kwargs), expected in expectations:
-        actual = build_command(mode, python=fixed_py, **kwargs)
+        actual = build_command(mode, python=fixed_py, bundled=False, **kwargs)
         if actual != expected:
             raise AssertionError(f"{mode}: {actual} != {expected}")
+    # Bundled builds prepend -B; engine path stays absolute either way.
+    bcmd = build_command("dns", python=fixed_py, bundled=True)
+    if bcmd[:2] != [fixed_py, "-B"] or bcmd[2] != engine:
+        raise AssertionError(f"bundled argv malformed: {bcmd[:3]}")
 
 
 def _check_envelope_writer(tmp_dir: str) -> None:

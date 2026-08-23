@@ -97,8 +97,8 @@ def test_build_command_uses_resolved_interpreter():
     ids=MODES,
 )
 def test_build_command_maps_only_supported_flags(mode, kwargs, expected_tail):
-    cmd = eb.build_command(mode, **kwargs, python=PY)
-    assert cmd == [PY, "netmax.py", mode] + expected_tail
+    cmd = eb.build_command(mode, **kwargs, python=PY, bundled=False)
+    assert cmd == [PY, str(eb.ENGINE_PATH), mode] + expected_tail
 
 
 def test_every_contract_mode_is_known():
@@ -107,13 +107,24 @@ def test_every_contract_mode_is_known():
 
 def test_unsupported_flag_is_dropped():
     # --count means nothing to turbo; it must not leak into the command.
-    cmd = eb.build_command("turbo", streams=4, count=99, python=PY)
-    assert "--count" not in cmd and cmd == [PY, "netmax.py", "turbo",
+    cmd = eb.build_command("turbo", streams=4, count=99, python=PY, bundled=False)
+    assert "--count" not in cmd and cmd == [PY, str(eb.ENGINE_PATH), "turbo",
                                             "--streams", "4"]
 
 
 def test_defaults_omit_unset_flags():
-    assert eb.build_command("turbo", python=PY) == [PY, "netmax.py", "turbo"]
+    assert eb.build_command("turbo", python=PY, bundled=False) == \
+        [PY, str(eb.ENGINE_PATH), "turbo"]
+
+
+def test_bundled_flag_prepends_B_and_keeps_absolute_engine_path():
+    cmd = eb.build_command("dns", python=PY, bundled=True)
+    assert cmd[:2] == [PY, "-B"] and cmd[2] == str(eb.ENGINE_PATH)
+
+
+def test_auto_detect_bundled_matches_file_location():
+    # Dev checkout: not bundled. (The deployed bundle copy self-detects.)
+    assert eb._is_bundled() is False
 
 
 # ── envelope writer + stderr tail ────────────────────────────────────────────
@@ -172,7 +183,7 @@ def test_run_success_envelope_exit_0(tmp_path):
     assert code == 0
     assert env == {"success": True, "mode": "turbo", "data": {"mbps": 123.4},
                    "error": None}
-    assert seen["cmd"][1:] == ["netmax.py", "turbo", "--streams", "4",
+    assert seen["cmd"][1:] == [str(eb.ENGINE_PATH), "turbo", "--streams", "4",
                                "--seconds", "9"]
     assert seen["cwd"] == str(REPO_ROOT)
     assert seen["timeout"] == eb.TIMEOUT_S

@@ -71,6 +71,7 @@ struct EngineClient {
         // Whitespace-safe argv assembly (L2-C1): see pythonArgv — path-like
         // overrides stay a single element; bare names ride through env.
         let argv = pythonArgv
+            + ["-B"]                                  // no .pyc writes — keeps the bundle's code signature intact
             + [script, "run", mode]
             + args
             + ["--json-out", tmpURL.path]
