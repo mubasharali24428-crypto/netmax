@@ -77,7 +77,8 @@ struct MenuBarView: View {
         resultText = ""
         Task {
             do {
-                let output = try await client.run("quick")
+                // "boost" = baseline vs turbo + gain % — a real C1 engine mode.
+                let output = try await client.run("boost", args: ["--seconds", "5"])
                 await MainActor.run {
                     resultText = output
                     status = .done

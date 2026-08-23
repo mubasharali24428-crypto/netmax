@@ -43,7 +43,8 @@ struct EngineClient {
 
     /// Run the engine bridge synchronously on a background executor.
     /// - Parameters:
-    ///   - mode: engine mode name passed to `run <mode>` (e.g. "quick").
+    ///   - mode: engine mode name passed to `run <mode>` (one of the C1 modes:
+    ///     baseline/turbo/boost/dns/bloat/full/upload/loss/jitter/wifi).
     ///   - args: extra CLI flags, e.g. ["--streams", "4", "--seconds", "5"].
     /// - Returns: pretty-printed `data` payload from the JSON envelope.
     /// - Throws: `EngineClientError` with a user-presentable message.
