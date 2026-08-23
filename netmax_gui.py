@@ -13,9 +13,10 @@ import shutil
 import subprocess
 import sys
 import threading
+import time as _time
 import tkinter as tk
 from pathlib import Path
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 # ── theme (light page, dark header, purple accent — user's standard palette) ──
 PAGE_BG = "#F4F5F7"
@@ -83,6 +84,53 @@ def build_command(mode: str, streams: int, seconds: int) -> list[str]:
     if mode != "dns":
         cmd += ["--seconds", str(seconds)]
     return cmd
+
+
+RESULTS_DIR = Path(__file__).resolve().parent / "results"
+
+
+def newest_results_json(results_dir: Path | None = None) -> Path | None:
+    """Newest results/<ts>/results.json under results_dir, or None."""
+    base = RESULTS_DIR if results_dir is None else results_dir
+    try:
+        candidates = sorted(
+            (d for d in base.iterdir() if d.is_dir()),
+            key=lambda d: d.name,
+        )
+    except OSError:
+        return None
+    for d in reversed(candidates):
+        candidate = d / "results.json"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def format_elapsed(seconds: int) -> str:
+    """Window-title elapsed counter, e.g. 'elapsed 42s' / 'elapsed 1m 05s'."""
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return f"elapsed {seconds}s"
+    return f"elapsed {seconds // 60}m {seconds % 60:02d}s"
+
+
+def summarize_results_json(path: Path) -> str:
+    """Short human-readable summary of a results.json for the export dialog."""
+    import json
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return f"{path}\n\n(could not parse: {exc})"
+    lines = [str(path), ""]
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if isinstance(value, (dict, list)):
+                value = f"<{type(value).__name__} with {len(value)} entries>"
+            lines.append(f"{key}: {value}")
+    else:
+        lines.append(repr(data)[:2000])
+    return "\n".join(lines[:40])
 
 
 class NetMaxRunner(threading.Thread):
@@ -232,6 +280,8 @@ class NetMaxApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self._user_stopped = False
+        self._running = False
+        self._elapsed_start = None
         root.title(WINDOW_TITLE)
         root.configure(bg=PAGE_BG)
         root.geometry("760x560")
@@ -244,7 +294,49 @@ class NetMaxApp:
 
         self._build_header()
         self._build_controls()
+        self._build_progress()
         self._build_log()
+
+    def _build_progress(self) -> None:
+        """Determinate progress bar under the controls card.
+
+        We get no real progress events from the engine, so the bar animates
+        via a root.after ticker (pulse-style sweep) while a run is live.
+        """
+        bar_frame = tk.Frame(self.root, bg=PAGE_BG, padx=16)
+        bar_frame.pack(fill="x", pady=(8, 0))
+        self.progress = ttk.Progressbar(
+            bar_frame, mode="determinate", maximum=100, value=0
+        )
+        self.progress.pack(fill="x")
+        self.progress.set(0)
+
+    # ── progress / elapsed ticker ─────────────────────────────────────────────
+    def _start_progress(self) -> None:
+        if self._running:
+            return
+        self._running = True
+        self._elapsed_start = _time.monotonic()
+        self.progress.configure(value=0)
+        self._tick_progress()
+
+    def _stop_progress(self) -> None:
+        self._running = False
+        self._elapsed_start = None
+        self.progress.stop()
+        self.progress.configure(value=100)
+        self.root.title(WINDOW_TITLE)
+
+    def _tick_progress(self) -> None:
+        """root.after ticker: advance bar + elapsed-seconds in title."""
+        if not self._running or self._elapsed_start is None:
+            return
+        elapsed = int(_time.monotonic() - self._elapsed_start)
+        self.root.title(f"{WINDOW_TITLE} — {format_elapsed(elapsed)}")
+        # No real progress events: sweep determinately up to 90% asymptotically.
+        value = 90 * (1 - 2 ** (-elapsed / 5))
+        self.progress.configure(value=value)
+        self.root.after(250, self._tick_progress)
 
     def _build_header(self) -> None:
         header = tk.Frame(self.root, bg=HEADER_BG, padx=20, pady=14)
@@ -294,6 +386,11 @@ class NetMaxApp:
             bg=PAGE_BG, fg=TEXT_FG, relief="flat", padx=16,
         )
         self.stop_btn.grid(row=1, column=4, padx=(8, 0))
+        self.export_btn = tk.Button(
+            card, text="Export last result", command=self.on_export_last_result,
+            bg=PAGE_BG, fg=TEXT_FG, relief="flat", padx=16,
+        )
+        self.export_btn.grid(row=1, column=5, padx=(8, 0))
 
         self.hint = tk.Label(card, text="", bg=CARD_BG, fg=MUTED_FG, wraplength=680, justify="left")
         self.hint.grid(row=2, column=0, columnspan=5, sticky="w", pady=(8, 0))
@@ -345,7 +442,18 @@ class NetMaxApp:
             return
         self._user_stopped = False
         self._set_running(True)
+        self._start_progress()
         self._append_out(f"$ interpreter {cmd[0]}\n$ " + " ".join(cmd[2:]) + "\n")
+
+    def on_export_last_result(self) -> None:
+        path = newest_results_json()
+        if path is None:
+            messagebox.showinfo(
+                "NetMax — Export last result",
+                f"No results found under {RESULTS_DIR}.\nRun a measurement first.",
+            )
+            return
+        messagebox.showinfo("NetMax — Export last result", summarize_results_json(path))
 
     def on_stop(self) -> None:
         self.runner.stop()
@@ -353,6 +461,7 @@ class NetMaxApp:
 
     def _on_done(self, code: int) -> None:
         self._set_running(False)
+        self._stop_progress()
         if getattr(self, "_user_stopped", False):
             self._user_stopped = False
             tail = "stopped by user"

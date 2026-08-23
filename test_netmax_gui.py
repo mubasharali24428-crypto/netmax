@@ -401,5 +401,104 @@ class BuildCommandMatchesRealParser(unittest.TestCase):
                 self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
+class BuildCommandUnchangedRegressionTest(unittest.TestCase):
+    """D4 lane: build_command argv layout must be unchanged by GUI additions."""
+
+    def test_turbo_layout_exact(self):
+        cmd = netmax_gui.build_command("turbo", 8, 10)
+        self.assertEqual(cmd[0], netmax_gui._python_executable())
+        self.assertTrue(cmd[1].endswith("netmax.py"))
+        self.assertEqual(cmd[2:], ["turbo", "--streams", "8", "--seconds", "10"])
+
+    def test_dns_layout_exact(self):
+        cmd = netmax_gui.build_command("dns", 8, 10)
+        self.assertEqual(cmd[2:], ["dns"])
+
+    def test_invalid_inputs_still_rejected(self):
+        for args in (("warp", 8, 10), ("turbo", 99, 10), ("turbo", 8, 99)):
+            with self.assertRaises(ValueError):
+                netmax_gui.build_command(*args)
+
+
+class FormatElapsedTest(unittest.TestCase):
+    def test_under_a_minute(self):
+        self.assertEqual(netmax_gui.format_elapsed(0), "elapsed 0s")
+        self.assertEqual(netmax_gui.format_elapsed(42), "elapsed 42s")
+
+    def test_minutes(self):
+        self.assertEqual(netmax_gui.format_elapsed(65), "elapsed 1m 05s")
+        self.assertEqual(netmax_gui.format_elapsed(600), "elapsed 10m 00s")
+
+    def test_negative_clamped_to_zero(self):
+        self.assertEqual(netmax_gui.format_elapsed(-3), "elapsed 0s")
+
+
+class NewestResultsJsonTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _make_ts_dir(self, name):
+        d = self.base / name
+        d.mkdir(parents=True)
+        return d
+
+    def test_picks_lexically_newest_timestamp_dir(self):
+        self._make_ts_dir("20260820_100000") / "results.json"
+        (self._make_ts_dir("20260821_120000") / "results.json").write_text("{}")
+        (self._make_ts_dir("20260819_090000") / "results.json").write_text("{}")
+        got = netmax_gui.newest_results_json(self.base)
+        self.assertIsNotNone(got)
+        self.assertEqual(got.parent.name, "20260821_120000")
+
+    def test_skips_dirs_without_results_json(self):
+        self._make_ts_dir("20260822_010000")          # empty, no results.json
+        good = self._make_ts_dir("20260820_100000")
+        (good / "results.json").write_text("{}")
+        got = netmax_gui.newest_results_json(self.base)
+        self.assertEqual(got, good / "results.json")
+
+    def test_missing_base_dir_returns_none(self):
+        self.assertIsNone(netmax_gui.newest_results_json(self.base / "nope"))
+
+    def test_no_dirs_returns_none(self):
+        self.assertIsNone(netmax_gui.newest_results_json(self.base))
+
+
+class SummarizeResultsJsonTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self._tmp.name) / "results.json"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_flat_dict_summary_includes_keys_and_values(self):
+        self.path.write_text('{"mode": "boost", "down_mbps": 940.2}')
+        text = netmax_gui.summarize_results_json(self.path)
+        self.assertIn("mode: boost", text)
+        self.assertIn("down_mbps: 940.2", text)
+        self.assertIn(str(self.path), text)
+
+    def test_nested_values_are_counted_not_dumped(self):
+        self.path.write_text('{"samples": [1, 2, 3], "meta": {"a": 1}}')
+        text = netmax_gui.summarize_results_json(self.path)
+        self.assertIn("list with 3 entries", text)
+        self.assertIn("dict with 1 entries", text)
+        self.assertNotIn("[1, 2, 3]", text)
+
+    def test_invalid_json_reports_error_without_raising(self):
+        self.path.write_text("{not json")
+        text = netmax_gui.summarize_results_json(self.path)
+        self.assertIn("could not parse", text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

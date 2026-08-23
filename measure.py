@@ -19,6 +19,31 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 HEADER, ACCENT, MUTED, CARD = "#1F2635", "#7C5A9B", "#8A93A6", "#FFFFFF"
 SECONDS = 8
+RESULTS_DIR = Path("/Users/user/netmax/results")
+HISTORY_FILE = RESULTS_DIR / "history.json"
+
+
+def append_history(mode: str, summary: dict, *, timestamp: str | None = None,
+                   history_file: Path = HISTORY_FILE) -> dict:
+    """Append one run's {timestamp, mode, results} entry to history.json.
+
+    Creates the file (and its parent dir) if missing; prior entries are kept.
+    """
+    if timestamp is None:
+        timestamp = datetime.now().isoformat(timespec="seconds")
+    entry = {"timestamp": timestamp, "mode": mode, "results": summary}
+    history_file.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(history_file, encoding="utf-8") as fh:
+            history = json.load(fh)
+        if not isinstance(history, list):
+            history = []
+    except (FileNotFoundError, json.JSONDecodeError):
+        history = []
+    history.append(entry)
+    with open(history_file, "w", encoding="utf-8") as fh:
+        json.dump(history, fh, indent=2)
+    return entry
 
 
 def main() -> None:
@@ -104,6 +129,7 @@ def main() -> None:
 
     fig.tight_layout()
     fig.savefig(out_dir / "results.png", facecolor=CARD, bbox_inches="tight")
+    append_history("full", data)
     print(json.dumps(data, indent=2))
 
 

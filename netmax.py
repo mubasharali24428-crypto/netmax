@@ -384,5 +384,42 @@ MODE_HELP = {
 }
 
 
+# ── watch mode helpers ────────────────────────────────────────────────────────
+
+GRADE_ORDER = ["A+", "A", "B", "C", "D", "F"]
+
+
+def format_watch_status(
+    ts: str, cycle: int, delta_ms: float, grade: str,
+    dns_name: str | None, dns_ms: float | None,
+) -> str:
+    """One-line status for a watch cycle — must never contain a newline."""
+    dns_part = (
+        f"fastest DNS {dns_name} @ {dns_ms:.1f}ms"
+        if dns_name and dns_ms is not None
+        else "no DNS answer"
+    )
+    return f"[{ts}] cycle {cycle}: bloat {delta_ms:+.1f}ms (grade {grade}), {dns_part}"
+
+
+def summarize_watch_history(history: list[dict]) -> dict:
+    """Aggregate a list of {delta_ms, grade, dns_ms} cycle records."""
+    if not history:
+        return {"cycles": 0}
+    deltas = [h["delta_ms"] for h in history]
+    dns_values = sorted(h["dns_ms"] for h in history if h.get("dns_ms") is not None)
+    worst_idx = max(range(len(history)), key=lambda i: GRADE_ORDER.index(history[i]["grade"]))
+    n = len(dns_values)
+    median_dns = (
+        statistics.median(dns_values) if dns_values else None
+    )
+    return {
+        "cycles": len(history),
+        "worst_grade": history[worst_idx]["grade"],
+        "max_delta_ms": max(deltas),
+        "median_dns_ms": median_dns,
+    }
+
+
 if __name__ == "__main__":
     main()

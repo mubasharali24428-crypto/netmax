@@ -7,6 +7,7 @@ seams it exercises. Anything that slips through hits a tripwire and fails.
 
 from __future__ import annotations
 
+import json
 import socket
 import statistics
 import struct
@@ -640,3 +641,110 @@ class TestMedianRttSystemPath:
         monkeypatch.setattr(netmax, "_udp_query", timeout_query)
         with pytest.raises(netmax.NetMaxError, match="resolver 1.1.1.1 unfit.*timed out"):
             netmax._median_rtt_ms("1.1.1.1", attempts=1)
+
+
+# ── measure.py results history ───────────────────────────────────────────────
+
+
+class TestAppendHistory:
+    """measure.append_history: offline coverage of the history.json trail."""
+
+    def test_creates_file_when_missing(self, tmp_path):
+        import measure
+
+        hist = tmp_path / "results" / "history.json"
+        entry = measure.append_history("full", {"turbo8_mbps": 42.5},
+                                       timestamp="2026-08-22T12:00:00",
+                                       history_file=hist)
+        assert entry == {"timestamp": "2026-08-22T12:00:00",
+                         "mode": "full",
+                         "results": {"turbo8_mbps": 42.5}}
+        loaded = json.loads(hist.read_text())
+        assert loaded == [entry]
+
+    def test_appends_keeps_prior_entries(self, tmp_path):
+        import measure
+
+        hist = tmp_path / "history.json"
+        hist.write_text(json.dumps([{"timestamp": "old", "mode": "baseline"}]))
+        measure.append_history("full", {"baseline_mbps": 10.0},
+                               timestamp="2026-08-22T13:00:00",
+                               history_file=hist)
+        loaded = json.loads(hist.read_text())
+        assert len(loaded) == 2
+        assert loaded[0] == {"timestamp": "old", "mode": "baseline"}
+        assert loaded[1]["mode"] == "full"
+
+    def test_corrupt_history_file_starts_fresh(self, tmp_path):
+        import measure
+
+        hist = tmp_path / "history.json"
+        hist.write_text("{not json")
+        measure.append_history("dns", {"fastest": "Cloudflare"},
+                               history_file=hist)
+        loaded = json.loads(hist.read_text())
+        assert len(loaded) == 1 and loaded[0]["mode"] == "dns"
+
+
+# ── watch mode helpers ────────────────────────────────────────────────────────
+# Reference implementations of the pure helpers specified in
+# docs/FEATURE-SPECS.md '## Watch Mode'. Defined here (not imported from
+# netmax.py) so this D5 lane touches only the spec + these offline tests;
+# when watch_loop lands in netmax.py these should move there unchanged and
+# the tests re-pointed at the module attribute.
+
+
+def format_watch_status(ts: str, cycle: int, delta_ms: float,
+                        grade: str, dns_name: str, dns_ms: float) -> str:
+    """Render the single one-line status for one watch cycle."""
+    return (f"[{ts}] cycle {cycle}: bloat {delta_ms:+.1f}ms "
+            f"(grade {grade}), fastest DNS {dns_name} @ {dns_ms:.1f}ms")
+
+
+_GRADE_ORDER = ["F", "D", "C", "B", "A", "A+"]
+
+
+def summarize_watch_history(history: list[dict]) -> dict:
+    """Aggregate history into cycles/worst_grade/max_delta/median_dns."""
+    if not history:
+        return {"cycles": 0}
+    grades = [h["grade"] for h in history]
+    worst = min(grades, key=lambda g: _GRADE_ORDER.index(g))
+    dns = sorted(h["dns_ms"] for h in history)
+    n = len(dns)
+    median = dns[n // 2] if n % 2 else (dns[n // 2 - 1] + dns[n // 2]) / 2
+    return {
+        "cycles": len(history),
+        "worst_grade": worst,
+        "max_delta_ms": max(h["delta_ms"] for h in history),
+        "median_dns_ms": median,
+    }
+
+
+class TestWatchHelpers:
+    """Offline tests for netmax watch-mode pure helpers (no I/O seams)."""
+
+    def test_format_watch_status_one_line(self, monkeypatch):
+        line = format_watch_status(
+            ts="14:02:11", cycle=3,
+            delta_ms=18.44, grade="B", dns_name="1.1.1.1", dns_ms=12.34,
+        )
+        assert chr(10) not in line
+        assert line == ("[14:02:11] cycle 3: bloat +18.4ms (grade B), "
+                        "fastest DNS 1.1.1.1 @ 12.3ms")
+
+    def test_summarize_watch_history(self):
+        history = [
+            {"delta_ms": 10.0, "grade": "A", "dns_ms": 15.0},
+            {"delta_ms": 55.0, "grade": "C", "dns_ms": 25.0},
+            {"delta_ms": 30.0, "grade": "B", "dns_ms": 20.0},
+        ]
+        summary = summarize_watch_history(history)
+        assert summary["cycles"] == 3
+        assert summary["worst_grade"] == "C"
+        assert summary["max_delta_ms"] == pytest.approx(55.0)
+        assert summary["median_dns_ms"] == pytest.approx(20.0)
+        # even-count median + empty-history sentinel
+        even = summarize_watch_history(history[:2])
+        assert even["median_dns_ms"] == pytest.approx(20.0)
+        assert summarize_watch_history([]) == {"cycles": 0}

@@ -1,0 +1,10 @@
+README.md
+netmax.py
+pyproject.toml
+netmax.egg-info/PKG-INFO
+netmax.egg-info/SOURCES.txt
+netmax.egg-info/dependency_links.txt
+netmax.egg-info/entry_points.txt
+netmax.egg-info/requires.txt
+netmax.egg-info/top_level.txt
+tests/test_netmax.py

@@ -1,3 +1,13 @@
+Metadata-Version: 2.4
+Name: netmax
+Version: 0.3.0
+Summary: Netmax: single-module network max/measure CLI toolkit
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Provides-Extra: charts
+Requires-Dist: matplotlib; extra == "charts"
+
 # NetMax
 
 **Honest bandwidth maximizer for macOS.** NetMax squeezes every bit your plan
@@ -72,13 +82,3 @@ cd ~/netmax
 | `tests/test_netmax.py` | Offline pytest suite for the engine |
 | `tests/test_netmax_gui.py` | Headless GUI tests |
 | `PROJECT_LOG.md` | Build log, verified results, debugging notes |
-| `docs/FEATURE-SPECS.md` | Planned features: packet loss %, jitter, WiFi RSSI/noise/channel (post-`airport`-removal), curl upload speed — all live-verified |
-
-## Planned features
-
-- `loss` — packet-loss % via `ping -c N` statistics parsing
-- `jitter` — mean RTT delta between consecutive ping replies
-- `wifi` — RSSI / noise / channel via `system_profiler SPAirPortDataType`
-  (the legacy `airport -I` binary no longer exists on modern macOS)
-- `upload` — upload Mbps via `curl -X POST --data-binary` to verified public
-  endpoints (speed.cloudflare.com/__up, httpbin.org, postman-echo.com)
