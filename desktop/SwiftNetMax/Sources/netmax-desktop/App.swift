@@ -1,13 +1,29 @@
 import SwiftUI
 
-/// Menu-bar app shell. `LSUIElement`-style: no Dock icon, lives in the menu bar.
+/// NetMax desktop shell.
 ///
-/// Onboarding wiring (C2, B3's `OnboardingFlow`/`OnboardingView`) lives in
-/// `RootView`: first-run users see onboarding inside this same menu-bar
-/// window; afterwards the `MenuBarView` dashboard shows.
+/// Surfaces:
+/// - **Main window** (auto-opens at launch): hosts `RootView`, which shows
+///   first-run honest-limits onboarding, then the dashboard. This exists so
+///   launching the app has an obvious, visible result — a menu-bar icon
+///   alone reads as "nothing happened".
+/// - **Menu bar bolt icon** (⚡): always-available popover hosting the same
+///   `RootView`. Both instances share `@AppStorage` state, so completing
+///   onboarding in one instantly updates the other.
+///
+/// No Dock icon (`LSUIElement` in Info.plist) — the app stays accessory-style.
 @main
 struct NetMaxDesktopApp: App {
     var body: some Scene {
+        WindowGroup("NetMax", id: "main") {
+            RootView()
+                .frame(
+                    minWidth: 380, idealWidth: 410,
+                    minHeight: 430, idealHeight: 550
+                )
+        }
+        .windowResizability(.contentMinSize)
+
         MenuBarExtra {
             RootView()
         } label: {
