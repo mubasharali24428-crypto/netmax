@@ -1,26 +1,10 @@
-//
-//  RootView.swift
-//  netmax-desktop
-//
-//  L2-C1 — First-run gate: honest-limits onboarding (C2, B3's flow/view)
-//  hosted inside the menu-bar window before handing over to the dashboard.
-//
-
 import SwiftUI
 
-/// Single-window root for the MenuBarExtra shell.
+/// Single-window root for both the main window and the menu-bar popover.
 ///
-/// Launch behavior: if the shared completion flag
-/// (`OnboardingConstants.completionKey`, written by
-/// `DefaultOnboardingFlow.setCompleted(_:)`) is absent/false — first run —
-/// the honest-limits `OnboardingView` is presented; otherwise (or as soon as
-/// onboarding completes) the `MenuBarView` dashboard shows.
-///
-/// Everything renders in the SAME MenuBarExtra window — no second scene,
-/// sheet, or window. Each branch keeps its natural fit: the dashboard's
-/// 380×520 and the onboarding flow's ideal 520×380 (OnboardingView declares
-/// accessibility minimums of 460×320 that a hard 380-wide frame would clip,
-/// so the window simply adopts whichever branch is showing).
+/// Launch behavior: first run → honest-limits onboarding; afterwards the
+/// five-tab product UI (L3 integration): Dashboard · Mode Lab · History ·
+/// Reports · Settings.
 struct RootView: View {
     /// Mirrors `DefaultOnboardingFlow.isCompleted()` — same exact key.
     @AppStorage(OnboardingConstants.completionKey) private var onboardingComplete = false
@@ -28,16 +12,42 @@ struct RootView: View {
     var body: some View {
         Group {
             if onboardingComplete {
-                MenuBarView()
+                MainTabView()
             } else {
                 OnboardingView {
-                    // Fires right after the final step persisted the flag
-                    // (and from the "Get started" fallback). Flipping this
-                    // AppStorage-backed flag swaps in the dashboard.
+                    // Fires right after the final step persisted the flag;
+                    // flipping this AppStorage-backed flag swaps in the app.
                     onboardingComplete = true
                 }
             }
         }
+    }
+}
+
+/// Post-onboarding navigation. Sidebar on the main window feels native;
+/// the same view works in the menu-bar popover where it collapses gracefully.
+struct MainTabView: View {
+    @State private var selection = 0
+
+    var body: some View {
+        TabView(selection: $selection) {
+            MenuBarView()
+                .tabItem { Label("Dashboard", systemImage: "gauge") }
+                .tag(0)
+            ModeLabView()
+                .tabItem { Label("Mode Lab", systemImage: "slider.horizontal.3") }
+                .tag(1)
+            HistoryView()
+                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+                .tag(2)
+            ReportsView()
+                .tabItem { Label("Reports", systemImage: "square.and.arrow.up") }
+                .tag(3)
+            SettingsView()
+                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tag(4)
+        }
+        .accessibilityLabel("NetMax sections")
     }
 }
 
