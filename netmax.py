@@ -328,36 +328,50 @@ def main(argv: list[str] | None = None) -> None:
         description="Honest bandwidth maximizer — fills your plan, never promises beyond it.",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sp_base = sub.add_parser("baseline", help="single-stream throughput")
-    sp_turbo = sub.add_parser("turbo", help="N parallel streams — bigger share under load")
-    sp_boost = sub.add_parser("boost", help="baseline + turbo + gain %%")
-    sp_dns = sub.add_parser("dns", help="rank DNS resolvers")
-    sp_bloat = sub.add_parser("bloat", help="bufferbloat: latency under load grade")
-    sp_full = sub.add_parser("full", help="everything + verdict")
-    sp_turbo.add_argument("--streams", type=int, default=8)
-    sp_boost.add_argument("--streams", type=int, default=8)
-    sp_bloat.add_argument("--streams", type=int, default=8)
-    sp_full.add_argument("--streams", type=int, default=8)
-    for sp in (sp_base, sp_turbo, sp_boost, sp_bloat, sp_full):
-        sp.add_argument("--seconds", type=int, default=10)
+    # mode -> (runner, takes_streams?) — adding a mode is one entry here.
+    RUNNERS: dict[str, tuple[object, bool]] = {
+        "baseline": (run_baseline, False),
+        "turbo": (run_turbo, True),
+        "boost": (run_boost, True),
+        "dns": (run_dns, False),
+        "bloat": (run_bloat, True),
+        "full": (run_full, True),
+    }
+    for mode, (_fn, takes_streams) in RUNNERS.items():
+        sp = sub.add_parser(mode, help=MODE_HELP.get(mode, ""))
+        if takes_streams:
+            sp.add_argument("--streams", type=int, default=8)
+        if mode != "dns":
+            sp.add_argument("--seconds", type=int, default=10)
 
     args = parser.parse_args(argv)
     try:
-        if args.cmd == "baseline":
-            run_baseline(_checked(args.seconds, 5, 30, "--seconds"))
-        elif args.cmd == "turbo":
-            run_turbo(_checked(args.streams, 1, 32, "--streams"), _checked(args.seconds, 5, 30, "--seconds"))
-        elif args.cmd == "boost":
-            run_boost(_checked(args.streams, 1, 32, "--streams"), _checked(args.seconds, 5, 30, "--seconds"))
-        elif args.cmd == "dns":
-            run_dns()
-        elif args.cmd == "bloat":
-            run_bloat(_checked(args.streams, 1, 32, "--streams"), _checked(args.seconds, 5, 30, "--seconds"))
-        elif args.cmd == "full":
-            run_full(_checked(args.streams, 1, 32, "--streams"), _checked(args.seconds, 5, 30, "--seconds"))
+        runner_fn, takes_streams = RUNNERS[args.cmd]
+        streams = _checked(args.streams, 1, 32, "--streams") if takes_streams else None
+        seconds = (
+            _checked(args.seconds, 5, 30, "--seconds")
+            if hasattr(args, "seconds")
+            else None
+        )
+        if args.cmd == "dns":
+            runner_fn()
+        elif args.cmd == "baseline":
+            runner_fn(seconds)
+        else:
+            runner_fn(streams, seconds)
     except NetMaxError as exc:
         print(f"netmax: {exc}", file=sys.stderr)
         sys.exit(1)
+
+
+MODE_HELP = {
+    "baseline": "single-stream throughput",
+    "turbo": "N parallel streams — bigger share under load",
+    "boost": "baseline + turbo + gain %%",
+    "dns": "rank DNS resolvers",
+    "bloat": "bufferbloat: latency under load grade",
+    "full": "everything + verdict",
+}
 
 
 if __name__ == "__main__":
