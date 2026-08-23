@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+"""netmax — squeeze every bit your plan actually pays for.
+
+CAN:  measure true single-stream throughput, claim a larger per-flow share of a
+      contended WiFi pipe with N parallel streams (standard TCP fairness),
+      rank public DNS resolvers by latency.
+CANNOT: exceed the bandwidth your ISP provisions. No software can — the cap is
+      enforced on the provider's side. Anyone claiming "10x speed" is selling
+      scamware.
+"""
+
+from __future__ import annotations
+
+import argparse
+import random
+import socket
+import statistics
+import string
+import struct
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+CF_DOWN = "https://speed.cloudflare.com/__down"
+# Primary/backup sources. Cloudflare's bot layer adaptively 403-blocks
+# repeated hits from one client (returns a 1-byte body that reads as ~0 Mbps),
+# so OVH's static test file leads and CF is the fallback. {cb} = cache-buster.
+ENDPOINTS: list[tuple[str, str]] = [
+    ("OVH", "https://proof.ovh.net/files/100Mb.dat"),
+    ("Cloudflare", f"{CF_DOWN}?bytes=50000000&cb={{cb}}"),
+]
+RESOLVERS = {
+    "Cloudflare 1.1.1.1": "1.1.1.1",
+    "Google 8.8.8.8": "8.8.8.8",
+    "Quad9 9.9.9.9": "9.9.9.9",
+}
+
+
+class NetMaxError(RuntimeError):
+    """A measurement could not be completed."""
+
+
+# ── throughput ────────────────────────────────────────────────────────────────
+
+def _pull(seconds: float) -> int:
+    """Download via curl until the time cap; return bytes received.
+
+    Tries each endpoint in order until one delivers data; raises NetMaxError
+    with per-endpoint diagnostics if none do. Exit code 28 (curl timeout) is
+    expected here — every file is far larger than the window by design.
+    """
+    problems: list[str] = []
+    for name, template in ENDPOINTS:
+        url = template.format(cb=random.getrandbits(64))
+        proc = subprocess.run(
+            ["curl", "-sS", "-o", "/dev/null", "-w", "%{size_download}",
+             "--max-time", str(seconds), url],
+            capture_output=True, text=True,
+        )
+        try:
+            received = int(proc.stdout.strip())
+        except ValueError:
+            received = 0
+            body_hint = proc.stdout.strip()[:120]
+        else:
+            body_hint = None
+        if received > 0:
+            return received
+        detail = proc.stderr.strip() or (
+            f"unparseable body: {body_hint!r}" if body_hint else f"http body {received}B"
+        )
+        problems.append(f"{name}: {detail}")
+    raise NetMaxError("all speed endpoints failed — " + "; ".join(problems))
+
+
+def throughput(streams: int, seconds: float) -> tuple[float, float]:
+    """Open `streams` parallel pulls; return (aggregate Mbps, total MB moved)."""
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=streams) as pool:
+        futures = [pool.submit(_pull, seconds) for _ in range(streams)]
+        counts = [future.result() for future in futures]
+    elapsed = max(time.monotonic() - started, 1e-9)
+    grand_total = sum(counts)
+    return grand_total * 8 / elapsed / 1e6, grand_total / 1e6
+
+
+# ── DNS ───────────────────────────────────────────────────────────────────────
+
+def _udp_query(server: str, name: str, timeout: float = 2.0) -> float:
+    """One UDP A-record lookup; return RTT in seconds. Raises on timeout."""
+    txid = random.getrandbits(16)
+    header = struct.pack(">HHHHHH", txid, 0x0100, 1, 0, 0, 0)   # RD set, 1 question
+    qname = b"".join(
+        bytes([len(label)]) + label.encode("ascii") for label in name.split(".")
+    ) + b"\x00"
+    packet = header + qname + struct.pack(">HH", 1, 1)           # QTYPE=A, QCLASS=IN
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(timeout)
+    try:
+        sent_at = time.perf_counter()
+        sock.sendto(packet, (server, 53))
+        while True:                                              # skip late stragglers
+            data, _ = sock.recvfrom(512)
+            if len(data) >= 12 and struct.unpack(">H", data[:2])[0] == txid:
+                return time.perf_counter() - sent_at
+    except socket.timeout as exc:
+        raise NetMaxError(f"resolver {server} timed out") from exc
+    finally:
+        sock.close()
+
+
+def _fresh_name() -> str:
+    """Random subdomain → forces a real lookup; answer is a fast NXDOMAIN."""
+    token = "".join(random.choices(string.ascii_lowercase, k=12))
+    return f"{token}.cloudflare.com"
+
+
+def _median_rtt_ms(server: str | None, attempts: int = 3) -> float:
+    """Median RTT in ms. server=None measures the system resolver path."""
+    samples: list[float] = []
+    for _ in range(attempts):
+        started = time.perf_counter()
+        try:
+            if server is None:
+                socket.getaddrinfo(_fresh_name(), 443)
+            else:
+                _udp_query(server, _fresh_name())
+        except (socket.gaierror, NetMaxError) as exc:
+            # Random names never resolve, so a FAST negative reply (NXDOMAIN)
+            # still proves the resolver answered — count it as a sample.
+            # Only a slow failure means the resolver/link is actually down.
+            elapsed_ms = (time.perf_counter() - started) * 1000
+            if elapsed_ms >= 2000:
+                raise NetMaxError(f"resolver unreachable ({exc})") from exc
+        else:
+            elapsed_ms = (time.perf_counter() - started) * 1000
+        samples.append(elapsed_ms)
+        time.sleep(0.05)
+    return statistics.median(samples)
+
+
+def dns_ranking() -> list[tuple[str, float]]:
+    rows = [("System default", _median_rtt_ms(None))]
+    rows += [(label, _median_rtt_ms(ip)) for label, ip in RESOLVERS.items()]
+    return sorted(rows, key=lambda row: row[1])
+
+
+# ── reporting ─────────────────────────────────────────────────────────────────
+
+def _hr(title: str) -> None:
+    print(f"\n── {title} " + "─" * max(0, 50 - len(title)))
+
+
+def _print_speed(tag: str, streams: int, mbps: float, mb: float, seconds: int) -> None:
+    print(f"{tag:<14} {streams:>2} stream(s)  {mbps:>7.1f} Mbps   ({mb:,.0f} MB in {seconds}s)")
+
+
+SHARE_NOTE = (
+    "note: under contention your share of the pipe scales with connection\n"
+    "count — standard per-flow fairness, no packets of other users touched."
+)
+
+
+def run_baseline(seconds: int) -> float:
+    mbps, mb = throughput(1, seconds)
+    _hr("Baseline — what ordinary apps get")
+    _print_speed("single-stream", 1, mbps, mb, seconds)
+    return mbps
+
+
+def run_turbo(streams: int, seconds: int) -> float:
+    mbps, mb = throughput(streams, seconds)
+    _hr(f"Turbo — {streams} parallel streams")
+    _print_speed("multi-stream", streams, mbps, mb, seconds)
+    print(SHARE_NOTE)
+    return mbps
+
+
+def run_boost(streams: int, seconds: int) -> None:
+    base = run_baseline(seconds)
+    turbo = run_turbo(streams, seconds)
+    _hr("Result")
+    if base <= 0.5 or turbo <= 0.5:
+        print("connection dropped mid-measurement — rerun once the link is stable.")
+        return
+    gain = (turbo / base - 1) * 100
+    print(f"headroom unlocked: {gain:+.0f}%  ({base:.1f} → {turbo:.1f} Mbps)")
+    if gain < 10:
+        print("your apps already reach the full provisioned rate — DNS/tuning is all that's left.")
+    else:
+        print(f"use multi-stream downloads (aria2c -x{streams}, IDM, etc.) to keep this rate.")
+
+
+def run_dns() -> None:
+    _hr("DNS resolver ranking (lower is faster)")
+    best_name = "System default"
+    best_ms = float("inf")
+    for i, (name, ms) in enumerate(dns_ranking(), 1):
+        marker = ""
+        if ms < best_ms:
+            best_ms, best_name, marker = ms, name, "  ← fastest"
+        print(f"{i}. {name:<22} {ms:>6.1f} ms{marker}")
+    if best_name != "System default":
+        print(f"switching tip: set {best_name} in System Settings → Network → DNS.")
+    else:
+        print("your current resolver is already the fastest tested.")
+
+
+def run_full(streams: int, seconds: int) -> None:
+    run_boost(streams, seconds)
+    run_dns()
+    _hr("Reversible macOS TCP knobs (inspect, apply manually)")
+    print("  sysctl net.inet.tcp.autorcvbufmax net.inet.tcp.autosndbufmax")
+    print("  larger buffers help only on high-latency links; revert with sudo sysctl -w …")
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def _checked(value: int, low: int, high: int, flag: str) -> int:
+    if not low <= value <= high:
+        raise NetMaxError(f"{flag} must be {low}..{high}, got {value}")
+    return value
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        prog="netmax",
+        description="Honest bandwidth maximizer — fills your plan, never promises beyond it.",
+    )
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    sp_base = sub.add_parser("baseline", help="single-stream throughput")
+    sp_turbo = sub.add_parser("turbo", help="N parallel streams — bigger share under load")
+    sp_boost = sub.add_parser("boost", help="baseline + turbo + gain %%")
+    sp_dns = sub.add_parser("dns", help="rank DNS resolvers")
+    sp_full = sub.add_parser("full", help="everything + verdict")
+    sp_turbo.add_argument("--streams", type=int, default=8)
+    sp_boost.add_argument("--streams", type=int, default=8)
+    sp_full.add_argument("--streams", type=int, default=8)
+    for sp in (sp_base, sp_turbo, sp_boost, sp_full):
+        sp.add_argument("--seconds", type=int, default=10)
+
+    args = parser.parse_args(argv)
+    try:
+        if args.cmd == "baseline":
+            run_baseline(_checked(args.seconds, 5, 30, "--seconds"))
+        elif args.cmd == "turbo":
+            run_turbo(_checked(args.streams, 1, 32, "--streams"), _checked(args.seconds, 5, 30, "--seconds"))
+        elif args.cmd == "boost":
+            run_boost(_checked(args.streams, 1, 32, "--streams"), _checked(args.seconds, 5, 30, "--seconds"))
+        elif args.cmd == "dns":
+            run_dns()
+        elif args.cmd == "full":
+            run_full(_checked(args.streams, 1, 32, "--streams"), _checked(args.seconds, 5, 30, "--seconds"))
+    except NetMaxError as exc:
+        print(f"netmax: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

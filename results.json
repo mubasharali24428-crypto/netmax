@@ -1,0 +1,26 @@
+{
+  "seconds": 8,
+  "baseline_mbps": 44.65,
+  "turbo8_mbps": 39.88,
+  "baseline_mb": 116.6,
+  "turbo8_mb": 120.4,
+  "dropped": false,
+  "dns": [
+    [
+      "Cloudflare 1.1.1.1",
+      51.3
+    ],
+    [
+      "System default",
+      61.8
+    ],
+    [
+      "Google 8.8.8.8",
+      149.2
+    ],
+    [
+      "Quad9 9.9.9.9",
+      192.3
+    ]
+  ]
+}
