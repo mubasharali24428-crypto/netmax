@@ -319,7 +319,6 @@ class NetMaxApp:
             bar_frame, mode="determinate", maximum=100, value=0
         )
         self.progress.pack(fill="x")
-        self.progress.set(0)
 
     # ── progress / elapsed ticker ─────────────────────────────────────────────
     def _start_progress(self) -> None:
