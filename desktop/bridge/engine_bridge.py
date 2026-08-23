@@ -36,8 +36,18 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-# Repo root resolved from this file: desktop/bridge/engine_bridge.py
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# Repo root resolved from this file's location — layout-aware:
+#   dev checkout:   <repo>/desktop/bridge/engine_bridge.py → parents[2]
+#   bundled .app:   NetMaxDesktop.app/Contents/Resources/engine/engine_bridge.py
+#                   → engine modules sit BESIDE the bridge (Resources/engine/)
+def _resolve_engine_root() -> Path:
+    here = Path(__file__).resolve()
+    if here.parent.name == "engine" and here.parent.parent.name == "Resources":
+        return here.parent
+    return here.parents[2]
+
+
+REPO_ROOT = _resolve_engine_root()
 ENGINE_SCRIPT = "netmax.py"
 TIMEOUT_S = 180
 STDERR_TAIL_CHARS = 400
