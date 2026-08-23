@@ -66,10 +66,16 @@ def _pull(seconds: float) -> int:
             body_hint = proc.stdout.strip()[:120]
         else:
             body_hint = None
-        if received > 0:
+        # curl exit 28 = our own time cap (expected); 0 = clean finish.
+        # Anything else (TLS reset, HTTP error, DNS fail) invalidates even a
+        # partial byte count — counting it would fabricate throughput.
+        if received > 0 and proc.returncode in (0, 28):
             return received
         detail = proc.stderr.strip() or (
-            f"unparseable body: {body_hint!r}" if body_hint else f"http body {received}B"
+            f"curl exit {proc.returncode} after {received}B"
+            if proc.returncode not in (0, 28)
+            else f"unparseable body: {body_hint!r}" if body_hint
+            else f"http body {received}B"
         )
         problems.append(f"{name}: {detail}")
     raise NetMaxError("all speed endpoints failed — " + "; ".join(problems))
@@ -122,7 +128,11 @@ def _udp_query(server: str, name: str, timeout: float = 2.0) -> float:
         sock.sendto(packet, (server, 53))
         while True:                                              # skip late stragglers
             data, _ = sock.recvfrom(512)
-            if len(data) >= 12 and struct.unpack(">H", data[:2])[0] == txid:
+            if (
+                len(data) >= 12
+                and struct.unpack(">H", data[:2])[0] == txid
+                and data[2] & 0x80                                # QR bit: is a response
+            ):
                 rcode = data[3] & 0x0F
                 if rcode == DNS_RCODE_NXDOMAIN:
                     return time.perf_counter() - sent_at         # alive, name absent
@@ -235,12 +245,10 @@ def run_boost(streams: int, seconds: int) -> None:
 
 def run_dns() -> None:
     _hr("DNS resolver ranking (lower is faster)")
-    best_name = "System default"
-    best_ms = float("inf")
-    for i, (name, ms) in enumerate(dns_ranking(), 1):
-        marker = ""
-        if ms < best_ms:
-            best_ms, best_name, marker = ms, name, "  ← fastest"
+    rows = dns_ranking()
+    best_name = rows[0][0]                           # already sorted ascending
+    for i, (name, ms) in enumerate(rows, 1):
+        marker = "  ← fastest" if name == best_name else ""
         print(f"{i}. {name:<22} {ms:>6.1f} ms{marker}")
     if best_name != "System default":
         print(f"switching tip: set {best_name} in System Settings → Network → DNS.")
@@ -278,17 +286,19 @@ def _ping_median_ms(host: str = "1.1.1.1", count: int = 10) -> float:
 def bloat_grade(streams: int, seconds: float) -> tuple[float, float, str]:
     """Measure idle vs loaded median latency; return (idle_ms, delta_ms, grade).
 
-    Grade rubric follows the Waveform/DSLReports bufferbloat scale: the larger
-    the latency increase while the link is saturated, the worse the grade.
+    Grade rubric follows the Waveform/DSLReports scale. Sampling is bounded by
+    the download window: pings are short (count=3) and sized so the saturating
+    download outlasts the whole sampling loop.
     """
     idle_ms = _ping_median_ms()
-    loaded = []  # collect samples while turbo download saturates the link
+    # 3 loaded samples ≈ 3×(3 pings + 0.2s gaps) ≈ ~4-6s; download must cover it
+    window = max(seconds * streams / max(streams, 1), 8.0)
+    loaded: list[float] = []
     with ThreadPoolExecutor(max_workers=streams) as pool:
-        futures = [pool.submit(_pull, seconds) for _ in range(streams)]
-        # ping in parallel with the saturating download
+        futures = [pool.submit(_pull, window) for _ in range(streams)]
         try:
             for _ in range(3):
-                loaded.append(_ping_median_ms())
+                loaded.append(_ping_median_ms(count=3))
                 time.sleep(0.2)
         finally:
             for f in futures:
@@ -304,7 +314,7 @@ def run_bloat(streams: int, seconds: int) -> None:
     _hr("Bufferbloat — latency under load")
     idle_ms, delta_ms, grade = bloat_grade(streams, max(seconds, 6))
     print(f"idle latency:      {idle_ms:>6.1f} ms")
-    print(f"loaded increase:  +{delta_ms:>6.1f} ms   grade: {grade}")
+    print(f"loaded increase:   {delta_ms:+6.1f} ms   grade: {grade}")
     if grade in ("A+", "A"):
         print("your link stays responsive under load — nothing to fix.")
     else:

@@ -4,10 +4,13 @@ These tests deliberately avoid creating Tk widgets so they run without a
 display. Widget construction/layout is verified separately by a manual GUI
 smoke run, which may fail in headless environments.
 """
+import os
 import sys
+import tempfile
 import threading
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -214,6 +217,162 @@ class RunnerPlumbingTest(unittest.TestCase):
             self.assertLess(done[0], 0, "child should have died by signal, not exited 0")
         finally:
             self._cleanup(runner)
+
+
+class PythonExecutableTest(unittest.TestCase):
+    """_python_executable: NETMAX_PYTHON env > known-good path > sys.executable."""
+
+    def setUp(self):
+        self._saved = os.environ.pop("NETMAX_PYTHON", None)
+
+    def tearDown(self):
+        if self._saved is not None:
+            os.environ["NETMAX_PYTHON"] = self._saved
+        else:
+            os.environ.pop("NETMAX_PYTHON", None)
+
+    def test_env_override_wins_when_path_exists(self):
+        with tempfile.NamedTemporaryFile() as tmp:
+            os.environ["NETMAX_PYTHON"] = tmp.name
+            self.assertEqual(netmax_gui._python_executable(), tmp.name)
+
+    def test_env_ignored_when_path_missing(self):
+        os.environ["NETMAX_PYTHON"] = "/nonexistent/python-nowhere"
+        # falls through to preferred (if present) or sys.executable
+        result = netmax_gui._python_executable()
+        if Path("/Users/user/1/bin/python").exists():
+            self.assertEqual(result, "/Users/user/1/bin/python")
+        else:
+            self.assertEqual(result, sys.executable)
+
+    def test_no_env_preferred_path(self):
+        os.environ.pop("NETMAX_PYTHON", None)
+        result = netmax_gui._python_executable()
+        if Path("/Users/user/1/bin/python").exists():
+            self.assertEqual(result, "/Users/user/1/bin/python")
+        else:
+            self.assertEqual(result, sys.executable)
+
+
+class BuildCommandUsesPythonExecutable(unittest.TestCase):
+    def test_build_command_first_arg_is_resolved_python(self):
+        cmd = netmax_gui.build_command("baseline", 8, 10)
+        self.assertEqual(cmd[0], netmax_gui._python_executable())
+        self.assertTrue(cmd[1].endswith("netmax.py"))
+
+
+class RunnerHandoffOfflineTest(unittest.TestCase):
+    """_active pointer hand-off, exercised without spawning any process."""
+
+    @staticmethod
+    def _fake_proc(alive=True):
+        proc = unittest.mock.MagicMock()
+        proc.poll.return_value = 0 if not alive else None
+        return proc
+
+    def test_busy_follows_active_pointer(self):
+        runner = netmax_gui.NetMaxRunner(lambda l: None, lambda l: None, lambda c: None)
+        # no child → not busy
+        self.assertFalse(runner.is_running())
+
+        replacement = netmax_gui.NetMaxRunner(
+            runner._on_stdout, runner._on_stderr, runner._on_done
+        )
+        fake = self._fake_proc(alive=True)
+        replacement._proc = fake
+        old = runner._active
+        runner._active = replacement
+        try:
+            self.assertTrue(runner.is_running())          # busy via new active
+            fake.poll.return_value = 0                    # child exited
+            self.assertFalse(runner.is_running())         # no longer busy
+        finally:
+            runner._active = old
+
+    def test_stop_targets_active_runner_child(self):
+        runner = netmax_gui.NetMaxRunner(lambda l: None, lambda l: None, lambda c: None)
+        replacement = netmax_gui.NetMaxRunner(
+            runner._on_stdout, runner._on_stderr, runner._on_done
+        )
+        fake = self._fake_proc(alive=True)
+        replacement._proc = fake
+        old = runner._active
+        runner._active = replacement
+        try:
+            runner.stop()
+            fake.kill.assert_called_once()
+            self.assertTrue(replacement._stop_requested)
+            self.assertFalse(old._stop_requested)         # stale worker untouched
+        finally:
+            runner._active = old
+
+    def test_join_active_joins_current_worker(self):
+        runner = netmax_gui.NetMaxRunner(lambda l: None, lambda l: None, lambda c: None)
+        target = unittest.mock.MagicMock()
+        target.is_alive.return_value = True
+        old = runner._active
+        runner._active = target
+        try:
+            runner.join_active(timeout=0.01)
+            target.join.assert_called_once_with(0.01)
+        finally:
+            runner._active = old
+
+    def test_start_command_hands_off_to_fresh_runner_when_thread_dead(self):
+        """Dead worker thread + start → _active repointed at a fresh runner."""
+        runner = netmax_gui.NetMaxRunner(
+            lambda l: None, lambda l: None, lambda c: None
+        )
+        # Never started ⇒ is_alive() is False ⇒ start_command must build a
+        # replacement runner and repoint _active at it.
+        import io
+        fake_proc = unittest.mock.MagicMock()
+        fake_proc.stdout = io.StringIO("second\n")
+        fake_proc.stderr = io.StringIO("")
+        fake_proc.wait.return_value = 0
+        fake_proc.poll.return_value = 0
+
+        with unittest.mock.patch.object(
+            netmax_gui.subprocess, "Popen", return_value=fake_proc
+        ) as popen:
+            runner.start_command(["python", "netmax.py", "baseline"])
+            popen.assert_called_once()
+
+        active = runner._active
+        try:
+            self.assertIsNot(active, runner)              # hand-off happened
+            self.assertTrue(active.is_alive())            # replacement running
+            self.assertEqual(active._proc, fake_proc)
+            active.stop()                                 # end its idle wait loop
+            self.assertTrue(active.join(5) is None)
+            self.assertFalse(active.is_alive())
+            fake_proc.wait.assert_called()
+        finally:
+            runner.stop()
+
+    def test_finish_once_fires_on_done_exactly_once(self):
+        calls = []
+        runner = netmax_gui.NetMaxRunner(
+            lambda l: None, lambda l: None, lambda c: calls.append(c)
+        )
+        sentinel = object()  # stand-in for this runner's child proc
+        runner._proc = sentinel
+        runner._finish_once(0, sentinel)
+        runner._finish_once(0, sentinel)                  # duplicate suppressed
+        self.assertEqual(calls, [0])
+
+    def test_finish_once_ignores_stale_worker(self):
+        """A worker that no longer owns the current proc must not report done."""
+        calls = []
+        runner = netmax_gui.NetMaxRunner(
+            lambda l: None, lambda l: None, lambda c: calls.append(c)
+        )
+        stale_proc, new_proc = object(), object()
+        # hand-off scenario: _active moved to a replacement, old proc still set
+        replacement = netmax_gui.NetMaxRunner(lambda l: None, lambda l: None, lambda c: None)
+        runner._active = replacement
+        runner._finish_once(0, stale_proc)                # stale → swallowed
+        self.assertEqual(calls, [])
 
 
 class BuildCommandMatchesRealParser(unittest.TestCase):

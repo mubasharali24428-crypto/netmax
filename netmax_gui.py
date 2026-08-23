@@ -53,8 +53,7 @@ SECONDS_MIN, SECONDS_MAX = 5, 30
 def _python_executable() -> str:
     """Resolve engine interpreter: NETMAX_PYTHON env > known-good path > sys.
 
-    Logs nothing here; the app prints the choice on first Run so a silent
-    fallback to a dep-less interpreter never happens unnoticed.
+    The chosen interpreter is logged by the app on every Run (see on_run).
     """
     env = os.environ.get("NETMAX_PYTHON")
     if env and Path(env).exists():
@@ -106,7 +105,7 @@ class NetMaxRunner(threading.Thread):
         self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
         self._stop_requested = False
-        self._done_fired = False
+        self._reported_proc = None
         # The runner whose worker loop currently owns any child. After a
         # thread hand-off this points at the replacement, so busy-checks,
         # stop(), and output attribution follow the live worker.
@@ -132,7 +131,6 @@ class NetMaxRunner(threading.Thread):
             if self.is_alive():
                 self._proc = proc
                 self._stop_requested = False
-                self._done_fired = False
             else:
                 # A Thread object can only be started once; if the worker loop
                 # exited after a prior stop(), hand off to a fresh runner.
@@ -163,11 +161,20 @@ class NetMaxRunner(threading.Thread):
         with self._lock:
             return self._busy()
 
-    def _finish_once(self, code: int) -> None:
+    def _finish_once(self, code: int, proc) -> None:
+        """Report completion exactly once per child process.
+
+        Keyed on the proc instance, not a boolean flag — a stale worker's late
+        completion must never be reported for a newer run (and must never
+        swallow the new run's own completion).
+        """
         with self._lock:
-            if getattr(self, "_done_fired", False):
+            if getattr(self, "_reported_proc", None) is proc:
                 return
-            self._done_fired = True
+            if self._proc is not proc and self._active is not self:
+                # this worker no longer owns the current child
+                return
+            self._reported_proc = proc
         self._on_done(code)
 
     # ── worker ────────────────────────────────────────────────────────────────
@@ -187,7 +194,7 @@ class NetMaxRunner(threading.Thread):
             code = proc.wait()
             for t in readers:
                 t.join(5)
-            self._finish_once(code)
+            self._finish_once(code, proc)
             # If pumps are still draining, wait for them BEFORE clearing
             # _proc, so late lines stay attributed to this run.
             for t in readers:
@@ -224,6 +231,7 @@ class NetMaxApp:
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
+        self._user_stopped = False
         root.title(WINDOW_TITLE)
         root.configure(bg=PAGE_BG)
         root.geometry("760x560")
@@ -335,8 +343,9 @@ class NetMaxApp:
         except RuntimeError as exc:
             self._append_out(f"netmax: {exc}\n")
             return
+        self._user_stopped = False
         self._set_running(True)
-        self._append_out("$ " + " ".join(cmd[2:]) + "\n")
+        self._append_out(f"$ interpreter {cmd[0]}\n$ " + " ".join(cmd[2:]) + "\n")
 
     def on_stop(self) -> None:
         self.runner.stop()

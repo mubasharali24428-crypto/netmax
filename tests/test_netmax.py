@@ -301,7 +301,7 @@ class TestReporting:
     def test_dns_report_marks_fastest(self, capsys, monkeypatch):
         monkeypatch.setattr(
             netmax, "dns_ranking",
-            lambda: [("System default", 70.0), ("Cloudflare 1.1.1.1", 30.0)],
+            lambda: [("Cloudflare 1.1.1.1", 30.0), ("System default", 70.0)],
         )
         netmax.run_dns()
         out = capsys.readouterr().out
@@ -482,3 +482,161 @@ class TestBloatGrade:
         monkeypatch.setattr(sp, "run", fail_run)
         with pytest.raises(netmax.NetMaxError, match="ping.*failed"):
             netmax._ping_median_ms()
+
+
+# ── coverage audit additions ──────────────────────────────────────────────────
+
+
+def _reply_with_rcode(txid: int, rcode: int) -> bytes:
+    """Build a minimal DNS reply header carrying the given RCODE."""
+    # byte 3 low nibble = rcode
+    return struct.pack(">HHHHHH", txid, 0x8180 | rcode, 1, 0, 0, 0) + b"x" * 6
+
+
+class TestUdpQueryRcode:
+    """RCODE-aware _udp_query: only NOERROR / NXDOMAIN count as alive."""
+
+    def _patch(self, monkeypatch, builder):
+        import socket as socket_mod
+
+        monkeypatch.setattr(socket_mod, "socket", lambda af, st: FakeSock(builder))
+
+    def test_nxdomain_is_valid_alive_sample(self, monkeypatch):
+        self._patch(monkeypatch, lambda txid: _reply_with_rcode(txid, netmax.DNS_RCODE_NXDOMAIN))
+        assert netmax._udp_query("1.1.1.1", "nope.example.com") >= 0
+
+    def test_servfail_raises(self, monkeypatch):
+        self._patch(monkeypatch, lambda txid: _reply_with_rcode(txid, netmax.DNS_RCODE_SERVFAIL))
+        with pytest.raises(netmax.NetMaxError, match="SERVFAIL"):
+            netmax._udp_query("8.8.8.8", "x.example.com")
+
+    def test_refused_raises(self, monkeypatch):
+        self._patch(monkeypatch, lambda txid: _reply_with_rcode(txid, netmax.DNS_RCODE_REFUSED))
+        with pytest.raises(netmax.NetMaxError, match="REFUSED"):
+            netmax._udp_query("9.9.9.9", "x.example.com")
+
+    def test_unknown_rcode_reported_as_number(self, monkeypatch):
+        self._patch(monkeypatch, lambda txid: _reply_with_rcode(txid, 11))  # unassigned
+        with pytest.raises(netmax.NetMaxError, match="returned 11"):
+            netmax._udp_query("1.1.1.1", "x.example.com")
+
+    def test_rcode_read_from_low_4_bits_only(self, monkeypatch):
+        # high bits of byte 3 carry flags; must not pollute the rcode check
+        def builder(txid):
+            reply = bytearray(_reply_with_rcode(txid, netmax.DNS_RCODE_NOERROR))
+            reply[3] |= 0x80  # RA flag set → byte3 = 0x88, rcode still 0
+            return bytes(reply)
+
+        self._patch(monkeypatch, builder)
+        assert netmax._udp_query("1.1.1.1", "x.example.com") >= 0
+
+    def test_short_reply_below_header_size_is_skipped(self, monkeypatch):
+        class ShortThenGood(FakeSock):
+            def __init__(self, builder):
+                super().__init__(builder)
+                self._shorts = 2
+
+            def recvfrom(self, bufsize):
+                if self._shorts:
+                    self._shorts -= 1
+                    return b"tooshort", ("0.0.0.0", 53)
+                return super().recvfrom(bufsize)
+
+        import socket as socket_mod
+        monkeypatch.setattr(socket_mod, "socket", lambda af, st: ShortThenGood(_dns_reply))
+        assert netmax._udp_query("1.1.1.1", "foo.example.com") >= 0
+
+
+class TestDnsRankingSkipPaths:
+    """Unfit resolvers are skipped with a note; never fatal unless all fail."""
+
+    def test_system_default_failure_does_not_block_ranking(self, monkeypatch):
+        def fake_median(server, attempts=3):
+            if server is None:
+                raise netmax.NetMaxError("resolver None unfit: timed out")
+            return 25.0
+
+        monkeypatch.setattr(netmax, "_median_rtt_ms", fake_median)
+        rows = netmax.dns_ranking()
+        assert [name for name, _ in rows] == list(netmax.RESOLVERS)
+
+    def test_unfit_public_resolver_skipped_with_message(self, monkeypatch, capsys):
+        def fake_median(server, attempts=3):
+            if server is None:
+                return 30.0
+            if server == "8.8.8.8":
+                raise netmax.NetMaxError(f"resolver {server} unfit: SERVFAIL")
+            return 40.0
+
+        monkeypatch.setattr(netmax, "_median_rtt_ms", fake_median)
+        rows = netmax.dns_ranking()
+        names = [name for name, _ in rows]
+        assert "Google 8.8.8.8" not in names
+        assert len(names) == 3  # system + 2 healthy resolvers
+        assert "skipped" in capsys.readouterr().out
+
+    def test_all_resolvers_unfit_raises(self, monkeypatch):
+        def always_unfit(server, attempts=3):
+            raise netmax.NetMaxError(f"resolver {server} unfit")
+
+        monkeypatch.setattr(netmax, "_median_rtt_ms", always_unfit)
+        with pytest.raises(netmax.NetMaxError, match="no DNS resolver reachable"):
+            netmax.dns_ranking()
+
+
+class TestBloatGradeBoundaries:
+    """Exact C/D/F rubric boundaries from BLOAT_GRADES."""
+
+    def test_c_d_f_boundaries(self, monkeypatch):
+        cases = [
+            (5.0, "A"), (30.0, "B"),      # < limit keeps better grade
+            (60.0, "C"),                   # 60 → C (<200)
+            (199.999, "C"),
+            (200.0, "D"),                  # exactly 200 crosses into D
+            (399.9, "D"),
+            (400.0, "F"),                  # exactly 400 → worst bucket → F
+            (1200.0, "F"),
+        ]
+        for delta, expected in cases:
+            idle = 50.0
+            state = {"first": True}
+
+            def fake_ping(host="1.1.1.1", count=10, _idle=idle, _state=state, _delta=delta):
+                if _state["first"]:
+                    _state["first"] = False   # idle sample
+                    return _idle
+                return _idle + _delta         # every loaded sample
+
+            monkeypatch.setattr(netmax, "_ping_median_ms", fake_ping)
+            monkeypatch.setattr(netmax, "_pull", lambda seconds: 1000)
+            got_idle, got_delta, grade = netmax.bloat_grade(2, 6)
+            assert grade == expected, f"delta={delta}: got {grade}, want {expected}"
+            assert got_delta == pytest.approx(delta)
+
+
+class TestMedianRttSystemPath:
+    def test_system_path_slow_gaierror_raises_unreachable(self, monkeypatch):
+        import time as time_mod
+
+        started = {"t": 0.0}
+
+        def bump():
+            started["t"] += 3.0  # ≥ 2000 ms threshold
+            return started["t"]
+
+        monkeypatch.setattr(time_mod, "perf_counter", bump)
+
+        def slow_gai(name, port):
+            raise socket.gaierror(-2, "timed out")
+
+        monkeypatch.setattr(socket, "getaddrinfo", slow_gai)
+        with pytest.raises(netmax.NetMaxError, match="unreachable"):
+            netmax._median_rtt_ms(None, attempts=1)
+
+    def test_udp_resolver_timeout_wraps_as_unfit(self, monkeypatch):
+        def timeout_query(server, name, timeout=2.0):
+            raise netmax.NetMaxError(f"resolver {server} timed out")
+
+        monkeypatch.setattr(netmax, "_udp_query", timeout_query)
+        with pytest.raises(netmax.NetMaxError, match="resolver 1.1.1.1 unfit.*timed out"):
+            netmax._median_rtt_ms("1.1.1.1", attempts=1)
