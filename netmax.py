@@ -355,6 +355,7 @@ def main(argv: list[str] | None = None) -> None:
             sp.add_argument("--seconds", type=int, default=10)
 
     # v0.4 modes — separate parsers: different flag shapes than the core set.
+    sp_bloat = sub.add_parser("bloat-eco", help="eco bufferbloat estimate (~100 KB)")
     sp_up = sub.add_parser("upload", help="upload-speed probe (Mbps up)")
     sp_up.add_argument("--seconds", type=int, default=10)
     sp_loss = sub.add_parser("loss", help="packet-loss percent")
@@ -365,14 +366,43 @@ def main(argv: list[str] | None = None) -> None:
     sp_exp = sub.add_parser("export", help="export newest run as CSV or JSON")
     sp_exp.add_argument("--fmt", choices=["csv", "json"], default="csv")
     sp_exp.add_argument("--out", required=True)
-    sp_watch = sub.add_parser("watch", help="continuous monitor (bloat+dns per cycle)")
-    sp_watch.add_argument("--interval", type=int, default=30)
-    sp_watch.add_argument("--cycles", type=int, default=0, help="0 = until Ctrl-C")
+
+    # v0.5 modes
+    sp_fetch = sub.add_parser("fetch", help="multi-stream download accelerator")
+    sp_fetch.add_argument("url")
+    sp_fetch.add_argument("out", nargs="?", help="output path (default: URL basename)")
+    sp_fetch.add_argument("--streams", type=int, default=8)
+    sp_fetch.add_argument("--adaptive", action="store_true", dest="adaptive",
+                          help="auto-adjust stream count from latency/loss feedback")
+    sp_bloat.add_argument("--eco", action="store_true", dest="eco",
+                          help="small-probe estimate instead of full saturation")
 
     args = parser.parse_args(argv)
     try:
         cmd = args.cmd
-        if cmd == "upload":
+        if cmd == "fetch":
+            import netmax_fetch
+            out_path = args.out or args.url.rstrip("/").split("/")[-1] or "download.bin"
+            started = time.monotonic()
+
+            def _show(done: int, total: int) -> None:
+                pct = f"{done * 100 / total:.0f}%" if total else f"{done}B"
+                print(f"\rfetching… {pct} ({done / 1e6:.1f} MB)", end="", flush=True)
+
+            stats = netmax_fetch.download(
+                args.url, out_path,
+                streams=_checked(args.streams, 1, 32, "--streams"),
+                on_progress=_show,
+            )
+            elapsed = time.monotonic() - started
+            print(f"\n✓ {out_path}: {stats['bytes'] / 1e6:.1f} MB in {elapsed:.1f}s "
+                  f"({stats['mbps']:.1f} Mbps, {stats['streams_used']} streams)")
+        elif cmd == "bloat-eco":
+            import netmax_eco
+            result = netmax_eco.eco_bloat()
+            print(f"eco-bloat: +{result['delta_ms']:.1f} ms "
+                  f"(estimated grade {result['grade_est']}, ~100 KB used)")
+        elif cmd == "upload":
             import netmax_upload
             mbps, mb = netmax_upload.upload_probe(
                 _checked(args.seconds, 5, 30, "--seconds")
