@@ -9,12 +9,24 @@ import Foundation
 /// and exits 0/nonzero accordingly; this client surfaces the parsed envelope.
 struct EngineClient {
     /// Python interpreter resolution per C1: env override, then system default.
-    private var python: String {
-        if let override = ProcessInfo.processInfo.environment["NETMAX_PYTHON"],
-           !override.trimmingCharacters(in: .whitespaces).isEmpty {
-            return override
+    ///
+    /// Whitespace-safe (L2-C1): the override is treated as a single logical
+    /// interpreter spec, not a blindly-split word list. A value containing a
+    /// path separator (`/`) is one argv element — spaces are part of the path
+    /// (e.g. `/Users/me/My Tools/venv/bin/python`); no `/usr/bin/env` hop,
+    /// since env would re-split it. Only a bare interpreter name
+    /// ("python3", "py") goes through `/usr/bin/env <name>`, which resolves
+    /// via PATH exactly like before.
+    private var pythonArgv: [String] {
+        let fallback = ["/usr/bin/env", "python3"]
+        guard let override = ProcessInfo.processInfo.environment["NETMAX_PYTHON"] else {
+            return fallback
         }
-        return "/usr/bin/env python3"
+        let trimmed = override.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return fallback }
+        return trimmed.contains("/")
+            ? [trimmed]                       // path-like: one argv element, spaces intact
+            : ["/usr/bin/env", trimmed]       // bare name: resolve via PATH as before
     }
 
     /// Locate the bridge script. Prefers a bundled copy; falls back to the
@@ -56,8 +68,9 @@ struct EngineClient {
         let tmpURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("netmax-engine-\(UUID().uuidString).json")
 
-        // `/usr/bin/env python3` is two words — split argv safely.
-        let argv = python.split(separator: " ").map(String.init)
+        // Whitespace-safe argv assembly (L2-C1): see pythonArgv — path-like
+        // overrides stay a single element; bare names ride through env.
+        let argv = pythonArgv
             + [script, "run", mode]
             + args
             + ["--json-out", tmpURL.path]

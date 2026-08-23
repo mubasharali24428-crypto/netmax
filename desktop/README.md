@@ -29,7 +29,7 @@ open ../../build/NetMaxDesktop.app   # menu-bar item appears (LSUIElement: no Do
 ```
 
 Requirements: macOS ≥ 13.0, Xcode/Swift toolchain (`swift build`), Python 3.13 at `/Users/user/1/bin/python`
-(override with `NETMAX_PYTHON`).
+(override with `NETMAX_PYTHON` — see [Python interpreter override](#python-interpreter-override-netmax_python)).
 
 The app runs as a menu-bar extra (`LSUIElement true`) — no Dock icon, no main window.
 
@@ -46,7 +46,7 @@ Gate steps (all offline):
 |---|---|
 | deps | B1–B3 dependency files exist (poll-waits ≤ 15 min for concurrent lanes) |
 | a | `swift build -c release` green |
-| b | full pytest suite → `157 passed` |
+| b | full pytest suite → ≥150 passed, no failures/errors |
 | c | `pytest desktop/bridge/test_engine_bridge.py` all pass |
 | d | `engine_bridge.py selftest` exit 0 |
 | e | `build_app.sh` ran → `.app/Contents/MacOS` exists |
@@ -54,6 +54,17 @@ Gate steps (all offline):
 | g | `plutil -lint` OK and `LSUIElement == true` |
 
 Any FAIL ⇒ nonzero exit. Run `./build_app.sh` first (steps e–g check its output).
+
+## Python interpreter override (`NETMAX_PYTHON`)
+
+All tooling defaults to `/Users/user/1/bin/python` but honors `NETMAX_PYTHON`:
+
+- **Scripts** — `scripts/verify_phase0.sh` resolves
+  `PY="${NETMAX_PYTHON:-/Users/user/1/bin/python}"`; `build_app.sh` invokes no
+  Python directly.
+- **App runtime** — the Swift shell (`EngineClient.swift`) also reads
+  `NETMAX_PYTHON`, falling back to `/usr/bin/env python3`.
+- **Usage:** `NETMAX_PYTHON=/path/to/python ./scripts/verify_phase0.sh`
 
 ## Signing: AD-HOC ONLY — the honest limitation
 
