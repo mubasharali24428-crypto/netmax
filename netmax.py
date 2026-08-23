@@ -354,21 +354,76 @@ def main(argv: list[str] | None = None) -> None:
         if mode != "dns":
             sp.add_argument("--seconds", type=int, default=10)
 
+    # v0.4 modes — separate parsers: different flag shapes than the core set.
+    sp_up = sub.add_parser("upload", help="upload-speed probe (Mbps up)")
+    sp_up.add_argument("--seconds", type=int, default=10)
+    sp_loss = sub.add_parser("loss", help="packet-loss percent")
+    sp_loss.add_argument("--count", type=int, default=10)
+    sp_jit = sub.add_parser("jitter", help="jitter (mean consecutive RTT delta)")
+    sp_jit.add_argument("--count", type=int, default=10)
+    sp_wifi = sub.add_parser("wifi", help="WiFi RSSI/noise/channel")
+    sp_exp = sub.add_parser("export", help="export newest run as CSV or JSON")
+    sp_exp.add_argument("--fmt", choices=["csv", "json"], default="csv")
+    sp_exp.add_argument("--out", required=True)
+    sp_watch = sub.add_parser("watch", help="continuous monitor (bloat+dns per cycle)")
+    sp_watch.add_argument("--interval", type=int, default=30)
+    sp_watch.add_argument("--cycles", type=int, default=0, help="0 = until Ctrl-C")
+
     args = parser.parse_args(argv)
     try:
-        runner_fn, takes_streams = RUNNERS[args.cmd]
-        streams = _checked(args.streams, 1, 32, "--streams") if takes_streams else None
-        seconds = (
-            _checked(args.seconds, 5, 30, "--seconds")
-            if hasattr(args, "seconds")
-            else None
-        )
-        if args.cmd == "dns":
-            runner_fn()
-        elif args.cmd == "baseline":
-            runner_fn(seconds)
+        cmd = args.cmd
+        if cmd == "upload":
+            import netmax_upload
+            mbps, mb = netmax_upload.upload_probe(
+                _checked(args.seconds, 5, 30, "--seconds")
+            )
+            _hr("Upload probe")
+            print(f"upload          {mbps:>7.1f} Mbps   ({mb:.1f} MB sent)")
+        elif cmd == "loss":
+            import netmetrics
+            loss = netmetrics.packet_loss(count=_checked(args.count, 1, 100, "--count"))
+            print(f"packet loss: {loss:.1f}%")
+        elif cmd == "jitter":
+            import netmetrics
+            jit = netmetrics.jitter_ms(count=_checked(args.count, 1, 100, "--count"))
+            print(f"jitter: {jit:.1f} ms")
+        elif cmd == "wifi":
+            import netmetrics
+            info = netmetrics.wifi_info()
+            for key, val in info.items():
+                print(f"{key}: {val}")
+        elif cmd == "export":
+            import netmax_export
+            netmax_export.export_results(args.fmt, args.out)
+            print(f"exported ({args.fmt}) → {args.out}")
+        elif cmd == "watch":
+            import netmax_watch
+            cycles = args.cycles if args.cycles > 0 else 10**9
+            history = netmax_watch.watch_loop(
+                interval_s=_checked(args.interval, 5, 3600, "--interval"),
+                cycles=cycles,
+            )
+            summary = summarize_watch_history(history)
+            _hr("Watch summary")
+            for key, val in summary.items():
+                print(f"{key}: {val}")
         else:
-            runner_fn(streams, seconds)
+            runner_fn, takes_streams = RUNNERS[cmd]
+            streams = _checked(args.streams, 1, 32, "--streams") if takes_streams else None
+            seconds = (
+                _checked(args.seconds, 5, 30, "--seconds")
+                if hasattr(args, "seconds")
+                else None
+            )
+            if cmd == "dns":
+                runner_fn()
+            elif cmd == "baseline":
+                runner_fn(seconds)
+            else:
+                runner_fn(streams, seconds)
+    except KeyboardInterrupt:
+        print("\ninterrupted — exiting.")
+        sys.exit(130)
     except NetMaxError as exc:
         print(f"netmax: {exc}", file=sys.stderr)
         sys.exit(1)

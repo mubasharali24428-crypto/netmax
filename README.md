@@ -42,6 +42,17 @@ Requires: Python 3.10+, `curl`, and network access for live measurements.
 /Users/user/1/bin/python netmax.py full --seconds 10       # everything + verdict
 ```
 
+### Diagnostics (v0.4)
+
+```bash
+/Users/user/1/bin/python netmax.py upload --seconds 10     # upload speed (Mbps)
+/Users/user/1/bin/python netmax.py loss                    # packet-loss percent
+/Users/user/1/bin/python netmax.py jitter                  # jitter (ms)
+/Users/user/1/bin/python netmax.py wifi                    # RSSI / noise / channel
+/Users/user/1/bin/python netmax.py export --fmt csv --out out.csv
+/Users/user/1/bin/python netmax.py watch --interval 30     # continuous monitor
+```
+
 ### GUI
 
 ```bash
@@ -66,19 +77,18 @@ cd ~/netmax
 
 | Path | Role |
 |---|---|
-| `netmax.py` | Engine + CLI: `baseline / turbo / boost / dns / bloat / full`, `--streams`, `--seconds` |
-| `netmax_gui.py` | Tkinter desktop app wrapping the CLI |
-| `measure.py` | Live measurement run → `results.json` + `results.png` charts |
-| `tests/test_netmax.py` | Offline pytest suite for the engine |
-| `tests/test_netmax_gui.py` | Headless GUI tests |
+| `netmax.py` | Engine + CLI: `baseline / turbo / boost / dns / bloat / full / upload / loss / jitter / wifi / export / watch` |
+| `netmax_gui.py` | Tkinter desktop app wrapping the CLI (progress bar, elapsed counter, export viewer) |
+| `netmax_upload.py` | Upload-speed probe module |
+| `netmetrics.py` | Packet loss, jitter, WiFi info modules |
+| `netmax_export.py` | CSV/JSON export of measurement runs |
+| `netmax_watch.py` | Continuous monitor loop |
+| `measure.py` | Live measurement run → `results.json` + `results.png` charts + history.json |
+| `tests/` | Offline pytest suites for all modules |
+| `docs/FEATURE-SPECS.md` | Implementation specs for the v0.4 feature set |
 | `PROJECT_LOG.md` | Build log, verified results, debugging notes |
-| `docs/FEATURE-SPECS.md` | Planned features: packet loss %, jitter, WiFi RSSI/noise/channel (post-`airport`-removal), curl upload speed — all live-verified |
 
-## Planned features
+## Implemented in v0.4
 
-- `loss` — packet-loss % via `ping -c N` statistics parsing
-- `jitter` — mean RTT delta between consecutive ping replies
-- `wifi` — RSSI / noise / channel via `system_profiler SPAirPortDataType`
-  (the legacy `airport -I` binary no longer exists on modern macOS)
-- `upload` — upload Mbps via `curl -X POST --data-binary` to verified public
-  endpoints (speed.cloudflare.com/__up, httpbin.org, postman-echo.com)
+`loss`, `jitter`, `wifi`, `upload`, `export`, and `watch` are now real CLI
+modes — see Diagnostics above. Remaining ideas live in docs/FEATURE-SPECS.md.

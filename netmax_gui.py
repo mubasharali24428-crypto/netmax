@@ -45,6 +45,16 @@ MODE_HELP = {
     "full": "Everything above + TCP tuning notes.",
 }
 
+# Extra CLI-only v0.4 modes surfaced in a dropdown-adjacent menu label.
+CLI_ONLY_MODES = {
+    "upload": "Upload-speed probe (Mbps up).",
+    "loss": "Packet-loss percent.",
+    "jitter": "Jitter — mean consecutive RTT delta.",
+    "wifi": "WiFi RSSI / noise / channel.",
+    "export": "Export newest run as CSV/JSON.",
+    "watch": "Continuous monitor (bloat+DNS per cycle).",
+}
+
 SCRIPT_PATH = Path(__file__).resolve().parent / "netmax.py"
 
 STREAMS_MIN, STREAMS_MAX = 1, 32
