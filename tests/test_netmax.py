@@ -12,6 +12,7 @@ import statistics
 import struct
 import string
 import subprocess
+import time
 import types
 from collections import namedtuple
 
@@ -412,10 +413,61 @@ class TestUdpTimeout:
 
 
 class TestFullCommand:
-    def test_full_runs_boost_dns_and_sysctl_hint(self, capsys, monkeypatch):
+    def test_full_runs_boost_dns_bloat_and_sysctl_hint(self, capsys, monkeypatch):
         calls = []
         monkeypatch.setattr(netmax, "run_boost", lambda s, sec: calls.append("boost"))
         monkeypatch.setattr(netmax, "run_dns", lambda: calls.append("dns"))
+        monkeypatch.setattr(netmax, "run_bloat", lambda s, sec: calls.append("bloat"))
         netmax.run_full(4, 5)
-        assert calls == ["boost", "dns"]
+        assert calls == ["boost", "dns", "bloat"]
         assert "sysctl" in capsys.readouterr().out
+
+
+class TestBloatGrade:
+    @staticmethod
+    def _pinger(*values):
+        """Ping stub returning the given sequence, then repeating the last."""
+        seq = list(values)
+
+        def fake(host="1.1.1.1", count=10):
+            return seq.pop(0) if len(seq) > 1 else seq[0]
+
+        return fake
+
+    def test_grades_follow_waveform_rubric(self, monkeypatch):
+        # idle 40; loaded samples 45/55/60 → delta = max(60)-40 = +20 ms → A (<30)
+        monkeypatch.setattr(netmax, "_pull", lambda seconds: 1_000_000)
+        monkeypatch.setattr(netmax, "_ping_median_ms", self._pinger(40.0, 45.0, 55.0, 60.0))
+        idle, delta, grade = netmax.bloat_grade(2, 6)
+        assert idle == 40.0
+        assert delta == pytest.approx(20.0)
+        assert grade == "A"
+
+    def test_b_grade_for_moderate_bloat(self, monkeypatch):
+        # delta = 100-45 = 55 ms → B (<60)
+        monkeypatch.setattr(netmax, "_pull", lambda seconds: 1_000_000)
+        monkeypatch.setattr(netmax, "_ping_median_ms", self._pinger(45.0, 90.0, 100.0))
+        _idle, _delta, grade = netmax.bloat_grade(2, 6)
+        assert grade == "B"
+
+    def test_a_plus_when_latency_stable_under_load(self, monkeypatch):
+        monkeypatch.setattr(netmax, "_ping_median_ms", self._pinger(40.0, 40.0))
+        monkeypatch.setattr(netmax, "_pull", lambda seconds: 1)
+        idle, delta, grade = netmax.bloat_grade(2, 6)
+        assert delta == pytest.approx(0.0)
+        assert grade == "A+"
+
+    def test_f_when_latency_explodes(self, monkeypatch):
+        monkeypatch.setattr(netmax, "_ping_median_ms", self._pinger(40.0, 500.0, 800.0))
+        monkeypatch.setattr(netmax, "_pull", lambda seconds: 1)
+        idle, delta, grade = netmax.bloat_grade(2, 6)
+        assert grade == "F"
+
+    def test_ping_failure_raises_netmaxerror(self, monkeypatch):
+        def fail_run(argv, **kw):
+            return types.SimpleNamespace(stdout="", stderr="network unreachable")
+
+        import subprocess as sp
+        monkeypatch.setattr(sp, "run", fail_run)
+        with pytest.raises(netmax.NetMaxError, match="ping.*failed"):
+            netmax._ping_median_ms()

@@ -37,7 +37,8 @@ class ThemeConstantsTest(unittest.TestCase):
 
     def test_modes_match_cli_subcommands(self):
         self.assertEqual(
-            set(netmax_gui.MODES), {"baseline", "turbo", "boost", "dns", "full"}
+            set(netmax_gui.MODES),
+            {"baseline", "turbo", "boost", "dns", "bloat", "full"},
         )
 
 

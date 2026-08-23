@@ -8,6 +8,7 @@ callbacks and marshalled onto the Tk main loop via `root.after`.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -32,13 +33,14 @@ DISCLAIMER = (
     "speed your plan already pays for."
 )
 
-MODES = ("baseline", "turbo", "boost", "dns", "full")
+MODES = ("baseline", "turbo", "boost", "dns", "bloat", "full")
 
 MODE_HELP = {
     "baseline": "Single-stream throughput — what ordinary apps get.",
     "turbo": "N parallel streams — bigger share under contention.",
     "boost": "Baseline + turbo + headroom verdict.",
     "dns": "Rank public DNS resolvers by latency.",
+    "bloat": "Bufferbloat: latency increase under load, graded A+–F.",
     "full": "Everything above + TCP tuning notes.",
 }
 
@@ -49,9 +51,18 @@ SECONDS_MIN, SECONDS_MAX = 5, 30
 
 
 def _python_executable() -> str:
-    """Prefer /Users/user/1/bin/python when present (has Tk/matplotlib deps)."""
+    """Resolve engine interpreter: NETMAX_PYTHON env > known-good path > sys.
+
+    Logs nothing here; the app prints the choice on first Run so a silent
+    fallback to a dep-less interpreter never happens unnoticed.
+    """
+    env = os.environ.get("NETMAX_PYTHON")
+    if env and Path(env).exists():
+        return env
     preferred = "/Users/user/1/bin/python"
-    return preferred if Path(preferred).exists() else sys.executable
+    if Path(preferred).exists():
+        return preferred
+    return sys.executable
 
 
 def _curl_available() -> bool:
@@ -68,7 +79,7 @@ def build_command(mode: str, streams: int, seconds: int) -> list[str]:
         raise ValueError(f"seconds must be {SECONDS_MIN}..{SECONDS_MAX}, got {seconds}")
 
     cmd = [_python_executable(), str(SCRIPT_PATH), mode]
-    if mode in ("turbo", "boost", "full"):
+    if mode in ("turbo", "boost", "bloat", "full"):
         cmd += ["--streams", str(streams)]
     if mode != "dns":
         cmd += ["--seconds", str(seconds)]

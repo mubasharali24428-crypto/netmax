@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import random
+import re
 import socket
 import statistics
 import string
@@ -211,9 +212,67 @@ def run_dns() -> None:
 def run_full(streams: int, seconds: int) -> None:
     run_boost(streams, seconds)
     run_dns()
+    run_bloat(streams, seconds)
     _hr("Reversible macOS TCP knobs (inspect, apply manually)")
     print("  sysctl net.inet.tcp.autorcvbufmax net.inet.tcp.autosndbufmax")
     print("  larger buffers help only on high-latency links; revert with sudo sysctl -w …")
+
+
+# ── bufferbloat (latency under load) ─────────────────────────────────────────
+
+BLOAT_GRADES = [  # (max latency increase ms, grade) — Waveform/DSLReports rubric
+    (5, "A+"), (30, "A"), (60, "B"), (200, "C"), (400, "D"),
+]
+
+
+def _ping_median_ms(host: str = "1.1.1.1", count: int = 10) -> float:
+    """Median RTT via system ping; raises NetMaxError if ping fails."""
+    proc = subprocess.run(
+        ["ping", "-c", str(count), host], capture_output=True, text=True
+    )
+    times = re.findall(r"time[=<]([\d.]+) ms", proc.stdout)
+    if not times:
+        raise NetMaxError(f"ping to {host} failed: {proc.stderr.strip()[:120]}")
+    return statistics.median(float(t) for t in times)
+
+
+def bloat_grade(streams: int, seconds: float) -> tuple[float, float, str]:
+    """Measure idle vs loaded median latency; return (idle_ms, delta_ms, grade).
+
+    Grade rubric follows the Waveform/DSLReports bufferbloat scale: the larger
+    the latency increase while the link is saturated, the worse the grade.
+    """
+    idle_ms = _ping_median_ms()
+    loaded = []  # collect samples while turbo download saturates the link
+    with ThreadPoolExecutor(max_workers=streams) as pool:
+        futures = [pool.submit(_pull, seconds) for _ in range(streams)]
+        # ping in parallel with the saturating download
+        try:
+            for _ in range(3):
+                loaded.append(_ping_median_ms())
+                time.sleep(0.2)
+        finally:
+            for f in futures:
+                f.result()
+    delta_ms = max(loaded) - idle_ms if loaded else float("inf")
+    for limit, grade in BLOAT_GRADES:
+        if delta_ms < limit:
+            return idle_ms, delta_ms, grade
+    return idle_ms, delta_ms, "F"
+
+
+def run_bloat(streams: int, seconds: int) -> None:
+    _hr("Bufferbloat — latency under load")
+    idle_ms, delta_ms, grade = bloat_grade(streams, max(seconds, 6))
+    print(f"idle latency:      {idle_ms:>6.1f} ms")
+    print(f"loaded increase:  +{delta_ms:>6.1f} ms   grade: {grade}")
+    if grade in ("A+", "A"):
+        print("your link stays responsive under load — nothing to fix.")
+    else:
+        print(
+            "fix: enable SQM/fq_codel or CAKE on your router (OpenWrt/pfSense),\n"
+            "or lower your router's shaper slightly below line rate."
+        )
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -234,11 +293,13 @@ def main(argv: list[str] | None = None) -> None:
     sp_turbo = sub.add_parser("turbo", help="N parallel streams — bigger share under load")
     sp_boost = sub.add_parser("boost", help="baseline + turbo + gain %%")
     sp_dns = sub.add_parser("dns", help="rank DNS resolvers")
+    sp_bloat = sub.add_parser("bloat", help="bufferbloat: latency under load grade")
     sp_full = sub.add_parser("full", help="everything + verdict")
     sp_turbo.add_argument("--streams", type=int, default=8)
     sp_boost.add_argument("--streams", type=int, default=8)
+    sp_bloat.add_argument("--streams", type=int, default=8)
     sp_full.add_argument("--streams", type=int, default=8)
-    for sp in (sp_base, sp_turbo, sp_boost, sp_full):
+    for sp in (sp_base, sp_turbo, sp_boost, sp_bloat, sp_full):
         sp.add_argument("--seconds", type=int, default=10)
 
     args = parser.parse_args(argv)
@@ -251,6 +312,8 @@ def main(argv: list[str] | None = None) -> None:
             run_boost(_checked(args.streams, 1, 32, "--streams"), _checked(args.seconds, 5, 30, "--seconds"))
         elif args.cmd == "dns":
             run_dns()
+        elif args.cmd == "bloat":
+            run_bloat(_checked(args.streams, 1, 32, "--streams"), _checked(args.seconds, 5, 30, "--seconds"))
         elif args.cmd == "full":
             run_full(_checked(args.streams, 1, 32, "--streams"), _checked(args.seconds, 5, 30, "--seconds"))
     except NetMaxError as exc:
