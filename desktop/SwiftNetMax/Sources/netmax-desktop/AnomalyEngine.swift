@@ -112,14 +112,30 @@ struct Anomaly: Equatable {
 /// 2. Compute a trailing-window rolling median (default window 7; short
 ///    prefixes use whatever exists).
 /// 3. Residuals = value − rolling median. MAD = median of |residual|.
-/// 4. Flag points whose |residual| exceeds k × MAD (default k = 3).
-///    If MAD collapses to 0 (flat signal with isolated departures), any
-///    nonzero residual is flagged — an exact departure from an otherwise
-///    steady link IS the observation worth surfacing.
+/// 4. Flag points whose |residual| exceeds the flag threshold
+///    max(k × MAD, MINIMUM_RESIDUAL_FRACTION × |typical level|,
+///    MINIMUM_RESIDUAL_FLOOR). The two floor terms exist because MAD
+///    collapses on smooth low-jitter data (MAD ≈ 0.3 on a clean ±2%
+///    link makes k·MAD ≈ 1, which routine wobble would exceed); the
+///    fraction term scales "unusual" with the link's own level and the
+///    absolute term keeps ultra-tight spreads from flagging sub-wobble
+///    departures. Genuine spikes (a 3× jump) clear the floored
+///    threshold by an order of magnitude and still fire.
 enum AnomalyEngine {
 
     /// Quiet gate: below this many usable samples, say nothing at all.
     static let minimumReliableSamples = 10
+
+    /// Flag-threshold floor, absolute term: no reading is reported as
+    /// unusual over a departure smaller than this many metric units, no
+    /// matter how tight the observed spread. Keeps smooth low-jitter
+    /// series quiet instead of grading their wobble against itself.
+    static let minimumResidualFloor = 5.0
+
+    /// Flag-threshold floor, scale term: the flag threshold never drops
+    /// below this fraction of the typical reading level, so what counts
+    /// as "unusual" scales with the link rather than with its jitter.
+    static let minimumResidualFraction = 0.05
 
     // MARK: Extraction
 
@@ -180,30 +196,32 @@ enum AnomalyEngine {
         let residuals = zip(values, rolled).map { $0 - $1 }
         let mad = median(residuals.map(abs))
 
+        // Flag threshold per point: k·MAD, but never below a floor that
+        // scales with the link (fraction of the typical level) and never
+        // below an absolute minimum. On smooth low-jitter data MAD
+        // collapses and k·MAD alone flags routine wobble; the floor keeps
+        // such series quiet while genuine spikes clear it many times over.
         var flagged: [Anomaly] = []
         for i in samples.indices {
             let residual = residuals[i]
-            let qualifies: Bool
-            let severity: Anomaly.Severity
-            if mad > 0 {
-                guard abs(residual) > k * mad else { continue }
-                qualifies = true
-                severity = (abs(residual) >= 2 * k * mad) ? .pronounced : .notable
-            } else {
-                // Flat signal: ANY departure from the steady window is the
-                // observation. Nothing to grade spread against, so treat
-                // exact departures as pronounced.
-                guard residual != 0 else { continue }
-                qualifies = true
-                severity = .pronounced
-            }
-            if qualifies {
-                flagged.append(Anomaly(index: i,
-                                       ts: samples[i].ts,
-                                       value: values[i],
-                                       expected: rolled[i],
-                                       severity: severity))
-            }
+            let magnitude = abs(residual)
+            let typical = abs(rolled[i])
+            // Combined threshold: k·MAD (0 on a flat signal — the floors
+            // then decide, preserving "an exact departure from a steady
+            // link IS the observation"), floored by the scale term and
+            // the absolute term.
+            let threshold = max(k * mad,
+                                Self.minimumResidualFraction * typical,
+                                Self.minimumResidualFloor)
+            guard magnitude >= threshold else { continue }
+            // Severity grades against the same combined threshold.
+            let severity: Anomaly.Severity = magnitude >= 2 * threshold
+                ? .pronounced : .notable
+            flagged.append(Anomaly(index: i,
+                                   ts: samples[i].ts,
+                                   value: values[i],
+                                   expected: rolled[i],
+                                   severity: severity))
         }
         return flagged
     }
@@ -501,22 +519,25 @@ enum AnomalyEngineTests {
         check(AnomalyEngine.anomalies(in: ramp).isEmpty, "steady ramp → []")
 
         // -- recent window query -----------------------------------------------
-        var oldSpike = spikeValues
-        oldSpike[2] = 300 // anomaly OUTSIDE the last 5 samples
-        let oldSeries = zip(spikeStamps, oldSpike).map { MetricSample(ts: $0, value: $1) }
-        // (two spikes now: idx 2 and 14; both flagged overall…)
-        let allFlags = AnomalyEngine.anomalies(in: oldSeries)
-        check(allFlags.map(\.index) == [2, 14], "double spike: both flagged")
-        // …but only the recent one counts for the badge.
-        let recentOnly = zip(oldSeries.indices.map { _ in Date() }, oldSeries)
-            .map { $1 }
+        // Fixture: 20 samples, spike at idx 2 (OLD) and idx 17 (RECENT).
+        // lookback 5 covers the most recent 5 SAMPLES → indices ≥ 15,
+        // so idx 17 qualifies and idx 2 does not.
+        var twoSpikes = [Double](repeating: 100, count: 20)
+        twoSpikes[2] = 300  // anomaly OUTSIDE the last 5 samples (idx < 15)
+        twoSpikes[17] = 260 // anomaly INSIDE the last 5 samples (idx ≥ 15)
+        let twoSpikeSeries = zip(spikeStamps, twoSpikes).map { MetricSample(ts: $0, value: $1) }
+        // Both spikes are flagged over the full series…
+        let allFlags = AnomalyEngine.anomalies(in: twoSpikeSeries)
+        check(allFlags.map(\.index) == [2, 17], "double spike: both flagged")
+        // …but only the one inside the most-recent-5-SAMPLES window counts
+        // for the badge (documented semantics: cutoff = 20 − lookback = 15).
         let recent = AnomalyEngine.recentAnomalies(
-            records: recentOnly.enumerated().map { i, s in
-                record("turbo", "{\"mbps\": \(s.value)}", Double(recentOnly.count - i) * 60)
+            records: twoSpikeSeries.enumerated().map { i, s in
+                record("turbo", "{\"mbps\": \(s.value)}", Double(twoSpikeSeries.count - i) * 60)
             },
             metric: .mbps, lookback: 5)
-        check(recent.count == 1 && recent.first?.index == 14,
-              "recentAnomalies: lookback 5 keeps only the late spike")
+        check(recent.count == 1 && recent.first?.index == 17,
+              "recentAnomalies: lookback 5 keeps only the recent (idx 17) spike")
 
         // -- confidence wording law ----------------------------------------------
         let described = (allFlags + spikeFlags).map { AnomalyEngine.describe($0, metric: .mbps) }
@@ -530,7 +551,7 @@ enum AnomalyEngineTests {
         }
 
         // -- determinism ------------------------------------------------------------
-        let again = AnomalyEngine.anomalies(in: oldSeries)
+        let again = AnomalyEngine.anomalies(in: twoSpikeSeries)
         check(again == allFlags, "determinism: identical input → identical output")
 
         return failures
