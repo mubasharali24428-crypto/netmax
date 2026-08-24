@@ -28,6 +28,13 @@
   plain-language confidence wording ("unusual," not "broken") and a threshold
   floor that keeps quiet noise silent.
 
+**Quality timeline**
+- New Timeline view inside History: throughput, loss, and jitter as stacked
+  lanes over 1h / 24h / 7d, with local WiFi-event markers (roams, signal
+  drops, channel changes) captured via system polling. Hovering a marker
+  compares the samples before and after it — when one lands within ±90s the
+  wording is *suggests*, never *caused*, and unmatched events say so plainly.
+
 **ISP report-card PDF**
 - Reports can now export the single-page ISP report card as a PDF: advertised
   plan tier vs measured delivery, letter grades including bufferbloat, honest-

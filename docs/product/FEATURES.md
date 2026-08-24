@@ -55,6 +55,27 @@ shifts — a sudden median drop, rising loss, jitter creep — annotated directl
 on the timeline with plain-language wording ("unusual," not "broken") and a
 confidence qualifier. Anomalies are hints worth investigating, not diagnoses.
 
+## Quality timeline
+
+The Timeline sub-tab inside History draws your recent measurements as a
+continuous, scrollable chart in three stacked lanes — throughput, loss, and
+jitter — across the range you choose: 1 hour, 24 hours, or 7 days.
+
+WiFi events appear as markers on that same chart: roams (your Mac moving to
+another access point), signal drops, and channel changes. They come from a
+small local poller that watches your Mac's WiFi state — network name, access
+point, channel, signal strength — and appends each change to an event log in
+Application Support. No network traffic, nothing uploaded. Hovering a marker
+compares your own samples before and after that moment. When an event lands
+within ±90 seconds of a measurable shift, NetMax says the event *suggests* a
+connection; when nothing lines up, it says no correlation was found. It never
+claims an event *caused* a change — timing overlap is not proof, and the
+wording keeps that distinction.
+
+Gaps stay gaps. Lanes read your local measurement history, and where no
+sample exists the chart shows empty space instead of inventing a value;
+events with no nearby samples simply carry no before/after comparison.
+
 ## Schedule
 
 Set automatic tests — hourly, every few hours, daily at a time — from the
