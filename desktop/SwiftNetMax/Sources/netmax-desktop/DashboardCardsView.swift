@@ -481,7 +481,7 @@ struct DashboardCardsView: View {
         records = HistoryStore.shared.loadAll()
     }
 
-    // MARK: Shared formatting / tinting (system colors only)
+    // MARK: Shared formatting / tinting (ThemeTokens grade ramp)
 
     private static func trimmed(_ value: Double) -> String {
         value.truncatingRemainder(dividingBy: 1) == 0
@@ -495,38 +495,53 @@ struct DashboardCardsView: View {
         return f.localizedString(for: date, relativeTo: Date())
     }
 
+    /// Every card tint comes from ThemeTokens' WCAG-calibrated A…F grade
+    /// ramp (contrast policy in ThemeTokens.swift) — never the stock
+    /// `.green`/`.yellow`/… palette, which fails AA on white. Tiers map
+    /// onto the shared Excellent/Good/Fair/Poor ladder (same ranks as the
+    /// status word), so a value, its status word, and the equivalent grade
+    /// letter always render the same token. Missing data stays `.gray`.
+    ///
+    /// Speed tiers mirror `DashboardMetrics.speedRank` exactly.
     private static func speedTint(_ mbps: Double?) -> Color {
         guard let mbps else { return .gray }
-        if mbps >= 100 { return .green }
-        if mbps >= 25 { return .orange }
-        return .red
+        if mbps >= 100 { return Theme.gradeA }
+        if mbps >= 50 { return Theme.gradeB }
+        if mbps >= 25 { return Theme.gradeC }
+        return Theme.gradeF
     }
 
-    /// Waveform-rubric traffic lights (letters validated by MetricExtractor).
+    /// Waveform-rubric letters (validated by MetricExtractor) map 1:1 onto
+    /// the ramp. The engine emits no "E" today; the case is kept anyway so
+    /// the switch stays total over the A+…F scale.
     private static func gradeTint(_ letter: String?) -> Color {
         switch letter {
-        case "A+", "A": .green
-        case "B", "C": .yellow
-        case "D": .orange
-        case "F": .red
+        case "A+", "A": Theme.gradeA
+        case "B": Theme.gradeB
+        case "C": Theme.gradeC
+        case "D": Theme.gradeD
+        case "E": Theme.gradeE
+        case "F": Theme.gradeF
         default: .gray
         }
     }
 
+    /// Loss tiers mirror `DashboardMetrics.lossRank` exactly.
     private static func lossTint(_ percent: Double?) -> Color {
         guard let percent else { return .gray }
-        if percent <= 0.5 { return .green }
-        if percent <= 2 { return .yellow }
-        if percent <= 5 { return .orange }
-        return .red
+        if percent <= 0.5 { return Theme.gradeA }
+        if percent <= 2 { return Theme.gradeB }
+        if percent <= 5 { return Theme.gradeC }
+        return Theme.gradeF
     }
 
+    /// Status word shares the ramp positions of the tiers above.
     private static func statusTint(_ word: String?) -> Color {
         switch word {
-        case "Excellent": .green
-        case "Good": .yellow
-        case "Fair": .orange
-        case "Poor": .red
+        case "Excellent": Theme.gradeA
+        case "Good": Theme.gradeB
+        case "Fair": Theme.gradeC
+        case "Poor": Theme.gradeF
         default: .gray
         }
     }

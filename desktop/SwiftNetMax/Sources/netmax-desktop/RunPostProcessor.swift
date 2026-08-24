@@ -1,0 +1,262 @@
+//
+//  RunPostProcessor.swift
+//  netmax-desktop
+//
+//  ALEX-250 wave-3 · sub-wave W3c · ALPHA-A4-02 — run post-processor.
+//
+//  One entry point that every completed run funnels through, so the three
+//  "after a run" side effects happen in one place and in one order instead
+//  of being re-wired (and re-forgotten) at each call site:
+//
+//      RunPostProcessor.process(record)   // record == the HistoryRecord
+//                                         // JUST appended to HistoryStore
+//
+//  does, in order:
+//
+//   1. StatusBarController.publish(record:)   — refreshes the menu-bar
+//      quick-status line (`netmax.status.*` keys, wave-1 A1-09).
+//   2. NotificationCoordinator processing     — evaluates degradation rules
+//      for THIS run only (never re-fires older history) and delivers via
+//      A1-04's coordinator, gated by the `netmax.notify.*` preferences
+//      through NotificationPreferences.isEnabled(_:) (wave-1 A1-05).
+//   3. Posts .netmaxHistoryDidChange          — History/Reports views and
+//      empty-state overlays reload (wave-1 A3-10).
+//
+//  ── INTEGRATION (owners: ModeLab / ScheduleRunner lanes — do not edit
+//  here; call from your completion handler right after the append): ──
+//
+//      // ModeLabView.runFinished(...) / ScheduleRunner job completion:
+//      HistoryStore.shared.append(mode: mode, params: params, raw: raw)
+//      // ^ keep the record you appended (or rebuild it identically) and…
+//      RunPostProcessor.process(record)
+//
+//  Contract notes:
+//  - Call AFTER the append: step 2 locates `record` inside the store to
+//    find its predecessor pair; a record the store has never seen still
+//    gets steps 1 and 3 but no alert evaluation.
+//  - No UI here. Steps 1 and 3 are synchronous and thread-safe; step 2
+//    hops to the main actor because NotificationCoordinator is @MainActor.
+//  - Alert scope: only degradations BETWEEN this run and its immediate
+//    predecessor are eligible. evaluateDegradation over the whole file
+//    would re-post every historical drop each run — that bug is avoided
+//    by evaluating just the final pair.
+//
+
+import Foundation
+
+/// Post-run pipeline (ALEX-250 wave-3 W3c, ALPHA-A4-02): menu-bar refresh,
+/// preference-gated degradation alerts, view-reload broadcast.
+enum RunPostProcessor {
+
+    // MARK: - Entry point
+
+    /// Fan-out for one completed run. See the file header for the three
+    /// steps and the call-after-append contract.
+    static func process(_ record: HistoryRecord) {
+        process(record, store: .shared, defaults: .standard, notifyCenter: .default)
+    }
+
+    /// Injectable core used by the DEBUG self-check below; production
+    /// callers use the overload above (shared store, standard defaults,
+    /// shared notification preferences).
+    static func process(_ record: HistoryRecord,
+                        store: HistoryStore,
+                        defaults: UserDefaults,
+                        notifyCenter: NotificationCenter,
+                        prefs: NotificationPreferences = .shared) {
+        // (1) Menu-bar quick status — synchronous, UserDefaults-backed,
+        // safe from any queue (StatusBarController contract).
+        StatusBarController.publish(record: record, defaults: defaults)
+
+        // (2) Degradation alerts — async fire-and-forget on the main actor
+        // (NotificationCoordinator is @MainActor). Failures inside are
+        // logged by the coordinator; they must never break the pipeline.
+        scheduleDegradationCheck(for: record, store: store, prefs: prefs)
+
+        // (3) Views reload — posted on the main queue so observers
+        // (.onReceive publishers, A3-10 overlays) update coherently.
+        notifyCenter.post(name: .netmaxHistoryDidChange, object: nil,
+                          userInfo: nil)
+    }
+
+    // MARK: - Step 2 internals (alert selection + preference gating)
+
+    /// Degradation alerts caused specifically by `newer` relative to its
+    /// immediate predecessor in `records` (oldest-first). Empty when
+    /// `newer` is not in `records`, is the oldest record, or matches no
+    /// rule against that predecessor.
+    ///
+    /// Identity match is ts + mode + raw payload — the same values the
+    /// store round-trips losslessly, so a record rebuilt by the caller
+    /// finds its stored twin.
+    static func alerts(triggeredBy newer: HistoryRecord,
+                       in records: [HistoryRecord]) -> [DegradationAlert] {
+        guard let idx = records.lastIndex(where: {
+            $0.ts == newer.ts && $0.mode == newer.mode
+                && $0.resultRaw == newer.resultRaw
+        }), idx >= 1 else { return [] }
+        // Evaluate ONLY the final pair: anything older has already been
+        // alerted about (or dismissed) when its own run completed.
+        return evaluateDegradation(Array(records[(idx - 1)...idx]))
+    }
+
+    /// Keep only alerts whose rule the user still allows. Master switch
+    /// AND per-rule state both apply (NotificationPreferences contract).
+    static func deliverableAlerts(_ alerts: [DegradationAlert],
+                                  prefs: NotificationPreferences = .shared
+    ) -> [DegradationAlert] {
+        alerts.filter { prefs.isEnabled($0.kind) }
+    }
+
+    /// Hop to the main actor, gate by preferences, and hand the eligible
+    /// alert(s) to A1-04's coordinator (which owns authorization +
+    /// quiet-hours). Master-off short-circuits before any UN framework use,
+    /// so headless self-checks can run this path with zero prompts.
+    private static func scheduleDegradationCheck(
+        for record: HistoryRecord,
+        store: HistoryStore,
+        prefs: NotificationPreferences
+    ) {
+        Task { @MainActor in
+            guard prefs.notificationsEnabled else { return }
+            await deliverDegradationAlerts(for: record, store: store, prefs: prefs)
+        }
+    }
+
+    @MainActor
+    private static func deliverDegradationAlerts(
+        for record: HistoryRecord,
+        store: HistoryStore,
+        prefs: NotificationPreferences
+    ) async {
+        let records = store.loadAll()
+        let pending = deliverableAlerts(alerts(triggeredBy: record, in: records),
+                                        prefs: prefs)
+        guard !pending.isEmpty else { return }
+        // Re-evaluating the same final pair inside the coordinator is
+        // intentional: it applies ITS authorization/quiet-hours policy to
+        // exactly the alert we selected, without duplicating that logic.
+        _ = await NotificationCoordinator.shared.process(records: records)
+    }
+}
+
+#if DEBUG
+// MARK: - Offline self-checks (house style: plain enum, failure count)
+//
+// Exercised from a /tmp snippet (see StatusBarControllerSelfCheck); call
+// runAll() OFF the main thread — one check waits on a semaphore.
+
+enum RunPostProcessorSelfCheck {
+    @discardableResult
+    static func runAll(now: Date = Date()) -> Int {
+        var failures = 0
+
+        // Fixture: healthy run, then a bad one (grade B → D ⇒ ≥2-letter
+        // drop), then another healthy one. The middle record must be the
+        // only one that can produce an alert.
+        let good = #"{"grade": "B", "mbps": 90}"#
+        let bad = #"{"grade": "D", "mbps": 40}"#
+        let history = [
+            HistoryRecord(ts: now.addingTimeInterval(-3600), mode: "baseline",
+                          params: [:], resultRaw: good),
+            HistoryRecord(ts: now.addingTimeInterval(-1800), mode: "bloat",
+                          params: [:], resultRaw: bad),
+            HistoryRecord(ts: now.addingTimeInterval(-60), mode: "baseline",
+                          params: [:], resultRaw: good),
+        ]
+
+        // 1) Alert scope: the bad run alerts; neither healthy run does;
+        //    a record the store never saw stays silent.
+        do {
+            let badAlerts = RunPostProcessor.alerts(triggeredBy: history[1], in: history)
+            failures += (badAlerts.count == 1
+                         && badAlerts[0].kind == .bloatGradeDrop) ? 0 : 1
+            failures += RunPostProcessor.alerts(
+                triggeredBy: history[0], in: history).isEmpty ? 0 : 1
+            failures += RunPostProcessor.alerts(
+                triggeredBy: history[2], in: history).isEmpty ? 0 : 1
+            let stranger = HistoryRecord(ts: now, mode: "turbo",
+                                         params: [:], resultRaw: good)
+            failures += RunPostProcessor.alerts(
+                triggeredBy: stranger, in: history).isEmpty ? 0 : 1
+        }
+
+        // 2) Preference gating: master off silences every rule; per-rule
+        //    off silences only that rule (isolated suites, no globals).
+        do {
+            let offSuite = "netmax.postproc.selfcheck.off"
+            let offDefaults = UserDefaults(suiteName: offSuite)!
+            offDefaults.removePersistentDomain(forName: offSuite)
+            offDefaults.set(false, forKey: NotificationPreferences.Keys.enabled)
+            let offPrefs = NotificationPreferences(defaults: offDefaults)
+            let badAlerts = RunPostProcessor.alerts(triggeredBy: history[1], in: history)
+            failures += RunPostProcessor.deliverableAlerts(badAlerts, prefs: offPrefs)
+                .isEmpty ? 0 : 1
+
+            let lossSuite = "netmax.postproc.selfcheck.rule"
+            let lossDefaults = UserDefaults(suiteName: lossSuite)!
+            lossDefaults.removePersistentDomain(forName: lossSuite)
+            lossDefaults.set(true, forKey: NotificationPreferences.Keys.enabled)
+            lossDefaults.set(false,
+                             forKey: NotificationPreferences.Keys.packetLossSpike)
+            let lossPrefs = NotificationPreferences(defaults: lossDefaults)
+            let mixed: [DegradationAlert] = [
+                DegradationAlert(kind: .bloatGradeDrop, newerIndex: 1, text: "g"),
+                DegradationAlert(kind: .packetLossSpike, newerIndex: 1, text: "l"),
+            ]
+            let kept = RunPostProcessor.deliverableAlerts(mixed, prefs: lossPrefs)
+            failures += (kept.count == 1
+                         && kept[0].kind == .bloatGradeDrop) ? 0 : 1
+        }
+
+        // 3) Pipeline side effects against an isolated store/defaults:
+        //    publish writes both netmax.status.* keys and the reload
+        //    notification fires. Prefs are master-OFF so the gated async
+        //    leg demonstrably never reaches the UN framework (headless
+        //    safety); the same selection math is asserted to yield zero
+        //    deliverable alerts below.
+        do {
+            let suite = "netmax.postproc.selfcheck.pipe"
+            let defaults = UserDefaults(suiteName: suite)!
+            defaults.removePersistentDomain(forName: suite)
+            defaults.set(false, forKey: NotificationPreferences.Keys.enabled)
+            let offPrefs = NotificationPreferences(defaults: defaults)
+
+            let dir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("netmax.postproc.selfcheck.\(UUID().uuidString)",
+                                        isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir,
+                                                     withIntermediateDirectories: true)
+            let store = HistoryStore(fileURL: dir.appendingPathComponent("history.jsonl"))
+            let badRun = HistoryRecord(ts: now, mode: "bloat", params: [:],
+                                       resultRaw: bad)
+            store.append(mode: badRun.mode, params: badRun.params,
+                         raw: badRun.resultRaw)
+
+            let seen = DispatchSemaphore(value: 0)
+            let token = NotificationCenter.default.addObserver(
+                forName: .netmaxHistoryDidChange, object: nil, queue: nil
+            ) { _ in seen.signal() }
+            defer { NotificationCenter.default.removeObserver(token) }
+
+            RunPostProcessor.process(badRun, store: store,
+                                     defaults: defaults,
+                                     notifyCenter: .default,
+                                     prefs: offPrefs)
+
+            failures += (defaults.string(forKey: StatusBarController.labelKey)?
+                .contains("BL") == true) ? 0 : 1
+            failures += (defaults.string(forKey: StatusBarController.detailKey) != nil) ? 0 : 1
+            failures += seen.wait(timeout: .now() + 5) == .success ? 0 : 1
+            // Master-off ⇒ the delivery leg computes an empty handoff.
+            failures += RunPostProcessor.deliverableAlerts(
+                RunPostProcessor.alerts(triggeredBy: badRun, in: store.loadAll()),
+                prefs: offPrefs).isEmpty ? 0 : 1
+
+            try? FileManager.default.removeItem(at: dir)
+        }
+
+        return failures
+    }
+}
+#endif

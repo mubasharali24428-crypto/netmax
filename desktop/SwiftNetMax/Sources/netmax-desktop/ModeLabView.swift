@@ -17,8 +17,16 @@
 //      (`append(mode:params:raw:)`). HistoryStore.swift is owned by Lane B.
 //    • P3: this view is tab-hosted by ATLAS post-delivery; RootView/App/
 //      MenuBarView are not edited here.
+//      (ALPHA-A4-06 attaches the A2-09 addendum at that host — see
+//      RootView.swift.)
+//    • ALPHA-A4-06: applied A2-09's three DEFERRED (Lane A) fixes in-file:
+//      stepper rows keep the Stepper individually adjustable (row-level
+//      .accessibilityElement(children: .ignore) removed), the decorative
+//      header icon is hidden from VoiceOver, and run completion/failure is
+//      announced via the NSAccessibility announcement channel.
 //
 
+import AppKit
 import SwiftUI
 
 // MARK: - Model
@@ -137,6 +145,12 @@ struct ModeLabView: View {
         .padding(16)
         .frame(minWidth: 420, minHeight: 520)
         .onAppear(perform: seedDefaultsFromPreferences)
+        // ALPHA-A4-06 (A2-09 finding 12): idle→running→done/error was silent
+        // to VoiceOver; announce terminal outcomes. (Single-parameter onChange
+        // matches this package's macOS 13 platform floor.)
+        .onChange(of: status) { newStatus in
+            handleStatusAnnouncement(newStatus)
+        }
     }
 
     // MARK: Header
@@ -145,6 +159,8 @@ struct ModeLabView: View {
         HStack {
             Image(systemName: "dial.max.fill")
                 .foregroundStyle(.blue)
+                // ALPHA-A4-06 (A2-09 finding 2): purely decorative.
+                .accessibilityHidden(true)
             Text("Mode Lab")
                 .font(.headline)
             Spacer()
@@ -197,30 +213,43 @@ struct ModeLabView: View {
     private func parameterStepper(_ parameter: ModeParameter,
                                   value: Binding<Int>) -> some View {
         let supported = selectedMode.supports(parameter)
+        let rowHint = supported
+            ? parameter.accessibilityHint
+            : "\(parameter.label) is not used by mode \(selectedMode.id)"
         return HStack {
-            Text(parameter.label)
-                .frame(width: 70, alignment: .leading)
-            Text("\(value.wrappedValue)")
-                .font(.system(.body, design: .monospaced))
-                .frame(width: 36, alignment: .trailing)
+            HStack {
+                Text(parameter.label)
+                    .frame(width: 70, alignment: .leading)
+                Text("\(value.wrappedValue)")
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 36, alignment: .trailing)
+            }
+            // ALPHA-A4-06 (A2-09 finding 6, P0): the collapse-to-one-element
+            // now covers ONLY the two static texts. The Stepper sits OUTSIDE
+            // it, so VoiceOver keeps a separate adjustable element whose
+            // increment/decrement actions work (previously the row-level
+            // .ignore stripped them). Same label/value/hint contract as the
+            // old collapsed row.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(parameter.label) value")
+            .accessibilityValue("\(value.wrappedValue)")
+            .accessibilityHint(rowHint)
             Stepper("\(parameter.label): \(value.wrappedValue)",
                     value: value,
                     in: parameter.range)
                 .labelsHidden()
                 .disabled(!supported || status == .running)
+                .accessibilityHint(rowHint)
             if !supported {
                 Text("not used by \(selectedMode.id)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    // ALPHA-A4-06 (A2-09 finding 7): stays silent; the fact is
+                    // conveyed by rowHint above.
+                    .accessibilityHidden(true)
             }
         }
         .opacity(supported ? 1 : 0.55)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(parameter.label) value")
-        .accessibilityValue("\(value.wrappedValue)")
-        .accessibilityHint(supported
-                           ? parameter.accessibilityHint
-                           : "\(parameter.label) is not used by mode \(selectedMode.id)")
     }
 
     // MARK: Run
@@ -284,6 +313,31 @@ struct ModeLabView: View {
                 }
             }
         }
+    }
+
+    /// ALPHA-A4-06 (A2-09 finding 12): VoiceOver announcements for terminal
+    /// run states. Public NSAccessibility surface only — no private state,
+    /// no persistence (P1 still honored).
+    private func handleStatusAnnouncement(_ newStatus: RunStatus) {
+        switch newStatus {
+        case .done:
+            announceForVoiceOver("Mode Lab run finished successfully.")
+        case .error:
+            announceForVoiceOver("Mode Lab run failed. \(resultText)")
+        case .idle, .running:
+            break // start/idle transitions stay silent
+        }
+    }
+
+    private func announceForVoiceOver(_ message: String) {
+        guard let element = NSApp.mainWindow else { return }
+        NSAccessibility.post(
+            element: element,
+            // .announcement is macOS 14+; the package floors at macOS 13,
+            // where the same announcement ships as .announcementRequested.
+            notification: .announcementRequested,
+            userInfo: [NSAccessibility.NotificationUserInfoKey.announcement: message]
+        )
     }
 
     /// CLI flags for the mode — only parameters its MODE_FLAGS entry allows.

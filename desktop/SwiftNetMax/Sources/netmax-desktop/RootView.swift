@@ -34,7 +34,11 @@ struct MainTabView: View {
             MenuBarView()
                 .tabItem { Label("Dashboard", systemImage: "gauge") }
                 .tag(0)
+            // ALPHA-A4-06: attach the A2-09 Mode Lab a11y addendum here, at the
+            // tab host, per ModeLabA11y.swift's header note (never inside
+            // ModeLabView.swift itself).
             ModeLabView()
+                .modeLabAccessibilityAddendum()
                 .tabItem { Label("Mode Lab", systemImage: "slider.horizontal.3") }
                 .tag(1)
             HistoryView()

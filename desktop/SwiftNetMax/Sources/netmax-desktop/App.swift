@@ -16,6 +16,13 @@ import SwiftUI
 /// render content or an empty placeholder based on the same preference.
 @main
 struct NetMaxDesktopApp: App {
+    /// Wave-3 automation boot: status publisher + scheduler tick loop.
+    /// Both are idempotent singletons — safe here, once per process.
+    init() {
+        StatusPublisherHook.install()
+        ScheduleRunner.shared.start()
+    }
+
     var body: some Scene {
         WindowGroup("NetMax", id: "main") {
             LaunchWindowGate()
