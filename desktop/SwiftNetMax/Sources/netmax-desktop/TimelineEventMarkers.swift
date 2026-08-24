@@ -565,7 +565,10 @@ enum TimelineEventMarkersTests {
                 let label = track(TimelineEventMarkers.a11yLabel(
                     for: marker, metric: .mbps,
                     correlation: kind == .roam ? correlated : nil))
-                check(label.hasPrefix("\(expectedName) event marker, "),
+                let expectedPrefix = expectedName.isEmpty
+                    ? "WiFi event marker, "
+                    : "\(expectedName) event marker, "
+                check(label.hasPrefix(expectedPrefix),
                       "a11y: label leads with the human-readable kind (\(label))")
                 if kind == .roam {
                     check(label.contains(correlated.deltaText),
