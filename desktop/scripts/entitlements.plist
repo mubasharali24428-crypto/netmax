@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  entitlements.plist — NetMaxDesktop hardened-runtime entitlements.
+
+  Minimal by design. The app is a SwiftUI shell that spawns the bundled
+  Python engine as a subprocess; it needs no sandbox, no JIT, no special
+  hardware access, and no network-server sockets. The only entry is
+  com.apple.security.cs.allow-unsigned-executable-memory set to FALSE,
+  recorded explicitly so nobody "fixes" an engine problem later by
+  silently enabling it. Do NOT add entitlements here without a reason
+  you can state out loud — every added entitlement is another thing
+  notarization review (and users) must trust.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<false/>
+</dict>
+</plist>
