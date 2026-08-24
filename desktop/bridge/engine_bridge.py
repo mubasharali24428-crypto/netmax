@@ -142,14 +142,27 @@ def write_envelope(
     target = Path(path)
     parent = target.parent
     if str(parent) not in ("", "."):
-        parent.mkdir(parents=True, exist_ok=True)
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(f"engine_bridge: cannot create envelope dir {parent}: {exc}",
+                  file=sys.stderr)
+            raise SystemExit(1)
     payload: dict[str, Any] = {
         "success": bool(success),
         "mode": mode,
         "data": data,
         "error": error,
     }
-    target.write_text(json.dumps(payload), encoding="utf-8")
+    try:
+        target.write_text(json.dumps(payload), encoding="utf-8")
+    except OSError as exc:
+        # Unwritable --json-out: the envelope contract can't be honored on
+        # disk, so surface it on stderr and exit non-zero (never a raw
+        # traceback). Callers treat missing file + nonzero exit as failure.
+        print(f"engine_bridge: cannot write envelope to {target}: {exc}",
+              file=sys.stderr)
+        raise SystemExit(1)
     return payload
 
 
