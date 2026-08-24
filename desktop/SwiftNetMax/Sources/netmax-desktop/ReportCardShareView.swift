@@ -617,10 +617,18 @@ enum ReportCardShareSelfCheck {
         }
 
         func section(_ metric: ReportMetric, _ grade: ReportGrade,
-                     _ score: Double?, count: Int = 3) -> ReportCardSection {
-            ReportCardSection(
+                     _ score: Double?, count: Int = 3,
+                     summary: String? = nil) -> ReportCardSection {
+            // Mirror ReportCardModel's summary shapes exactly: incomplete
+            // sections explain themselves ("Incomplete: …"), graded ones
+            // cite their median.
+            let text = summary
+                ?? (grade == .incomplete
+                    ? "Incomplete: only \(count - 2) usable run — need 3+ before grading."
+                    : "median probe over \(count) runs.")
+            return ReportCardSection(
                 metric: metric, grade: grade, score: score,
-                summary: "median probe over \(count) runs.", sampleCount: count)
+                summary: text, sampleCount: count)
         }
 
         let fixed = Date(timeIntervalSince1970: 1_750_000_000)
