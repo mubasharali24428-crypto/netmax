@@ -13,6 +13,7 @@ struct HistoryView: View {
     @State private var records: [HistoryRecord] = []
     @State private var trendMode: String?
     @State private var showingClearConfirmation = false
+    @State private var selectedRun: IdentifiedRun?
 
     var body: some View {
         List {
@@ -53,6 +54,9 @@ struct HistoryView: View {
         } message: {
             Text("This permanently removes all \(records.count) saved run(s) from this Mac.")
         }
+        .sheet(item: $selectedRun) { run in
+            RunDetailSheet(record: run.record)
+        }
         .onAppear(perform: reload)
     }
 
@@ -85,7 +89,12 @@ struct HistoryView: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(newestFirst, id: \.ts) { record in
-                    HistoryRow(record: record)
+                    Button {
+                        selectedRun = IdentifiedRun(record: record)
+                    } label: {
+                        HistoryRow(record: record)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }

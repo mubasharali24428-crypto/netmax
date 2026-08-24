@@ -3,7 +3,9 @@
 //  netmax-desktop
 //
 //  L3-D — Reports tab: shows the LAST RESULT (newest contract-P2 history
-//  record) and exports it as CSV or JSON via NSSavePanel.
+//  record) and exports it as CSV or JSON via NSSavePanel. When history is
+//  non-empty it also offers "Export Report Card (PDF)", presenting the
+//  graded report-card share sheet (ReportCardShareView, ALPHA-A1-08).
 //
 //  Data source: `HistoryStore.shared` (Lane B). Newest record is
 //  `loadAll().last` — the store documents oldest-first file order. The
@@ -35,6 +37,8 @@ struct ReportsView: View {
     @State private var records: [HistoryRecord] = []
     @State private var status: ExportStatus = .idle
     @State private var savedPath: String = ""
+    /// Presents the graded report-card share sheet (ALPHA-A1-08).
+    @State private var showCardShare = false
 
     private var lastRecord: HistoryRecord? { records.last }
 
@@ -64,6 +68,11 @@ struct ReportsView: View {
         .frame(minWidth: 380, minHeight: 430)
         .task { reload() }
         .onAppear { reload() }  // re-read history whenever the tab resurfaces
+        .sheet(isPresented: $showCardShare) {
+            // Report-card share surface (ALPHA-A1-08) — integration note
+            // from its header: one-liner sheet host, no edits needed there.
+            ReportCardShareView.makeDefault()
+        }
     }
 
     // MARK: Sections
@@ -139,6 +148,18 @@ struct ReportsView: View {
             }
             .buttonStyle(.bordered)
             .disabled(isExporting)
+
+            // ALPHA-A3-04 — graded report card (roadmap N7): sheet host for
+            // ReportCardShareView. Only offered when there is history, so the
+            // empty path keeps the existing honest empty state.
+            Button {
+                showCardShare = true
+            } label: {
+                Label("Export Report Card (PDF)", systemImage: "doc.richtext")
+            }
+            .buttonStyle(.bordered)
+            .disabled(isExporting)
+            .accessibilityHint("Opens a preview of the graded connection report card to share or save")
         }
         .accessibilityElement(children: .contain)
     }

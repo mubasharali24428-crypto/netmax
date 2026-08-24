@@ -11,6 +11,13 @@
 //  Foundation-only extraction layer (`DashboardMetrics`) that is unit-checked
 //  offline by `DashboardCardsTests` at the bottom of this file.
 //
+//  Wave-3 (ALPHA-A3-07): beneath the cards, a Speed Trend strip plots the
+//  last 20 recorded Mbps values (oldest-first, past → now) through
+//  `SparklineView`'s `.line` style. It reuses `MetricExtractor` verbatim —
+//  the same reader behind the Latest Speed card — so the curve always agrees
+//  with the headline number. No speed-bearing history means no strip at all
+//  (never an empty placeholder).
+//
 //  Sourcing rule: each card shows the MOST RECENT record that contains its
 //  kind of value (newest-first scan), so a `loss` run never blanks the speed
 //  card and vice versa. Status is the WORST available signal across speed
@@ -89,6 +96,21 @@ struct DashboardMetrics: Equatable {
                                 loss: loss,
                                 statusWord: Self.statusWord(speedMbps: speed?.value,
                                                             lossPercent: loss?.value))
+    }
+
+    /// Last `maxSamples` speed readings across history, OLDEST-FIRST — the
+    /// input shape ``SparklineView`` expects (left → right = past → now).
+    ///
+    /// Reuses `MetricExtractor.latestSpeedMbps` verbatim, so the trend curve
+    /// and the Latest Speed card can never disagree about a payload. Runs
+    /// whose payload carries no recognizable speed are skipped (never
+    /// zero-filled); the survivor list is capped to the most recent
+    /// `maxSamples` values. Empty when nothing measurable exists.
+    static func speedTrend(from records: [HistoryRecord], maxSamples: Int = 20) -> [Double] {
+        guard maxSamples > 0 else { return [] }
+        let oldestFirst = records.sorted { $0.ts < $1.ts }
+        return Array(oldestFirst.compactMap { MetricExtractor.latestSpeedMbps(in: $0.resultRaw) }
+            .suffix(maxSamples))
     }
 
     /// Overall status word: the WORST available tier across speed and loss.
@@ -295,7 +317,8 @@ private enum MetricExtractor {
 
 // MARK: - View
 
-/// Dashboard tab body: header + refresh, the four-card row, empty state.
+/// Dashboard tab body: header + refresh, the four-card row, a speed-trend
+/// sparkline strip (only when history carries speeds), empty state otherwise.
 struct DashboardCardsView: View {
     @State private var records: [HistoryRecord] = []
 
@@ -308,7 +331,10 @@ struct DashboardCardsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    cardRow
+                    VStack(alignment: .leading, spacing: 12) {
+                        cardRow
+                        speedTrendSection
+                    }
                         .padding(.vertical, 2)
                 }
             }
@@ -386,6 +412,61 @@ struct DashboardCardsView: View {
                 detail: m.statusWord == nil ? "run a test to assess" : "composite of latest results"
             )
         }
+    }
+
+    // MARK: Speed trend
+
+    /// Speed-trend strip under the cards: the last ≤20 Mbps values drawn as
+    /// a smooth-line sparkline inside a card matching the metric tiles.
+    /// Renders only when at least one run carries a recognizable speed.
+    @ViewBuilder
+    private var speedTrendSection: some View {
+        let series = DashboardMetrics.speedTrend(from: records)
+        if !series.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 4) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.caption)
+                        .foregroundStyle(tint(for: series))
+                    Text("Speed Trend")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                    Text(caption(for: series))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                SparklineView(series,
+                              style: .line,
+                              color: tint(for: series),
+                              height: 56)
+                    .accessibilityLabel("Speed trend sparkline")
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Color(nsColor: .separatorColor))
+            )
+        }
+    }
+
+    /// Same traffic-light tint the Latest Speed card uses, keyed off the
+    /// NEWEST sample (the right edge of the curve).
+    private func tint(for series: [Double]) -> Color {
+        Self.speedTint(series.last)
+    }
+
+    /// Honest run count: reads "last 20 runs" at the cap, fewer otherwise.
+    private func caption(for series: [Double]) -> String {
+        let count = series.count
+        return "last \(count) run\(count == 1 ? "" : "s")"
     }
 
     private func bloatDetail(_ grade: GradeValue?) -> String {
@@ -602,6 +683,19 @@ enum DashboardCardsTests {
         let empty = DashboardMetrics.extract(from: [])
         check(empty == DashboardMetrics(speed: nil, bloatGrade: nil, loss: nil, statusWord: nil),
               "empty extract")
+
+        // Wave-3 speed trend: last ≤20 Mbps values, oldest-first for the
+        // sparkline (left → right = past → now), same reader as the cards.
+        check(DashboardMetrics.speedTrend(from: []).isEmpty, "trend empty history")
+        check(DashboardMetrics.speedTrend(from: [record("loss", "packet loss: 0.4%", 30)]).isEmpty,
+              "trend skips non-speed runs")
+        let trendRuns = (1...25).map { i in
+            record("turbo", "{\"mbps\": \(100 + i)}", Double(26 - i) * 60)
+        }
+        let trend = DashboardMetrics.speedTrend(from: trendRuns)
+        check(trend.count == 20, "trend capped at 20")
+        check(trend.count == 20 && trend.first == 106 && trend.last == 125,
+              "trend keeps newest 20, oldest-first")
 
         return failures
     }

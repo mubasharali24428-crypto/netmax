@@ -9,8 +9,9 @@
 //  obvious), and persists immediately — there is no separate Save button,
 //  matching macOS settings-pane convention.
 //
-//  Sections: Mode Lab defaults · Python interpreter · Startup · Onboarding
-//  reset · About (version, engine test count, honest-limits note).
+//  Sections: Mode Lab defaults · Python interpreter · Startup · Notifications
+//  · Onboarding reset · About (version, engine test count, honest-limits
+//  note).
 //
 
 import SwiftUI
@@ -24,11 +25,17 @@ struct SettingsView: View {
     /// Set while the Reset Onboarding confirmation is up.
     @State private var confirmingOnboardingReset = false
 
+    /// Self-persisting store behind the notification rules (`netmax.notify.*`),
+    /// owned by NotificationPreferences; this view binds through it exactly as
+    /// NotificationPrefsView does so both surfaces share live state.
+    @ObservedObject private var notifyPrefs = NotificationPreferences.shared
+
     var body: some View {
         Form {
             modeLabDefaults
             interpreter
             startup
+            notifications
             onboardingReset
             about
         }
@@ -135,6 +142,83 @@ struct SettingsView: View {
         } header: {
             Text("Startup")
         }
+    }
+
+    // MARK: - Notifications
+
+    /// NotificationPrefsView's content expressed as native Form sections.
+    /// That view is a top-level `Form` (with its own grouped style + frame),
+    /// which cannot nest cleanly inside this settings Form, so its master
+    /// toggle and per-rule rows are mirrored here — same store
+    /// (`NotificationPreferences.shared`), same keys, same accessibility
+    /// identifiers — instead of embedding it as a sub-Form.
+    private var notifications: some View {
+        Group {
+            Section {
+                Toggle("Enable notifications", isOn: $notifyPrefs.notificationsEnabled)
+                    .accessibilityLabel(Text("Enable notifications"))
+                    .accessibilityHint(Text("Master switch. When off, no notification fires regardless of the individual rules below."))
+                    .accessibilityIdentifier("notifications.master")
+            } header: {
+                Text("Notifications")
+            } footer: {
+                Text(notifyPrefs.notificationsEnabled
+                     ? "NetMax will alert you when any enabled rule matches."
+                     : "Notifications are off — individual rules are kept but ignored.")
+            }
+
+            Section {
+                notificationRuleRow(
+                    title: "Grade drop",
+                    subtitle: "Bufferbloat grade falls ≥ 2 letters between runs (e.g. B → D).",
+                    isOn: $notifyPrefs.gradeDropEnabled,
+                    kind: .bloatGradeDrop,
+                    hint: "Alerts when a run's bufferbloat grade drops sharply compared to the previous run."
+                )
+                notificationRuleRow(
+                    title: "High loss",
+                    subtitle: "Packet loss climbs above the healthy 3% threshold.",
+                    isOn: $notifyPrefs.highLossEnabled,
+                    kind: .packetLossSpike,
+                    hint: "Alerts when measured packet loss crosses the high-loss threshold."
+                )
+                notificationRuleRow(
+                    title: "Run failed",
+                    subtitle: "A measurement fails right after a successful one.",
+                    isOn: $notifyPrefs.failureEnabled,
+                    kind: .successToFailure,
+                    hint: "Alerts when the connection appears to drop out — a failed run following a successful one."
+                )
+            } header: {
+                Text("Alert Rules")
+            } footer: {
+                Text("Rules apply to every measurement while the master switch is on.")
+            }
+            .disabled(!notifyPrefs.notificationsEnabled)
+            .opacity(notifyPrefs.notificationsEnabled ? 1 : 0.55)
+        }
+    }
+
+    /// NotificationPrefsView's standard rule row: title + one-line effect,
+    /// bound toggle on the trailing edge.
+    private func notificationRuleRow(
+        title: String,
+        subtitle: String,
+        isOn: Binding<Bool>,
+        kind: DegradationAlert.Kind,
+        hint: String
+    ) -> some View {
+        Toggle(isOn: isOn) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .accessibilityLabel(Text(title))
+        .accessibilityHint(Text(hint))
+        .accessibilityIdentifier("notifications.rule.\(kind.rawValue)")
     }
 
     // MARK: - Onboarding

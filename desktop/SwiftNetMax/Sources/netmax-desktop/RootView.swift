@@ -3,8 +3,8 @@ import SwiftUI
 /// Single-window root for both the main window and the menu-bar popover.
 ///
 /// Launch behavior: first run → honest-limits onboarding; afterwards the
-/// five-tab product UI (L3 integration): Dashboard · Mode Lab · History ·
-/// Reports · Settings.
+/// six-tab product UI (L3 integration): Dashboard · Mode Lab · History ·
+/// Schedule · Reports · Settings.
 struct RootView: View {
     /// Mirrors `DefaultOnboardingFlow.isCompleted()` — same exact key.
     @AppStorage(OnboardingConstants.completionKey) private var onboardingComplete = false
@@ -40,6 +40,9 @@ struct MainTabView: View {
             HistoryView()
                 .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
                 .tag(2)
+            ScheduleEditorView()
+                .tabItem { Label("Schedule", systemImage: "clock.badge.checkmark") }
+                .tag(5)
             ReportsView()
                 .tabItem { Label("Reports", systemImage: "square.and.arrow.up") }
                 .tag(3)
