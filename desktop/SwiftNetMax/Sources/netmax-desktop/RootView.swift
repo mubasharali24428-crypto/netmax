@@ -51,6 +51,8 @@ struct MainTabView: View {
                 .tag(4)
         }
         .accessibilityLabel("NetMax sections")
+        .netMaxTabShortcuts(selection: $selection)
+        .netMaxRerunLastShortcut()
     }
 }
 

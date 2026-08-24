@@ -31,7 +31,10 @@ struct NetMaxDesktopApp: App {
                 .frame(minWidth: 380, idealWidth: 420,
                        minHeight: 480, idealHeight: 560)
         } label: {
-            Image(systemName: "bolt.horizontal.circle")
+            // Live status: shows the published quick-status line
+            // (`⚡ 29 Mbps · B · 12m ago`, written by StatusBarController.publish)
+            // and falls back to the bolt glyph until/unless a label exists.
+            StatusBarController.LabelView()
         }
         .menuBarExtraStyle(.window)
     }

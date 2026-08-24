@@ -2,17 +2,13 @@ import SwiftUI
 
 // MARK: - KeyboardShortcuts.swift
 //
-// Global keyboard shortcuts for the five-tab desktop shell.
+// Global keyboard shortcuts for the six-tab desktop shell.
 //
-// INTEGRATION NOTE (for the wave coordinator — RootView is NOT edited here):
+// INTEGRATION NOTE (for the wave coordinator — wiring lives in RootView.swift):
 //
 //   `MainTabView` (RootView.swift) owns `@State private var selection = 0`
-//   and drives `TabView(selection: $selection)` with tags 0–4. This file
-//   only ships the reusable modifiers; wiring is a two-line change in
-//   RootView once the coordinator exposes the binding, e.g.:
-//
-//       TabView(selection: $selection) { …existing tabs… }
-//           .netMaxTabShortcuts(selection: $selection)   // ⌘1 … ⌘5 select tabs
+//   and drives `TabView(selection: $selection)` with tags 0–5. It attaches
+//   these modifiers directly:
 //
 //       // and, at any point inside the main-window hierarchy:
 //       MainTabView()
@@ -24,7 +20,7 @@ import SwiftUI
 //       NotificationCenter.default.publisher(for: .netmaxRerunLast)
 //
 //   Tag ↔ tab mapping lives in `NetMaxTab`, kept in lockstep with the
-//   `.tag(0)…tag(4)` order declared in RootView.swift.
+//   `.tag(0)…tag(5)` order declared in RootView.swift.
 //
 // Implementation detail: SwiftUI has no first-class "global shortcut" API
 // inside a plain view hierarchy (`.commands` belongs to the Scene, which we
@@ -44,11 +40,14 @@ extension Notification.Name {
 
 // MARK: - Tab model
 
-/// The five product tabs, mirroring `MainTabView`'s `.tag(0)…tag(4)` order.
+/// The six product tabs, mirroring `MainTabView`'s `.tag(0)…tag(5)` order.
+/// Note the tag values follow RootView's declaration order, not raw Int
+/// adjacency: Schedule carries tag 5 while Reports/Settings keep 3/4.
 enum NetMaxTab: Int, CaseIterable, Identifiable {
     case dashboard = 0
     case modeLab = 1
     case history = 2
+    case schedule = 5
     case reports = 3
     case settings = 4
 
@@ -60,12 +59,13 @@ enum NetMaxTab: Int, CaseIterable, Identifiable {
         case .dashboard: return "Dashboard"
         case .modeLab: return "Mode Lab"
         case .history: return "History"
+        case .schedule: return "Schedule"
         case .reports: return "Reports"
         case .settings: return "Settings"
         }
     }
 
-    /// Digit key for the tab: ⌘1 for Dashboard … ⌘5 for Settings.
+    /// Digit key for the tab: ⌘1 for Dashboard … ⌘6 for Settings.
     var shortcutKey: KeyEquivalent {
         KeyEquivalent(Character(String(rawValue + 1)))
     }
@@ -118,7 +118,7 @@ struct NetMaxRerunLastShortcutModifier: ViewModifier {
 // MARK: - View extensions (what the coordinator wires into RootView)
 
 extension View {
-    /// Adds ⌘1…⌘5 tab switching bound to a `TabView` selection (`Int` tags).
+    /// Adds ⌘1…⌘6 tab switching bound to a `TabView` selection (`Int` tags).
     func netMaxTabShortcuts(selection: Binding<Int>) -> some View {
         modifier(NetMaxTabShortcutsModifier(selection: selection))
     }
