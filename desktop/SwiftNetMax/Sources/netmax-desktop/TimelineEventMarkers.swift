@@ -3,124 +3,117 @@
 //  netmax-desktop
 //
 //  W5-U2 (mission W5, X1 QoE timeline) — WiFi-event marker layer + detail
-//  popover for the QoE timeline view. Consumes S1's contract-TC1 rows and
-//  S2's contract-TC2 correlations; renders beside U1's Canvas lanes.
+//  popover for the QoE timeline. Consumes S1's contract-TC1 rows
+//  (TimelineModel.swift) and S2's contract-TC2 correlations
+//  (TimelineCorrelation.swift); renders beside U1's Canvas lanes.
 //
 //  Public surface:
 //      TimelineEventMarkers.overlay(rows:events:dateToX:metric:)
 //                               — zero-size marker layer positioned on the
 //                                 host view's shared time axis
-//      EventMarkerPopover       — the tap/click detail popover (before/after
+//      EventMarkerPopover       — the click/tap detail popover (before/after
 //                                 deltas + honest correlation sentence)
-//      TimelineEventMarkers.a11yLabel(for:)
+//      TimelineEventMarkers.a11yLabel(for:correlation:)
 //                               — the accessibility string every marker
 //                                 carries (exported for D1's probes)
 //      WifiEventKind.markerColor / .symbolName
 //                               — kind→visual mapping (this file owns it)
 //
+//
 //  ── SEAM CONTRACT WITH U1 (QoETimelineView) ─────────────────────────────
+//
 //  The marker layer never measures U1's internals. U1 owns the time axis;
 //  it hands this layer ONE pure closure:
 //
 //      dateToX: (Date) -> CGFloat?
 //
-//  with the algebra `x = plotLeft + elapsedFraction * plotWidth` where
+//  with the algebra   x = plotLeft + elapsedFraction * plotWidth   where
 //  plotLeft/plotWidth describe the SAME plotting rect U1's Canvas draws its
 //  lanes into, expressed in THIS layer's coordinate space. Because the
-//  overlay fills its host edge-to-edge (`overlay(alignment: .top)`), "this
-//  layer's coordinate space" is simply the host view's bounds, so U1 passes
-//  its existing Canvas mapping unchanged:
+//  overlay fills its host edge-to-edge, "this layer's space" is simply the
+//  host view's bounds, so U1 passes its existing Canvas mapping unchanged:
 //
 //      .overlay(alignment: .top) {
 //          TimelineEventMarkers.overlay(
 //              rows: rows, events: events,
-//              dateToX: { t in range.contains(t)
-//                  ? plotLeft + t.timeIntervalSince(range.lowerBound)
-//                    / rangeDuration * plotWidth
-//                  : nil })   // nil = outside the visible window
+//              dateToX: { t in
+//                  range.contains(t)
+//                      ? plotLeft + t.timeIntervalSince(range.lowerBound)
+//                        / rangeDuration * plotWidth
+//                      : nil   // nil = outside the visible window
+//              })
 //      }
-//      .frame(height: <the lanes' height>)
+//      .frame(height: <total lanes height>)
 //
-//  A nil answer means "not on screen"; such markers are skipped here —
+//  A nil answer means "not on screen"; such markers are skipped HERE —
 //  clipping is U1's business, positioning is ours, and neither guesses the
-//  other's math. Until U1 lands, the layer also stands alone: wrap it in
-//  any container and give it a height (see TimelineEventMarkersTests for a
-//  working standalone mapping).
+//  other's math. The closure is called once per event row per layout pass
+//  (pure O(events)); nothing is cached, so U1 can resize freely.
+//
+//  Until U1 lands, the layer also stands alone: wrap it in any container
+//  and give it a height (see TimelineEventMarkersTests.runAll for a working
+//  standalone mapping).
+//
 //
 //  ── CONFIDENCE WORDING LAW (TC2) ────────────────────────────────────────
+//
 //  The popover renders S2's `CorrelatedEvent.deltaText` VERBATIM — restyle,
-//  never rewrite ("suggests"/"coincides with", NEVER "caused"). Every
-//  string authored in THIS file is swept by the wording-law audit below;
-//  the law's home and enforcement live in TimelineCorrelation.swift.
+//  never rewrite ("suggests"/"coincides", NEVER "caused"). The law's home
+//  and enforcement live in TimelineCorrelation.swift; every string AUTHORED
+//  in THIS file is swept by the wording-law audit below so the UI layer can
+//  never smuggle causation in around the engine.
 //
 //  LAWS:
 //    • HONEST GAPS — an event outside the plotted window shows nothing
-//      here (it belongs to a scroll position U1 controls); an unknown wire
-//      kind still gets a marker (accent-colored "?" glyph) and a label that
-//      names the raw kind — never dropped, never guessed into a known
-//      bucket. A popover whose correlation found no samples says so in
-//      S2's own words.
+//      here (it belongs to a scroll position U1 controls). An unknown wire
+//      kind still gets a marker (accent "?" glyph) labeled with its raw
+//      kind — never dropped, never guessed into a known bucket. An event
+//      id with no backing record renders honestly as "WiFi event". A
+//      correlation that found no samples says so in S2's own words.
 //    • DETERMINISM — geometry is a pure function of (rows, events,
 //      dateToX); identical inputs produce identical layers, forever.
-//    • ACCESSIBILITY — every marker exposes a full label (kind, clock
-//      time, delta verdict) and the button trait; nothing is visual-only.
+//    • ACCESSIBILITY — every marker exposes a full spoken label (kind,
+//      clock time, correlation verdict), the button trait, and a tooltip;
+//      nothing is visual-only.
 //
 
 import SwiftUI
 
-// MARK: - Marker layer
+// MARK: - Factory
 
-/// The WiFi-event marker layer for the QoE timeline (W5-U2).
-///
-/// Positioning is fully delegated to the injected `dateToX` mapping (see
-/// the SEAM CONTRACT in the file header); this type owns WHAT appears at
-/// each position: a small diamond badge colored by event kind, clickable to
-/// open `EventMarkerPopover`, and fully labeled for accessibility.
 enum TimelineEventMarkers {
 
-    /// Diameter of one diamond marker (and its hit area, padded by
-    /// `hitInset` so touch/click targets stay ≥ 20 pt — HIG minimum).
-    static let markerSize: CGFloat = 10
+    /// Diameter of one diamond badge; padded by `hitInset` on every side
+    /// so the silent click target stays comfortably above 20 pt.
+    static let markerSize: CGFloat = 12
 
     /// Extra invisible padding around each marker that still counts as a
-    /// click/tap hit (keeps dense clusters individually selectable).
-    static let hitInset: CGFloat = 5
+    /// hit (keeps dense clusters individually selectable).
+    static let hitInset: CGFloat = 6
 
-    /// Build the marker overlay for the given timeline contents.
+    /// Build the WiFi-event marker overlay for the given timeline contents.
     ///
     /// - Parameters:
     ///   - rows: TC1 rows (already merged/built by S1's `TimelineModel`);
-    ///     rows carrying `eventId`s contribute markers.
+    ///     rows carrying an `eventId` contribute markers.
     ///   - events: the WiFi events behind those ids (identity source for
     ///     kind lookup; may arrive unsorted).
-    ///   - dateToX: U1's time-axis mapping (see SEAM CONTRACT above);
+    ///   - dateToX: U1's time-axis mapping (see SEAM CONTRACT in header);
     ///     return nil for timestamps outside the plotted window.
     ///   - metric: which lane's deltas the popovers show (default Mbps —
     ///     the headline lane; U3's range picker may pass others later).
     ///
-    /// The returned view has ZERO intrinsic size horizontally and hugs the
-    /// top edge vertically, so it composes as `host.overlay(alignment: .top)`
-    /// without perturbing U1's layout.
+    /// The returned view hugs its host's top edge and has zero intrinsic
+    /// width impact, composing as `host.overlay(alignment: .top)`.
     static func overlay(rows: [TimelineRow],
                         events: [WifiEvent],
-                        dateToX: (Date) -> CGFloat?,
+                        dateToX: @escaping (Date) -> CGFloat?,
                         metric: CorrelationMetric = .mbps) -> some View {
-        let markers = markerGeometries(rows: rows, events: events, dateToX: dateToX)
-        return GeometryReader { proxy in
-            ZStack(alignment: .topLeading) {
-                ForEach(markers, id: \.eventID) { marker in
-                    markerView(marker, metric: metric)
-                        // Center the diamond ON the mapped x. The layer is
-                        // zero-width by construction (its widest child is
-                        // one marker), so proxy.size.width is a stable
-                        // right-edge clamp for stray mappings.
-                        .offset(x: min(max(marker.x, 0), proxy.size.width) - markerSize / 2,
-                                y: 0)
-                }
-            }
-        }
-        .allowsHitTesting(true)
+        MarkerOverlayView(rows: rows, events: events,
+                          dateToX: dateToX, metric: metric)
     }
+
+    // MARK: Geometry
 
     /// One marker's placement + identity. Pure data so tests can assert
     /// geometry without rendering.
@@ -128,9 +121,11 @@ enum TimelineEventMarkers {
         /// X of the marker CENTER in the overlay's coordinate space
         /// (already mapped through `dateToX`).
         let x: CGFloat
+        /// Row timestamp the marker sits at (popover identity fallback).
+        let ts: Date
         /// Typed kind; nil when the wire carried an unknown kind string.
         let kind: WifiEventKind?
-        /// Raw wire kind, verbatim (drives labels for unknown kinds).
+        /// Raw wire kind, verbatim (labels unknown kinds honestly).
         let rawKind: String
         /// Stable identity (wire id or S1's synthetic "ev-N").
         let eventID: String
@@ -143,11 +138,10 @@ enum TimelineEventMarkers {
     ///     the FIRST event of a coincident cluster onto the sample row and
     ///     pushes further ones onto their own rows — all get markers).
     ///   • Kind lookup goes through `events` by id; an id with no backing
-    ///     event (shouldn't happen, but honesty first) still renders, as
-    ///     an unknown-kind marker.
-    ///   • Events whose ts maps to nil are OUTSIDE the window and are
-    ///     skipped (see header: clipping is U1's business).
-    ///   • Output is sorted by x (ties: eventID) — deterministic z-order.
+    ///     event still renders, as an unknown-kind marker (honest gap).
+    ///   • Rows whose ts maps to nil are OUTSIDE the window and skipped
+    ///     (header: clipping is U1's business).
+    ///   • Output sorted by x (ties: eventID) — deterministic z-order.
     static func markerGeometries(rows: [TimelineRow],
                                  events: [WifiEvent],
                                  dateToX: (Date) -> CGFloat?) -> [MarkerGeometry] {
@@ -159,7 +153,7 @@ enum TimelineEventMarkers {
             guard let id = row.eventId, !id.isEmpty, seen.insert(id).inserted else { continue }
             guard let x = dateToX(row.ts) else { continue }
             let rawKind = kindByID[id]
-            markers.append(MarkerGeometry(x: x,
+            markers.append(MarkerGeometry(x: x, ts: row.ts,
                                           kind: rawKind.flatMap(WifiEventKind.init(rawValue:)),
                                           rawKind: rawKind ?? "",
                                           eventID: id))
@@ -167,66 +161,153 @@ enum TimelineEventMarkers {
         return markers.sorted { $0.x == $1.x ? $0.eventID < $1.eventID : $0.x < $1.x }
     }
 
-    /// The visible + interactive diamond for one marker.
-    @ViewBuilder
-    private static func markerView(_ marker: MarkerGeometry,
-                                   metric: CorrelationMetric) -> some View {
-        let correlated = correlatedEventsForPopover(marker: marker, metric: metric)
-        Button {
-            // Selection opens the popover; no other state is mutated.
-        } label: {
-            Image(systemName: marker.kind?.symbolName ?? "questionmark.diamond")
-                .font(.system(size: markerSize, weight: .semibold))
-                .foregroundColor(marker.kind?.markerColor ?? Theme.accent)
-                .background {
-                    // Diamond badge behind the glyph, rotated square.
-                    Rectangle()
-                        .fill((marker.kind?.markerColor ?? Theme.accent).opacity(0.22))
-                        .frame(width: markerSize + 4, height: markerSize + 4)
-                        .rotationEffect(.degrees(45))
-                        .clipShape(Rectangle())
-                }
-                .padding(hitInset) // generous silent hit area
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: Binding<Bool>.constant(false)) { EmptyView() }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(a11yText(for: marker, metric: metric)))
-        .accessibilityHint(Text("Shows before-and-after measurements around this event"))
-        .accessibilityAddTraits(.isButton)
-        .help(Text(a11yText(for: marker, metric: metric)))
+    // MARK: Accessibility
+
+    /// The accessibility label for one marker: kind, clock time, and the
+    /// correlation verdict in S2's own words — a VoiceOver user hears the
+    /// same story a sighted user reads in the popover.
+    static func a11yLabel(for marker: MarkerGeometry,
+                          metric: CorrelationMetric,
+                          correlation: CorrelatedEvent?,
+                          now: Date? = nil) -> String {
+        let name = marker.kind?.displayName
+            ?? (marker.rawKind.isEmpty ? "WiFi" : marker.rawKind)
+        let time = marker.ts.formatted(date: .omitted, time: .standard)
+        let verdict = correlation.map { "\($0.deltaText)" }
+            ?? "No measurements nearby."
+        return "\(name) event marker, \(time). \(verdict)"
+    }
+}
+
+// MARK: - Marker layer view
+
+/// The interactive marker layer returned by `TimelineEventMarkers.overlay`.
+/// State is exactly one optional selection (which marker's popover is open);
+/// everything else is recomputed purely from the captured timeline inputs.
+private struct MarkerOverlayView: View {
+
+    let rows: [TimelineRow]
+    let events: [WifiEvent]
+    let dateToX: (Date) -> CGFloat?
+    let metric: CorrelationMetric
+
+    @State private var selection: Selection?
+
+    /// What a presented popover is about: geometry + the backing event
+    /// record when one exists (orphans pop over with identity only).
+    private struct Selection: Identifiable {
+        let geometry: TimelineEventMarkers.MarkerGeometry
+        let event: WifiEvent?
+        var id: String { geometry.eventID }
     }
 
-    // MARK: Popover wiring
-    //
-    // Kept in ONE place so the wording law has a single doorway: the
-    // popover receives S2's `deltaText` untouched.
+    /// Event records by id (first wins; ids are unique per load in S1).
+    private var eventByID: [String: WifiEvent] {
+        Dictionary(events.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
 
-    /// Correlate the marker's event against the lane (cheap, pure; ≤3
-    /// samples per side per TC2). Returns nil when the event record itself
-    /// is missing — the popover then shows identity only, inventing nothing.
-    private static func correlatedEventsForPopover(marker: MarkerGeometry,
-                                                   metric: CorrelationMetric) {}
+    /// One correlation per event id, computed in a single pass (S2's engine
+    /// is pure and cheap: binary search + ≤3-sample means). Popovers and
+    /// accessibility labels both read from this — one doorway, one truth.
+    private var correlationByEventID: [String: CorrelatedEvent] {
+        Dictionary(
+            TimelineCorrelation.correlate(rows: rows, events: events, metric: metric)
+                .map { ($0.event.id, $0) },
+            uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Per-marker popover binding: each Button carries its own `.popover`,
+    /// anchored at the diamond; the shared selection state decides which
+    /// (if any) is presented.
+    private func popoverBinding(for id: String) -> Binding<Selection?> {
+        Binding(get: { selection?.id == id ? selection : nil },
+                set: { selection = $0 })
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                ForEach(markers, id: \.eventID) { marker in
+                    markerView(marker)
+                        // Center the diamond ON the mapped x. Clamping to
+                        // the host bounds keeps a stray mapping from pushing
+                        // a marker into nowhere; window filtering already
+                        // removed everything U1 considers off-screen.
+                        .offset(x: min(max(marker.x, 0), proxy.size.width)
+                                   - TimelineEventMarkers.markerSize / 2,
+                                y: 0)
+                }
+            }
+        }
+    }
+
+    private var markers: [TimelineEventMarkers.MarkerGeometry] {
+        TimelineEventMarkers.markerGeometries(rows: rows, events: events,
+                                              dateToX: dateToX)
+    }
+
+    // MARK: One marker
+
+    private func markerView(_ marker: TimelineEventMarkers.MarkerGeometry) -> some View {
+        let color = marker.kind?.markerColor ?? Theme.accent
+        let symbol = marker.kind?.symbolName ?? "questionmark.diamond"
+        let correlations = correlationByEventID
+        return Button {
+            selection = Selection(geometry: marker, event: eventByID[marker.eventID])
+        } label: {
+            ZStack {
+                // The diamond badge: small rotated rounded square.
+                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    .fill(color.opacity(0.22))
+                    .overlay(RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                        .strokeBorder(color, lineWidth: 1))
+                    .frame(width: TimelineEventMarkers.markerSize,
+                           height: TimelineEventMarkers.markerSize)
+                    .rotationEffect(.degrees(45))
+                Image(systemName: symbol)
+                    .font(.system(size: 7.5, weight: .bold))
+                    .foregroundColor(color)
+            }
+            .padding(TimelineEventMarkers.hitInset) // generous silent hit area
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(item: popoverBinding(for: marker.eventID)) { picked in
+            popoverContent(for: picked)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(TimelineEventMarkers.a11yLabel(
+            for: marker, metric: metric, correlation: correlations[marker.eventID])))
+        .accessibilityHint(Text("Shows before-and-after measurements around this event"))
+        .accessibilityAddTraits(.isButton)
+        .help(Text(marker.kind?.displayName ?? (marker.rawKind.isEmpty
+                ? "WiFi event" : marker.rawKind)))
+    }
+
+    /// The ONE place popover prose enters the UI: S2's sentence verbatim.
+    private func popoverContent(for picked: Selection) -> some View {
+        EventMarkerPopover(
+            event: picked.event ?? WifiEvent(ts: picked.geometry.ts,
+                                             kind: picked.geometry.rawKind,
+                                             id: picked.geometry.eventID),
+            metric: metric,
+            correlation: correlationByEventID[picked.geometry.eventID])
+    }
 }
 
 // MARK: - Detail popover
 
-/// The event detail popover (tap/click on a marker): what happened, when,
-/// and the honest before/after picture from S2's engine.
+/// The event detail popover (click/tap a marker): what happened, when, and
+/// the honest before/after picture from S2's correlation engine.
 struct EventMarkerPopover: View {
 
     /// The event this popover describes.
     let event: WifiEvent
     /// Lane whose before/after deltas are shown.
     var metric: CorrelationMetric = .mbps
-    /// Precomputed correlation for `event`; when nil, computed on appear
-    /// from the rows captured at init (keeps the popover usable standalone).
+    /// Precomputed correlation for `event`; nil shows the honest
+    /// no-measurements sentence (identity only — nothing invented).
     var correlation: CorrelatedEvent?
-
-    init(event: WifiEvent, metric: CorrelationMetric = .mbps) {
-        self.event = event
-        self.metric = metric
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -236,13 +317,15 @@ struct EventMarkerPopover: View {
                 Text(title)
                     .font(.headline)
             }
-            Text(clockTime)
+            .accessibilityElement(children: .combine)
+
+            Text(verbatim: clockTime)
                 .font(.caption)
                 .foregroundColor(Theme.secondaryText)
 
             Divider()
 
-            Text(deltaSentence)
+            Text(verbatim: deltaSentence)
                 .font(.subheadline)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -258,22 +341,24 @@ struct EventMarkerPopover: View {
             }
         }
         .padding(Theme.Spacing.lg)
-        .frame(width: 260)
+        .frame(width: 264, alignment: .leading)
     }
 
+    /// Human-readable kind; unknown wire kinds show their raw string.
     private var title: String {
         event.knownKind?.displayName ?? event.kind
     }
 
-    /// Clock time, localized for READING ONLY (never feeds decisions —
-    /// determinism law applies to the decision path, not presentation).
+    /// Clock time, localized for READING ONLY (never feeds decisions — the
+    /// determinism law governs the decision path, not presentation).
     private var clockTime: String {
         event.ts.formatted(date: .abbreviated, time: .standard)
     }
 
-    /// S2's sentence, verbatim. This property is the ONLY place popover
-    /// prose enters the view — grep target for wording-law audits.
-    private var deltaSentence: String {
+    /// S2's sentence, verbatim. This property is the ONLY author of popover
+    /// prose besides S2 itself — grep target for wording-law audits. The
+    /// fallback mirrors S2's no-sample sentence for the orphan-id case.
+    var deltaSentence: String {
         correlation?.deltaText
             ?? "No measurements nearby — nothing within ±\(Int(TimelineCorrelation.correlationToleranceSeconds)) s of this \(title.lowercased())."
     }
@@ -284,8 +369,9 @@ struct EventMarkerPopover: View {
             Text(name)
                 .font(.caption2)
                 .foregroundColor(Theme.secondaryText)
-            Text(value.map { "\($0.formatted(.number.precision(.fractionLength(0…1)))) \(metric.unit)" }
-                      ?? "—")
+            Text(verbatim: value.map {
+                "\($0.formatted(.number.precision(.fractionLength(0...1)))) \(metric.unit)"
+            } ?? "—")
         }
         .accessibilityElement(children: .combine)
     }
@@ -299,7 +385,7 @@ extension WifiEventKind {
     ///   • roam           → amber  (grade C): a transition worth noticing
     ///   • rssiDrop       → magenta (grade E): signal trouble
     ///   • channelChange  → teal   (grade B): routine-but-visible change
-    /// All three meet the file's WCAG-AA contrast policy on both schemes.
+    /// All three meet ThemeTokens' WCAG-AA contrast policy on both schemes.
     var markerColor: Color {
         switch self {
         case .roam: return Theme.gradeC
@@ -319,27 +405,13 @@ extension WifiEventKind {
     }
 }
 
-// MARK: - Accessibility strings
-
-extension TimelineEventMarkers {
-
-    /// The accessibility label for one marker: kind, clock time, and the
-    /// correlation verdict in S2's own words — a VoiceOver user hears the
-    /// same story a sighted user reads in the popover.
-    static func a11yText(for marker: MarkerGeometry, metric: CorrelationMetric,
-                         correlation: CorrelatedEvent? = nil) -> String {
-        let name = marker.kind?.displayName ?? (marker.rawKind.isEmpty ? "WiFi event" : marker.rawKind)
-        return "\(name) event marker"
-    }
-}
-
 // MARK: - Offline self-checks
 //
 // House convention (HistoryStoreTests / TimelineModelTests /
 // TimelineCorrelationTests): Package.swift has no test target, so these
 // compile into the DEBUG build as plain static checks and convert 1:1 into
 // XCTestCase methods. Coverage required by mission W5-U2: geometry mapping,
-// kind coloring, popover text passthrough, WORDING-LAW sweep over every
+// kind coloring, verbatim popover passthrough, WORDING-LAW sweep over every
 // string this file can show, and the accessibility-label contract.
 
 #if DEBUG
@@ -357,17 +429,19 @@ enum TimelineEventMarkersTests {
             producedStrings.append(text)
             return text
         }
-        func row(_ offset: TimeInterval, mbps: Double? = nil, eventId: String? = nil) -> TimelineRow {
+        func row(_ offset: TimeInterval, mbps: Double? = nil,
+                 eventId: String? = nil) -> TimelineRow {
             TimelineRow(ts: now.addingTimeInterval(offset),
                         mbps: mbps, lossPct: nil, jitterMs: nil, eventId: eventId)
         }
-        func event(_ kind: WifiEventKind?, _ offset: TimeInterval, id: String) -> WifiEvent {
+        func event(_ kind: WifiEventKind?, _ offset: TimeInterval,
+                   id: String) -> WifiEvent {
             WifiEvent(ts: now.addingTimeInterval(offset),
                       kind: kind?.rawValue ?? "mystery_kind", id: id)
         }
 
         // Fixed window t0…t0+3600 s mapped onto x 0…600 (a plausible U1
-        // axis): x = 600 * offset / 3600 = offset / 6.
+        // axis): x = offset / 6.
         let t0 = now
         let dateToX: (Date) -> CGFloat? = { t in
             let elapsed = t.timeIntervalSince(t0)
@@ -399,10 +473,9 @@ enum TimelineEventMarkersTests {
             check(markers[0].kind == .roam && markers[1].kind == .rssiDrop,
                   "geometry: kinds resolved from the event list by id")
 
-            // Determinism.
+            // Determinism under shuffled event input.
             let again = TimelineEventMarkers.markerGeometries(
-                rows: rows, events: events.reversed() + [],
-                dateToX: dateToX)
+                rows: rows, events: events.reversed(), dateToX: dateToX)
             check(again == markers,
                   "geometry: identical inputs (any event order) → identical layer")
         }
@@ -411,8 +484,8 @@ enum TimelineEventMarkersTests {
         do {
             let rows = [
                 row(60, eventId: "dup"),
-                row(120, eventId: "dup"),                 // same event twice
-                row(180, eventId: "odd"),                 // unknown wire kind
+                row(120, eventId: "dup"),                  // same event twice
+                row(180, eventId: "odd"),                  // unknown wire kind
             ]
             let events = [event(.channelChange, 60, id: "dup")]
             let markers = TimelineEventMarkers.markerGeometries(
@@ -421,10 +494,10 @@ enum TimelineEventMarkersTests {
             check(markers.last?.kind == nil && markers.last?.rawKind == "",
                   "geometry: id without backing event stays honest (unknown kind)")
 
-            let labeled = track(TimelineEventMarkers.a11yText(
-                for: markers.last!, metric: .mbps))
-            check(labeled.contains("WiFi event"),
-                  "a11y: orphan id falls back to generic 'WiFi event' naming")
+            let labeled = track(TimelineEventMarkers.a11yLabel(
+                for: markers.last!, metric: .mbps, correlation: nil))
+            check(labeled.hasPrefix("WiFi event marker"),
+                  "a11y: orphan id falls back to generic 'WiFi' naming (\(labeled))")
         }
 
         // -- COLORS: kind → calibrated ramp token ----------------------------
@@ -458,8 +531,27 @@ enum TimelineEventMarkersTests {
                   "popover: comparative sentence obeys the confidence wording")
         }
 
+        // -- POPOVER FALLBACK: orphan id gets the honest no-sample line ------
+        do {
+            let orphan = EventMarkerPopover(
+                event: WifiEvent(ts: now, kind: "mystery_kind", id: "odd"),
+                metric: .mbps, correlation: nil)
+            let shown = track(orphan.deltaSentence)
+            check(shown.lowercased().contains("no measurements nearby"),
+                  "popover: orphan id admits no measurements nearby")
+            check(shown.contains("±90"),
+                  "popover: fallback quotes TC2 tolerance (±90 s)")
+        }
+
         // -- A11Y LABELS: every marker kind carries a full spoken story ------
         do {
+            let correlated = TimelineCorrelation.correlate(
+                rows: [
+                    row(-120, mbps: 100), row(-60, mbps: 98),
+                    row(0, mbps: 60, eventId: "e-roam"),
+                    row(60, mbps: 58), row(120, mbps: 57),
+                ],
+                events: [event(.roam, 0, id: "e-roam")], metric: .mbps).first!
             let cases: [(WifiEventKind?, String)] = [
                 (.roam, "Roam"),
                 (.rssiDrop, "RSSI drop"),
@@ -468,17 +560,26 @@ enum TimelineEventMarkersTests {
             ]
             for (kind, expectedName) in cases {
                 let marker = TimelineEventMarkers.MarkerGeometry(
-                    x: 42, kind: kind, rawKind: kind?.rawValue ?? "", eventID: "x")
-                let label = track(TimelineEventMarkers.a11yText(
-                    for: marker, metric: .mbps))
-                check(label.hasPrefix("\(expectedName) event marker"),
+                    x: 42, ts: now.addingTimeInterval(30), kind: kind,
+                    rawKind: kind?.rawValue ?? "", eventID: "x")
+                let label = track(TimelineEventMarkers.a11yLabel(
+                    for: marker, metric: .mbps,
+                    correlation: kind == .roam ? correlated : nil))
+                check(label.hasPrefix("\(expectedName) event marker, "),
                       "a11y: label leads with the human-readable kind (\(label))")
+                if kind == .roam {
+                    check(label.contains(correlated.deltaText),
+                          "a11y: correlated markers speak the engine's verdict")
+                } else {
+                    check(label.hasSuffix("No measurements nearby."),
+                          "a11y: uncorrelated markers admit it plainly")
+                }
             }
         }
 
         // -- CONFIDENCE WORDING LAW: sweep every string this file shows ------
         // S2 enforces the law at the source; this sweep proves the UI layer
-        // adds no causal phrasing of its own (popover fallback included).
+        // adds no causal phrasing of its own (fallbacks included).
         check(!producedStrings.isEmpty, "wording: audit collected strings")
         for text in producedStrings {
             let lowered = text.lowercased()
