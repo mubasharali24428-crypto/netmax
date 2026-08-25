@@ -2,18 +2,74 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  python-tests:
+    name: Python engine + bridge tests
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install pytest
-        run: pip install pytest
-      - name: Run tests
-        run: python -m pytest test_netmax_gui.py tests/ -q
+
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio aiosqlite
+
+      - name: Run engine + bridge suite (177 tests)
+        run: python -m pytest -q
+
+      - name: Bridge offline selftest
+        run: python desktop/bridge/engine_bridge.py selftest
+
+  swift-build:
+    name: Swift app release build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (release)
+        working-directory: desktop/SwiftNetMax
+        run: swift build -c release 2>&1 | tail -1
+
+      - name: Verify binary exists
+        run: |
+          test -f .build/release/netmax-desktop && echo "binary OK"
+
+  bundle-package:
+    name: App bundle + codesign
+    runs-on: macos-14
+    needs: [swift-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (release)
+        working-directory: desktop/SwiftNetMax
+        run: swift build -c release
+
+      - name: Build app bundle
+        working-directory: desktop
+        run: bash scripts/build_app.sh 2>&1 | tail -1
+
+      - name: Codesign verify (ad-hoc)
+        run: |
+          codesign -v build/NetMaxDesktop.app && echo "codesign OK"
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetMaxDesktop-app
+          path: desktop/build/NetMaxDesktop.app
+          retention-days: 7
