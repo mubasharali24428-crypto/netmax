@@ -40,7 +40,9 @@ struct MenuBarView: View {
             Divider()
 
             ScrollView {
-                Text(resultText.isEmpty ? "No results yet." : resultText)
+                // §16 wayfinding: the placeholder names the specific next
+                // action instead of dead-ending on "no results".
+                Text(resultText.isEmpty ? "Run Quick Test to see engine output here." : resultText)
                     .font(.system(.caption, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)

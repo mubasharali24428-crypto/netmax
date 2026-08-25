@@ -8,8 +8,12 @@ import SwiftUI
 ///   Charts dependency needed — plain shapes work on macOS 13.
 /// - **Runs** section: every record with a mode badge, relative timestamp,
 ///   and params summary.
-/// - Toolbar: Clear History (with confirmation dialog) and Refresh.
+/// - Toolbar: Quality Timeline, Refresh, Clear History (trailing; the only
+///   confirmation dialog — destructive-only rule, §16 agency).
 struct HistoryView: View {
+    @Environment(\.accessibilityReduceTransparency)
+    private var reduceTransparency
+
     /// One-time feature-discovery flag: set once the user acknowledges the
     /// Quality Timeline hint bar below (persisted across launches).
     @AppStorage("netmax.hints.timelineShown")
@@ -31,6 +35,7 @@ struct HistoryView: View {
                         .accessibilityLabel("Tip: new Quality Timeline feature")
                     Text("New: see your runs as a timeline with WiFi events — try the Quality Timeline button.")
                         .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
                     Spacer()
                     Button("Got it") {
                         timelineHintShown = true
@@ -38,7 +43,14 @@ struct HistoryView: View {
                     .help("Hide this tip permanently")
                     .accessibilityLabel("Got it — dismiss the Quality Timeline hint")
                 }
-                .padding(.vertical, 2)
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, Theme.Spacing.xs)
+                .background(
+                    // W8 design law #4: the hint reads as a soft material
+                    // chip; radius comes from Theme.Radius (control tier).
+                    RoundedRectangle(cornerRadius: Theme.Radius.control)
+                        .fill(hintFill)
+                )
                 .listRowSeparator(.hidden)
             }
             trendsSection
@@ -58,20 +70,23 @@ struct HistoryView: View {
             }
             ToolbarItem {
                 Button {
+                    reload()
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .help("Reload history from disk")
+            }
+            // §16 wayfinding/familiarity: the destructive action sits at
+            // the trailing edge, away from the read-only controls it could
+            // be mis-clicked against (macOS puts destructive last).
+            ToolbarItem {
+                Button {
                     showingClearConfirmation = true
                 } label: {
                     Label("Clear History", systemImage: "trash")
                 }
                 .disabled(records.isEmpty)
                 .help("Delete all saved measurement history")
-            }
-            ToolbarItem {
-                Button {
-                    reload()
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .help("Reload history from disk")
             }
         }
         .confirmationDialog(
@@ -124,7 +139,9 @@ struct HistoryView: View {
     private var runsSection: some View {
         Section("Past Runs") {
             if records.isEmpty {
-                Text("No measurements yet. Runs you start in Mode Lab are saved here.")
+                // §16 simplicity: empty states answer "what do I do next"
+                // with one specific action, in an honest voice.
+                Text("No measurements yet. Start a run in Mode Lab and it will be saved here.")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(newestFirst, id: \.ts) { record in
@@ -167,6 +184,15 @@ struct HistoryView: View {
         if let current = trendMode, !availableModes.contains(current) {
             trendMode = nil // cleared history or unknown mode → fall back
         }
+    }
+
+    /// Hint-bar fill: `.ultraThinMaterial` chip per W8 law #4; users with
+    /// Reduce Transparency get an opaque surface instead of blur (skill
+    /// §14) so the tip text never loses legibility.
+    private var hintFill: AnyShapeStyle {
+        reduceTransparency
+            ? AnyShapeStyle(Color(nsColor: .controlBackgroundColor))
+            : AnyShapeStyle(.ultraThinMaterial)
     }
 }
 

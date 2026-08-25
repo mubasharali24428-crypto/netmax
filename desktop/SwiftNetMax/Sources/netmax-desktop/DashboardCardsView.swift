@@ -358,7 +358,10 @@ struct DashboardCardsView: View {
             Image(systemName: "gauge")
                 .foregroundStyle(.blue)
             Text("Dashboard")
-                .font(.headline)
+                // §15: the page title steps up via weight+size TOGETHER
+                // (.title3 + semibold), not size alone. No kerning here —
+                // tracking tightens only at display sizes.
+                .font(.title3.weight(.semibold))
             Spacer()
             Button {
                 reload()
@@ -574,6 +577,11 @@ struct MetricCard: View {
             Text(displayValue)
                 .font(.title2.weight(.semibold))
                 .monospacedDigit()
+                // §15: tracking is size-specific — the card's display
+                // figure (the largest repeated text here) takes slight
+                // negative kerning (≈ -0.02em at title2); caption/body
+                // sizes keep the system default.
+                .kerning(-0.3)
                 .foregroundStyle(tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)

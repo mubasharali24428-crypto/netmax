@@ -98,6 +98,9 @@ struct BloatStoryView: View {
         HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.lg) {
             Text(story.gradeLetter)
                 .font(.system(size: 56, weight: .bold, design: .rounded))
+                // §15: display-size type carries tightened tracking (a
+                // no-op for single letters, correct for the "A+" pair).
+                .kerning(-0.5)
                 .foregroundStyle(gradeColor)
                 .accessibilityHidden(true) // letter is spoken via the value below
 
