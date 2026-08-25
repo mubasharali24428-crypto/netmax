@@ -28,6 +28,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-ci.txt
 
+      - name: Prime matplotlib font cache (avoids subprocess in offline tests)
+        run: python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot"
+
       - name: Run engine + bridge suite (177 tests)
         run: python -m pytest -q
 
