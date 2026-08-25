@@ -14,6 +14,8 @@ struct HistoryView: View {
     @State private var trendMode: String?
     @State private var showingClearConfirmation = false
     @State private var selectedRun: IdentifiedRun?
+    @State private var showingTimeline = false
+    @State private var timelineRange: TimelineRange = .oneDay
 
     var body: some View {
         List {
@@ -23,6 +25,15 @@ struct HistoryView: View {
         .listStyle(.inset(alternatesRowBackgrounds: true))
         .navigationTitle("History")
         .toolbar {
+            ToolbarItem {
+                Button {
+                    showingTimeline = true
+                } label: {
+                    Label("Quality Timeline", systemImage: "chart.dots.scatter")
+                }
+                .disabled(records.isEmpty)
+                .help("Open the QoE timeline (throughput, loss, jitter + WiFi events)")
+            }
             ToolbarItem {
                 Button {
                     showingClearConfirmation = true
@@ -56,6 +67,12 @@ struct HistoryView: View {
         }
         .sheet(item: $selectedRun) { run in
             RunDetailSheet(record: run.record)
+        }
+        .sheet(isPresented: $showingTimeline) {
+            TimelineSheet(rows: TimelineModel.build(
+                historyFileURL: HistoryStore.defaultFileURL,
+                eventsFileURL: WifiEventsReader.defaultFileURL
+            ))
         }
         .onAppear(perform: reload)
     }

@@ -32,26 +32,26 @@ struct MainTabView: View {
     var body: some View {
         TabView(selection: $selection) {
             MenuBarView()
-                .tabItem { Label("Dashboard", systemImage: "gauge") }
+                .tabItem { Label("Dashboard ⌘1", systemImage: "gauge") }
                 .tag(0)
             // ALPHA-A4-06: attach the A2-09 Mode Lab a11y addendum here, at the
             // tab host, per ModeLabA11y.swift's header note (never inside
             // ModeLabView.swift itself).
             ModeLabView()
                 .modeLabAccessibilityAddendum()
-                .tabItem { Label("Mode Lab", systemImage: "slider.horizontal.3") }
+                .tabItem { Label("Mode Lab ⌘2", systemImage: "slider.horizontal.3") }
                 .tag(1)
             HistoryView()
-                .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
+                .tabItem { Label("History ⌘3", systemImage: "clock.arrow.circlepath") }
                 .tag(2)
             ScheduleEditorView()
-                .tabItem { Label("Schedule", systemImage: "clock.badge.checkmark") }
+                .tabItem { Label("Schedule ⌘6", systemImage: "clock.badge.checkmark") }
                 .tag(5)
             ReportsView()
-                .tabItem { Label("Reports", systemImage: "square.and.arrow.up") }
+                .tabItem { Label("Reports ⌘4", systemImage: "square.and.arrow.up") }
                 .tag(3)
             SettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tabItem { Label("Settings ⌘5", systemImage: "gearshape") }
                 .tag(4)
         }
         .accessibilityLabel("NetMax sections")
