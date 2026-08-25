@@ -20,12 +20,17 @@ struct MenuBarView: View {
                 statusBadge
             }
 
+            // W11 fix #1: the main feature is the FIRST thing in the popover —
+            // no tab-hunting to run a test. Prominent, full-width, obvious.
             Button {
                 runQuickTest()
             } label: {
-                Label("Run Quick Test", systemImage: "play.circle")
+                Label(status == .running ? "Testing…" : "Run Quick Test",
+                      systemImage: status == .running ? "hourglass" : "play.circle.fill")
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .disabled(status == .running)
             .accessibilityLabel("Run Quick Test")
             .accessibilityHint("Starts a short NetMax engine test and shows results below")

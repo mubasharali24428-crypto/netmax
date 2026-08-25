@@ -39,6 +39,7 @@ struct MainTabView: View {
         TabView(selection: tabSelection) {
             MenuBarView()
                 .tabItem { Label("Dashboard ⌘1", systemImage: "gauge") }
+                .help("Dashboard — run tests, see live metrics (⌘1)")
                 .tag(0)
             // ALPHA-A4-06: attach the A2-09 Mode Lab a11y addendum here, at the
             // tab host, per ModeLabA11y.swift's header note (never inside

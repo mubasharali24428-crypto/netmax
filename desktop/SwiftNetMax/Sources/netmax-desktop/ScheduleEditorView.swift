@@ -80,20 +80,51 @@ struct ScheduleEditorView: View {
 
     private var intervalSection: some View {
         Section {
+            // W11 fix #4: presets + fine-tune stepper with human units.
+            // Covers 5 min…24 h so "every 90 minutes" or "every 2 hours"
+            // needs no workaround.
             Picker("Check every", selection: $draftIntervalMinutes) {
                 ForEach(Self.intervalChoices, id: \.self) { minutes in
-                    Text("Every \(minutes) minutes").tag(minutes)
+                    Text(Self.intervalLabel(minutes)).tag(minutes)
+                }
+                if !Self.intervalChoices.contains(draftIntervalMinutes) {
+                    Text(Self.intervalLabel(draftIntervalMinutes)).tag(draftIntervalMinutes)
                 }
             }
             .pickerStyle(.menu)
             .accessibilityLabel(Text("Check interval"))
-            .accessibilityValue(Text("\(draftIntervalMinutes) minutes"))
+            .accessibilityValue(Text(Self.intervalLabel(draftIntervalMinutes)))
             .accessibilityHint(Text("How often the automatic check runs. Applies when you press Save."))
             .accessibilityIdentifier("schedule.intervalPicker")
+
+            Stepper {
+                Text("Custom: \(Self.intervalLabel(draftIntervalMinutes))")
+                    .font(.callout)
+            } onIncrement: {
+                draftIntervalMinutes = min(draftIntervalMinutes + 5, 1440)
+            } onDecrement: {
+                draftIntervalMinutes = max(draftIntervalMinutes - 5, 5)
+            }
+            .accessibilityLabel(Text("Fine-tune interval in 5-minute steps"))
         } header: {
             Text("Cadence")
         } footer: {
-            Text("After enabling, the first check waits one full interval — nothing fires the moment you save.")
+            Text("Presets and the stepper set any cadence from 5 minutes to 24 hours. After enabling, the first check waits one full interval — nothing fires the moment you save.")
+        }
+    }
+
+    /// W11 fix #4: human units — hours shown as hours, never "1440 minutes".
+    private static func intervalLabel(_ minutes: Int) -> String {
+        switch minutes {
+        case 60: return "1 hour"
+        case 90: return "1½ hours"
+        case let m where m >= 60 && m % 60 == 0:
+            return "\(m / 60) hours"
+        case let m where m >= 60:
+            let h = m / 60, rem = m % 60
+            return rem == 30 ? "\(h)½ hours" : "\(h) h \(rem) m"
+        default:
+            return "\(minutes) minutes"
         }
     }
 

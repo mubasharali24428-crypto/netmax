@@ -270,8 +270,11 @@ extension StatusBarController {
 
         var body: some View {
             if label.isEmpty {
-                Image(systemName: "bolt.horizontal.circle")
-                    .accessibilityLabel("NetMax")
+                // W11 fix #2: bare bolt told the user nothing. Now the icon
+                // carries the app name so the menu-bar item is identifiable
+                // at a glance, before any run has ever happened.
+                Label("NetMax", systemImage: "bolt.horizontal.circle")
+                    .accessibilityLabel("NetMax — no measurements yet")
             } else {
                 Text(label)
                     .accessibilityLabel(
