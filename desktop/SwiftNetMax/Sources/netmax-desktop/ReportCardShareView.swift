@@ -288,6 +288,11 @@ struct ReportCardShareView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            if let plan = planComparisonLine {
+                Text(plan)
+                    .font(.callout.weight(.medium))
+                    .accessibilityLabel(plan)
+            }
             Divider()
 
             ScrollView {
@@ -324,6 +329,28 @@ struct ReportCardShareView: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// W12 T5-b (S-008): plan comparison line — measured vs the user's stated
+    /// plan, honest percentage. Hidden when no plan set (0) or no speed data.
+    @AppStorage("netmax.plan.mbps") private var planMbps: Double = 100
+
+    private var planComparisonLine: String? {
+        guard planMbps > 0,
+              let throughput = card.sections.first(where: { $0.metric == .throughput }),
+              throughput.grade != .incomplete,
+              let mbps = Self.throughputMbps(from: throughput.summary) else { return nil }
+        let pct = Int((mbps / planMbps * 100).rounded())
+        return "Your plan: \(Int(planMbps)) Mbps → measured \(Int(mbps)) Mbps (\(pct)%)"
+    }
+
+    /// Parses the measured Mbps out of the section summary line (which cites
+    /// only real numbers per the model's contract).
+    private static func throughputMbps(from summary: String) -> Double? {
+        guard let range = summary.range(of: #"\d+(\.\d+)?"#, options: .regularExpression) else {
+            return nil
+        }
+        return Double(summary[range])
     }
 
     private func cardPreview(_ card: ReportCard) -> some View {

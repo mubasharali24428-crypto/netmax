@@ -21,6 +21,7 @@ struct NetMaxDesktopApp: App {
     init() {
         StatusPublisherHook.install()
         ScheduleRunner.shared.start()
+        GlobalHotkey.install() // W12 T5-a: ⌥⌘R runs Quick Test system-wide
     }
 
     var body: some Scene {

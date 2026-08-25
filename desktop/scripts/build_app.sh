@@ -59,7 +59,10 @@ done
 log "copied ${#engine_modules[@]} netmax*.py module(s) + netmetrics.py + engine_bridge.py -> Resources/engine/"
 
 # --- 3. Info.plist ---------------------------------------------------------
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+# W12 T1-e: NetMaxBuildDate is stamped here so Settings → About can show the
+# honest build date next to "Check for Updates…".
+BUILD_DATE="$(date -u '+%Y-%m-%d %H:%M UTC')"
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -80,6 +83,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 	<string>0.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>0</string>
+	<key>NetMaxBuildDate</key>
+	<string>${BUILD_DATE}</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>

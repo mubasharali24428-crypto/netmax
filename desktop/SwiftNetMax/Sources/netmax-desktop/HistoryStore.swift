@@ -181,7 +181,11 @@ final class HistoryStore {
         HistoryStore.shared.restoreHoldingBin()
     }
 
-    private func restoreHoldingBin() -> Bool {
+    /// Instance-level merge used by `restoreLastClear()` (which pins the work
+    /// to `shared`). Internal rather than private so offline /tmp probes can
+    /// exercise the identical merge/dedupe path against an isolated store;
+    /// production callers should always go through the static form.
+    func restoreHoldingBin() -> Bool {
         lock.lock()
         defer { lock.unlock() }
         let binURL = Self.holdingBinURL(forFileAt: fileURL)

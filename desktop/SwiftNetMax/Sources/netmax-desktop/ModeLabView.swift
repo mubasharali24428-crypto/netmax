@@ -349,21 +349,55 @@ struct ModeLabView: View {
     // MARK: Results
 
     private var resultArea: some View {
-        TextEditor(text: Binding(
-            get: { resultText.isEmpty ? "No results yet." : resultText },
-            set: { _ in /* engine output — intentionally read-only */ }
-        ))
-        .font(.system(.caption, design: .monospaced))
-        .scrollContentBackground(.hidden)
-        .background(Color(nsColor: .textBackgroundColor))
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(Color(nsColor: .separatorColor))
-        )
-        .cornerRadius(6)
-        .frame(minHeight: 200)
-        .accessibilityLabel("Mode Lab results")
-        .accessibilityValue(resultText.isEmpty ? "No results yet" : resultText)
+        VStack(alignment: .leading, spacing: 6) {
+            if !droppedFlagNames.isEmpty {
+                // W12 T1-d (W11-A-042): the bridge surfaces unsupported
+                // per-mode flags in the envelope's `droppedFlags`; show an
+                // honest inline note instead of leaving them invisible.
+                Label(
+                    "Measured without unsupported flags: \(droppedFlagNames.map { "--\($0)" }.joined(separator: ", "))",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.footnote)
+                .foregroundColor(.orange)
+                .accessibilityLabel(Text("Measured without unsupported flags"))
+                .accessibilityValue(Text(droppedFlagNames.joined(separator: ", ")))
+            }
+            TextEditor(text: Binding(
+                get: { resultText.isEmpty ? "No results yet." : resultText },
+                set: { _ in /* engine output — intentionally read-only */ }
+            ))
+            .font(.system(.caption, design: .monospaced))
+            .scrollContentBackground(.hidden)
+            .background(Color(nsColor: .textBackgroundColor))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(Color(nsColor: .separatorColor))
+            )
+            .cornerRadius(6)
+            .frame(minHeight: 200)
+            .accessibilityLabel("Mode Lab results")
+            .accessibilityValue(resultText.isEmpty ? "No results yet" : resultText)
+        }
+    }
+
+    /// W12 T1-d: flag names from the envelope's `droppedFlags` array, when
+    /// `resultText` IS that envelope JSON. Any parse problem (non-JSON text,
+    /// wrong shape, unexpected types) yields an empty array — the note stays
+    /// silent rather than ever guessing. (Static + pure so it can be
+    /// self-checked offline.)
+    static func droppedFlags(in resultJSON: String) -> [String] {
+        guard let data = resultJSON.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data),
+              let dict = obj as? [String: Any],
+              let flags = dict["droppedFlags"] else { return [] }
+        guard let names = flags as? [String] else { return [] }
+        return names.filter { !$0.isEmpty }
+    }
+
+    /// Names to show for the current result payload.
+    private var droppedFlagNames: [String] {
+        status == .done ? Self.droppedFlags(in: resultText) : []
     }
 
     // MARK: Actions

@@ -92,6 +92,11 @@ struct SettingsView: View {
                 // Reset so picking the SAME section again jumps again.
                 jumpTarget = nil
             }
+            .onAppear {
+                // W12 T1-c: re-read the digest gate so a value flipped
+                // elsewhere (or in a previous session) is what's shown.
+                digestOn = NotifyDigest.isEnabled
+            }
         }
     }
 
@@ -272,6 +277,22 @@ struct SettingsView: View {
                      : "Notifications are off — individual rules are kept but ignored.")
             }
 
+            // W12 T1-c (W11-A-029): surface W7-1's existing digest batching,
+            // which previously had no UI. Bound to the exact shared key
+            // `netmax.notify.digest` via NotifyDigest.digestGateKey.
+            Section {
+                Toggle("Daily digest instead of individual alerts", isOn: digestGateBinding)
+                    .accessibilityLabel(Text("Daily digest instead of individual alerts"))
+                    .accessibilityHint(Text("Collects degradation alerts and delivers them as one daily summary instead of posting each alert immediately."))
+                    .accessibilityIdentifier("notifications.digest")
+            } header: {
+                Text("Delivery")
+            } footer: {
+                Text(digestOn
+                     ? "Alerts accumulate quietly and arrive as ONE summary roughly every 24 hours."
+                     : "Each matching alert is posted as soon as it fires.")
+            }
+
             Section {
                 notificationRuleRow(
                     title: "Grade drop",
@@ -303,6 +324,24 @@ struct SettingsView: View {
             .opacity(notifyPrefs.notificationsEnabled ? 1 : 0.55)
         }
         .id(SettingsSection.notifications.id) // T4-a anchor
+    }
+
+    /// W12 T1-c state mirror: true while the digest gate (`netmax.notify.digest`)
+    /// is on. Seeded from the shared key when the view appears; writes go
+    /// straight back to that key so `NotifyDigest.isEnabled` sees them.
+    @State private var digestOn = NotifyDigest.isEnabled
+
+    /// Binding for the digest toggle. Writes go to the EXACT shared key via
+    /// `NotifyDigest.digestGateKey`; the mirror updates synchronously so the
+    /// footer text follows the switch without waiting for a KVO round-trip.
+    private var digestGateBinding: Binding<Bool> {
+        Binding(
+            get: { digestOn },
+            set: { newValue in
+                digestOn = newValue
+                UserDefaults.standard.set(newValue, forKey: NotifyDigest.digestGateKey)
+            }
+        )
     }
 
     /// NotificationPrefsView's standard rule row: title + one-line effect,
@@ -370,6 +409,35 @@ struct SettingsView: View {
         return "NetMax Desktop \(version) (\(build))"
     }
 
+    // MARK: Updates stub (W12 T1-e)
+
+    /// Release page the "Check for Updates…" row opens. A constant so tests
+    /// and future Sparkle wiring share one spelling.
+    static let releasesPageURL = "https://github.com/netmax/releases"
+
+    /// Build date from Info.plist (`NetMaxBuildDate`, stamped by
+    /// build_app.sh). Falls back to the bundle version when the key is
+    /// absent (dev runs via `swift run` have no generated plist).
+    private var buildDateLine: String {
+        let info = Bundle.main.infoDictionary
+        if let raw = (info?["NetMaxBuildDate"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !raw.isEmpty {
+            return "Built \(raw)"
+        }
+        if let build = info?["CFBundleVersion"] as? String, build != "?" {
+            return "Build \(build)"
+        }
+        return "Development build"
+    }
+
+    /// Opens the releases page in the user's default browser.
+    static func openReleasesPage() {
+        if let url = URL(string: releasesPageURL) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     private var about: some View {
         Section {
             Text(versionLine)
@@ -398,6 +466,30 @@ struct SettingsView: View {
                 .font(.callout)
                 .foregroundColor(.secondary)
                 .accessibilityLabel(Text("Licenses: SwiftUI, Apple engines, no third-party runtime dependencies"))
+
+            // W12 T1-e (W11-A-134): honest update stub. No Sparkle feed
+            // exists yet — this reports the build date from Info.plist and
+            // opens the release page instead of pretending to auto-update.
+            Button {
+                Self.openReleasesPage()
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Check for Updates…")
+                        Text(buildDateLine)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.up.right.square")
+                        .foregroundColor(.accentColor)
+                }
+            }
+            .buttonStyle(.plain)
+            .help("Opens the NetMax releases page in your browser")
+            .accessibilityLabel(Text("Check for updates"))
+            .accessibilityHint(Text("There is no automatic updater yet. Opens the NetMax releases page in your browser so you can compare against the version shown here."))
+            .accessibilityIdentifier("settings.checkForUpdates")
         } header: {
             Text("About")
         } footer: {
