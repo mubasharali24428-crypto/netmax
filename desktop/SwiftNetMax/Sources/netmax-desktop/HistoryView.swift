@@ -3,13 +3,18 @@ import SwiftUI
 /// History tab (contract P2): past runs newest-first plus per-mode trends.
 ///
 /// Layout:
+/// - **Hint bar**: one-time Quality Timeline tip (dismissable).
+/// - **Undo banner** (W12 T1-a): shown for 30 s after Clear History — one tap
+///   restores the cleared batch from the holding bin.
+/// - **Search bar** (W12 T1-b): live filter over mode / verdict / date text.
 /// - **Trends** section: last ≤20 runs of one mode rendered as simple HStack
 ///   bar chart (heights scaled to the series min/max). No third-party or
 ///   Charts dependency needed — plain shapes work on macOS 13.
 /// - **Runs** section: every record with a mode badge, relative timestamp,
 ///   and params summary.
-/// - Toolbar: Quality Timeline, Refresh, Clear History (trailing; the only
-///   confirmation dialog — destructive-only rule, §16 agency).
+/// - Toolbar: Quality Timeline, Refresh, Restore Last Clear (enabled while a
+///   holding bin exists), Clear History (trailing; the only destructive
+///   dialogs — destructive-only rule, §16 agency).
 struct HistoryView: View {
     @Environment(\.accessibilityReduceTransparency)
     private var reduceTransparency
@@ -26,6 +31,22 @@ struct HistoryView: View {
     @State private var showingTimeline = false
     @State private var timelineRange: TimelineRange = .oneDay
 
+    /// W12 T1-b (audit 091): live search text filtering Past Runs by mode,
+    /// verdict/result_raw content, or date substring.
+    @State private var searchText = ""
+
+    /// W12 T1-a (audit 093): true for 30 s after a Clear so the undo banner
+    /// stays up; tapping Undo restores the holding bin immediately.
+    @State private var showingUndoBanner = false
+
+    /// W12 T1-a: owns the banner's auto-dismiss so a second Clear restarts
+    /// (rather than stacks) the 30-second window.
+    @State private var undoBannerTask: Task<Void, Never>?
+
+    /// W12 T1-a: mirrors whether a restorable cleared batch exists on disk;
+    /// drives the "Restore Last Clear" toolbar item's enabled state.
+    @State private var holdingBinAvailable = false
+
     /// W12 T4-a (audit 151): Trends section starts collapsed once the log
     /// grows past 50 runs. User toggles win until the view is recreated.
     @State private var trendsExpanded = false
@@ -36,6 +57,9 @@ struct HistoryView: View {
 
     /// W12 T4-a (audit 151): collapse threshold for the Trends section.
     static let trendsCollapseThreshold = 50
+
+    /// W12 T1-a (audit 093): how long the post-Clear undo banner stays up.
+    static let undoWindow: TimeInterval = 30
 
     /// W12 T4-a (audit 151): set the first time the user expands Trends; a
     /// manual expand wins over reload-time re-collapse for this visit.
@@ -73,6 +97,10 @@ struct HistoryView: View {
                 )
                 .listRowSeparator(.hidden)
             }
+            if showingUndoBanner {
+                undoBanner
+            }
+            searchBar
             trendsSection
             runsSection
         }
@@ -96,6 +124,19 @@ struct HistoryView: View {
                 }
                 .help("Reload history from disk")
             }
+            // W12 T1-a (audit 093): Trash-style restore of the LAST cleared
+            // batch; enabled exactly while the holding bin holds records.
+            ToolbarItem {
+                Button {
+                    HistoryStore.restoreLastClear()
+                    reload()
+                } label: {
+                    Label("Restore Last Clear", systemImage: "tray.and.arrow.down")
+                }
+                .disabled(!holdingBinAvailable)
+                .help("Bring back the runs removed by the most recent clear")
+                .accessibilityIdentifier("history.restoreLastClear")
+            }
             // §16 wayfinding/familiarity: the destructive action sits at
             // the trailing edge, away from the read-only controls it could
             // be mis-clicked against (macOS puts destructive last).
@@ -115,12 +156,11 @@ struct HistoryView: View {
             titleVisibility: .visible
         ) {
             Button("Delete all history", role: .destructive) {
-                HistoryStore.shared.clear()
-                reload()
+                performClear()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently removes all \(records.count) saved run(s) from this Mac.")
+            Text("This removes all \(records.count) saved run(s) from this Mac — Undo stays available for \(Int(Self.undoWindow)) seconds.")
         }
         // W12 T4-b (audit 154): per-run destructive action goes through the
         // same confirmation pattern as Clear History (destructive-only rule).
@@ -160,6 +200,69 @@ struct HistoryView: View {
     }
 
     // MARK: - Sections
+
+    /// W12 T1-a (audit 093): 30-second undo window right after a Clear —
+    /// one tap moves the holding bin back into history.
+    private var undoBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "clock.arrow.circlepath")
+                .foregroundStyle(.yellow)
+                .accessibilityHidden(true)
+            Text("History cleared")
+                .font(.callout)
+            Spacer()
+            Button("Undo") {
+                showingUndoBanner = false
+                HistoryStore.restoreLastClear()
+                reload()
+            }
+            .buttonStyle(NetMaxPressStyle())
+            .help("Restore the runs that were just cleared")
+            .accessibilityLabel("Undo — restore the cleared history")
+        }
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, Theme.Spacing.xs)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                .fill(hintFill)
+        )
+        .listRowSeparator(.hidden)
+        .accessibilityElement(children: .contain)
+        .transition(.opacity)
+    }
+
+    /// W12 T1-b (audit 091): live filter field directly under the toolbar.
+    /// Matches mode names, verdict/result_raw content, and date text.
+    private var searchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("Search mode, verdict, or date…", text: $searchText)
+                .textFieldStyle(.plain)
+                .accessibilityLabel(Text("Search history"))
+                .accessibilityHint(Text("Filters past runs by mode, verdict text, or date."))
+                .accessibilityIdentifier("history.search")
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear search")
+                .accessibilityLabel(Text("Clear search"))
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                .fill(hintFill)
+        )
+        .listRowSeparator(.hidden)
+    }
 
     @ViewBuilder
     private var trendsSection: some View {
@@ -217,8 +320,22 @@ struct HistoryView: View {
                 // with one specific action, in an honest voice.
                 Text("No runs yet. Measure in Mode Lab and they will be saved here.")
                     .foregroundStyle(.secondary)
+            } else if filteredRuns.isEmpty {
+                // W12 T1-b: honest empty state for an active filter.
+                Text("No runs match “\(trimmedQuery)”.")
+                    .foregroundStyle(.secondary)
             } else {
-                ForEach(newestFirst, id: \.ts) { record in
+                if isFiltering {
+                    // W12 T1-b (audit 091): always show how much the filter
+                    // narrowed the list.
+                    Text("\(filteredRuns.count) of \(records.count) runs")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(Text(
+                            "\(filteredRuns.count) of \(records.count) runs match the search"
+                        ))
+                }
+                ForEach(newestFilteredFirst, id: \.ts) { record in
                     Button {
                         selectedRun = IdentifiedRun(record: record)
                     } label: {
@@ -251,6 +368,61 @@ struct HistoryView: View {
         records.sorted { $0.ts > $1.ts }
     }
 
+    /// W12 T1-b: runs surviving the live search filter (file order kept).
+    private var filteredRuns: [HistoryRecord] {
+        records.filter { Self.matches(trimmedQuery, record: $0) }
+    }
+
+    /// Newest-first view of the filtered log.
+    private var newestFilteredFirst: [HistoryRecord] {
+        filteredRuns.sorted { $0.ts > $1.ts }
+    }
+
+    /// Search text without stray whitespace; "" means "no filter".
+    private var trimmedQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// True when the search field currently narrows the list.
+    private var isFiltering: Bool {
+        !trimmedQuery.isEmpty
+    }
+
+    /// W12 T1-b (audit 091): one predicate for the whole feature — case-
+    /// insensitive substring match on mode, verdict/result_raw content, or
+    /// any of the run's date renderings (ISO-8601 UTC stamp, local date,
+    /// local time). Empty query matches everything. Static + pure so it can
+    /// be self-checked offline.
+    static func matches(_ query: String, record: HistoryRecord) -> Bool {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return true }
+        return record.mode.localizedCaseInsensitiveContains(needle)
+            || record.resultRaw.localizedCaseInsensitiveContains(needle)
+            || dateTexts(of: record.ts).contains {
+                $0.localizedCaseInsensitiveContains(needle)
+            }
+    }
+
+    /// The date strings a user might type against a run's timestamp.
+    static func dateTexts(of date: Date) -> [String] {
+        [
+            ISO8601DateFormatter().string(from: date),
+            localDateFormatter.string(from: date),
+            localTimeFormatter.string(from: date),
+        ]
+    }
+
+    private static let localDateFormatter: DateFormatter = makeLocalFormatter("yyyy-MM-dd")
+    private static let localTimeFormatter: DateFormatter = makeLocalFormatter("HH:mm:ss")
+
+    private static func makeLocalFormatter(_ format: String) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = format
+        return formatter
+    }
+
     private var availableModes: [String] {
         Array(Set(records.map(\.mode))).sorted()
     }
@@ -269,10 +441,29 @@ struct HistoryView: View {
 
     private func reload() {
         records = HistoryStore.shared.loadAll()
+        // W12 T1-a: keep the Restore item's enabled state honest across
+        // appends, deletes, clears, restores, and other windows' actions.
+        holdingBinAvailable = HistoryStore.shared.holdingBinExists()
         if let current = trendMode, !availableModes.contains(current) {
             trendMode = nil // cleared history or unknown mode → fall back
         }
         applyTrendsCollapseDefault()
+    }
+
+    /// W12 T1-a (audit 093): Clear now soft-deletes into the holding bin;
+    /// open a 30-second undo window afterwards. A second Clear replaces the
+    /// bin AND restarts this window (the task handle keeps them from stacking).
+    private func performClear() {
+        HistoryStore.shared.clear()
+        reload()
+        undoBannerTask?.cancel()
+        showingUndoBanner = true
+        undoBannerTask = Task {
+            try? await Task.sleep(nanoseconds: UInt64(Self.undoWindow * 1_000_000_000))
+            if !Task.isCancelled {
+                showingUndoBanner = false
+            }
+        }
     }
 
     /// W12 T4-a (audit 151): re-collapse Trends on reload once the log passes
@@ -293,9 +484,10 @@ struct HistoryView: View {
 
     /// Short relative stamp used in the delete confirmation message.
     private static func relativeStamp(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        RelativeDateTimeFormatter.localizedString(
+            from: date,
+            relativeTo: Date()
+        )
     }
 
     /// Hint-bar fill: `.ultraThinMaterial` chip per W8 law #4; users with
