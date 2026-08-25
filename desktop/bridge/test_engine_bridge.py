@@ -70,7 +70,7 @@ def test_real_environ_used_when_no_mapping_given(monkeypatch):
 
 def test_build_command_uses_resolved_interpreter():
     with mock.patch.dict(os.environ, {"NETMAX_PYTHON": PY}):
-        cmd = eb.build_command("dns")
+        cmd, _dropped = eb.build_command("dns")
     assert cmd[0] == PY
 
 
@@ -97,8 +97,9 @@ def test_build_command_uses_resolved_interpreter():
     ids=MODES,
 )
 def test_build_command_maps_only_supported_flags(mode, kwargs, expected_tail):
-    cmd = eb.build_command(mode, **kwargs, python=PY, bundled=False)
+    cmd, dropped = eb.build_command(mode, **kwargs, python=PY, bundled=False)
     assert cmd == [PY, str(eb.ENGINE_PATH), mode] + expected_tail
+    assert dropped == []  # supported flags are never reported as dropped
 
 
 def test_every_contract_mode_is_known():
@@ -106,19 +107,22 @@ def test_every_contract_mode_is_known():
 
 
 def test_unsupported_flag_is_dropped():
-    # --count means nothing to turbo; it must not leak into the command.
-    cmd = eb.build_command("turbo", streams=4, count=99, python=PY, bundled=False)
+    # --count means nothing to turbo; it must not leak into the command —
+    # but it IS surfaced in dropped_flags (F1: never silently lost).
+    cmd, dropped = eb.build_command("turbo", streams=4, count=99, python=PY, bundled=False)
     assert "--count" not in cmd and cmd == [PY, str(eb.ENGINE_PATH), "turbo",
                                             "--streams", "4"]
+    assert dropped == ["count"]
 
 
 def test_defaults_omit_unset_flags():
-    assert eb.build_command("turbo", python=PY, bundled=False) == \
-        [PY, str(eb.ENGINE_PATH), "turbo"]
+    cmd, dropped = eb.build_command("turbo", python=PY, bundled=False)
+    assert cmd == [PY, str(eb.ENGINE_PATH), "turbo"]
+    assert dropped == []
 
 
 def test_bundled_flag_prepends_B_and_keeps_absolute_engine_path():
-    cmd = eb.build_command("dns", python=PY, bundled=True)
+    cmd, _dropped = eb.build_command("dns", python=PY, bundled=True)
     assert cmd[:2] == [PY, "-B"] and cmd[2] == str(eb.ENGINE_PATH)
 
 

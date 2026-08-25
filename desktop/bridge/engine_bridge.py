@@ -97,19 +97,24 @@ def build_command(
     *,
     python: str | None = None,
     bundled: bool | None = None,
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     """Full argv for the engine call; only mode-supported flags forwarded.
 
     Uses the ABSOLUTE path to netmax.py so the engine subprocess cannot fail
     due to inherited cwd (GUI apps may spawn us from anywhere). `bundled`
     defaults to auto-detection; selftest passes it explicitly so checks are
     location-independent.
+
+    Returns (argv, dropped_flags): dropped_flags lists flag names the caller
+    gave that this mode does not support (F1 — surfaced, never silently lost).
     """
     given: dict[str, int | None] = {
         "streams": streams,
         "seconds": seconds,
         "count": count,
     }
+    supported = MODE_FLAGS[mode]
+    dropped = sorted(k for k, v in given.items() if v is not None and k not in supported)
     is_bundled = _is_bundled() if bundled is None else bundled
     cmd = [python if python is not None else resolve_interpreter()]
     if is_bundled:
@@ -118,11 +123,11 @@ def build_command(
         # invalidates the code signature).
         cmd.append("-B")
     cmd += [str(ENGINE_PATH), mode]
-    for key in MODE_FLAGS[mode]:
+    for key in supported:
         value = given[key]
         if value is not None:
             cmd += [_FLAG_SPELLING[key], str(int(value))]
-    return cmd
+    return cmd, dropped
 
 
 def stderr_tail(text: str, limit: int = STDERR_TAIL_CHARS) -> str:
@@ -137,6 +142,7 @@ def write_envelope(
     mode: str,
     data: Any,
     error: str | None,
+    dropped_flags: list[str] | None = None,
 ) -> dict[str, Any]:
     """Write the C1 envelope to `path`; returns what was written."""
     target = Path(path)
@@ -154,6 +160,10 @@ def write_envelope(
         "data": data,
         "error": error,
     }
+    if dropped_flags:
+        # F1 (W4 delta sweep): unsupported per-mode flags are surfaced, never
+        # silently lost — the UI can show "measured without --count".
+        payload["droppedFlags"] = list(dropped_flags)
     try:
         target.write_text(json.dumps(payload), encoding="utf-8")
     except OSError as exc:
@@ -191,7 +201,7 @@ def run_engine(
 ) -> int:
     """Run one engine mode and write the envelope. Returns exit code."""
     root = REPO_ROOT if repo_root is None else Path(repo_root)
-    command = build_command(
+    command, dropped_flags = build_command(
         mode, streams, seconds, count, python=resolve_interpreter(env)
     )
     try:
@@ -230,6 +240,7 @@ def run_engine(
             mode=mode,
             data=parse_engine_stdout(completed.stdout),
             error=None,
+            dropped_flags=dropped_flags,
         )
         return 0
 
@@ -246,24 +257,27 @@ def run_engine(
 def _check_arg_mapping() -> None:
     fixed_py = "/opt/fake-python/bin/python"
     engine = str(ENGINE_PATH)
-    expectations: list[tuple[tuple[str, dict[str, int]], list[str]]] = [
+    expectations: list[tuple[tuple[str, dict[str, int]], list[str], list[str]]] = [
         (
             ("turbo", {"streams": 4, "seconds": 9}),
             [fixed_py, engine, "turbo", "--streams", "4", "--seconds", "9"],
+            [],
         ),
-        (("baseline", {"seconds": 7}), [fixed_py, engine, "baseline", "--seconds", "7"]),
-        (("dns", {}), [fixed_py, engine, "dns"]),
-        (("loss", {"count": 20}), [fixed_py, engine, "loss", "--count", "20"]),
-        (("wifi", {}), [fixed_py, engine, "wifi"]),
-        # Unsupported flag for the mode is never forwarded.
-        (("turbo", {"count": 99}), [fixed_py, engine, "turbo"]),
+        (("baseline", {"seconds": 7}), [fixed_py, engine, "baseline", "--seconds", "7"], []),
+        (("dns", {}), [fixed_py, engine, "dns"], []),
+        (("loss", {"count": 20}), [fixed_py, engine, "loss", "--count", "20"], []),
+        ((("wifi", {}), [fixed_py, engine, "wifi"], [])),
+        # Unsupported flag for the mode is never forwarded — but surfaced.
+        ((("turbo", {"count": 99}), [fixed_py, engine, "turbo"], ["count"])),
     ]
-    for (mode, kwargs), expected in expectations:
-        actual = build_command(mode, python=fixed_py, bundled=False, **kwargs)
+    for (mode, kwargs), expected, expected_dropped in expectations:
+        actual, dropped = build_command(mode, python=fixed_py, bundled=False, **kwargs)
         if actual != expected:
             raise AssertionError(f"{mode}: {actual} != {expected}")
+        if dropped != expected_dropped:
+            raise AssertionError(f"{mode}: dropped {dropped} != {expected_dropped}")
     # Bundled builds prepend -B; engine path stays absolute either way.
-    bcmd = build_command("dns", python=fixed_py, bundled=True)
+    bcmd, _ = build_command("dns", python=fixed_py, bundled=True)
     if bcmd[:2] != [fixed_py, "-B"] or bcmd[2] != engine:
         raise AssertionError(f"bundled argv malformed: {bcmd[:3]}")
 
