@@ -24,8 +24,13 @@ struct RootView: View {
     }
 }
 
-/// Post-onboarding navigation. Sidebar on the main window feels native;
-/// the same view works in the menu-bar popover where it collapses gracefully.
+/// Post-onboarding navigation.
+///
+/// W14: the menu-bar popover uses a CUSTOM tab bar (NamedTabBar) with
+/// icon + name always visible — the system tab strip collapsed to bare icons
+/// at popover width, hiding what each tab is (user-reported). The main window
+/// keeps the native sidebar-style TabView which shows names natively.
+/// Both paths animate tab changes with a smooth cross-fade + rise.
 struct MainTabView: View {
     /// W12 T4-c (audit 164): the selected tab persists across launches under
     /// `netmax.state.lastTab`. `TabView(selection:)` writes straight through
@@ -38,7 +43,37 @@ struct MainTabView: View {
         Binding(get: { selection }, set: { selection = $0 })
     }
 
+    /// W14: true when running inside the compact menu-bar popover context —
+    /// drives the custom named tab bar instead of the system strip.
+    @Environment(\.controlActiveState) private var controlActive
+    @AppStorage("netmax.prefs.launchWindow") private var showWindow = true
+
     var body: some View {
+        if isPopoverContext {
+            popoverLayout
+        } else {
+            nativeTabView
+        }
+    }
+
+    /// The popover hosts RootView with a small min-width; the main window is
+    /// wider. Width alone distinguishes them reliably without new plumbing.
+    @State private var width: CGFloat = 0
+
+    private var isPopoverContext: Bool { width > 0 && width < 400 }
+
+    private var popoverLayout: some View {
+        VStack(spacing: 0) {
+            NamedTabBar(selection: tabSelection)
+            tabContent
+        }
+        .background(GeometryReader { geo in
+            Color.clear.onAppear { width = geo.size.width }
+                .onChange(of: geo.size.width) { width = $0 }
+        })
+    }
+
+    private var nativeTabView: some View {
         TabView(selection: tabSelection) {
             MenuBarView()
                 .tabItem { Label("Dashboard ⌘1", systemImage: "gauge") }
@@ -67,6 +102,42 @@ struct MainTabView: View {
         .accessibilityLabel("NetMax sections")
         .netMaxTabShortcuts(selection: $selection)
         .netMaxRerunLastShortcut()
+    }
+
+    /// W14: the tab content with a smooth cross-fade + rise on switch.
+    /// Each tab's view animates opacity/offset keyed to selection so moving
+    /// between tabs feels like one continuous surface, not hard cuts.
+    @ViewBuilder
+    private var tabContent: some View {
+        ZStack {
+            pane(0) { MenuBarView() }
+            pane(1) { ModeLabView().modeLabAccessibilityAddendum() }
+            pane(2) { HistoryView() }
+            pane(3) { ReportsView() }
+            pane(4) { SettingsView(onOpenTab: { selection = $0 }) }
+            pane(5) { ScheduleEditorView() }
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.15) : NetMaxMotion.standard,
+                   value: selection)
+        .accessibilityLabel("NetMax sections")
+        .netMaxTabShortcuts(selection: $selection)
+        .netMaxRerunLastShortcut()
+    }
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @ViewBuilder
+    private func pane<Content: View>(_ tag: Int,
+                                     @ViewBuilder content: () -> Content) -> some View {
+        let isActive = selection == tag
+        Group {
+            if isActive {
+                content()
+                    .transition(reduceMotion
+                                ? .opacity
+                                : .opacity.combined(with: .offset(y: 8)))
+            }
+        }
     }
 }
 
