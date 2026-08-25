@@ -104,9 +104,18 @@ struct MainTabView: View {
         .netMaxRerunLastShortcut()
     }
 
-    /// W14: the tab content with a smooth cross-fade + rise on switch.
-    /// Each tab's view animates opacity/offset keyed to selection so moving
-    /// between tabs feels like one continuous surface, not hard cuts.
+    /// W14 rev 2 — richer, directional tab transition (user feedback: the
+    /// plain cross-fade was "bland, not an even animated transition").
+    ///
+    /// What changed vs rev 1:
+    /// - BOTH panes animate: outgoing fades out + slides away in the swipe
+    ///   direction; incoming slides in from the opposite side while fading in.
+    ///   A true push feel, like iOS NavigationStack — not a static cross-fade.
+    /// - Direction-aware: moving to a higher tag pushes left; lower tag pulls
+    ///   right. The motion matches where the tab sits in the bar.
+    /// - Spring with slight bounce (damping 0.85) — momentum feel per
+    ///   apple-design §4 (this is a deliberate navigation gesture).
+    /// - Reduce Motion: plain cross-fade, no slide.
     @ViewBuilder
     private var tabContent: some View {
         ZStack {
@@ -117,7 +126,8 @@ struct MainTabView: View {
             pane(4) { SettingsView(onOpenTab: { selection = $0 }) }
             pane(5) { ScheduleEditorView() }
         }
-        .animation(reduceMotion ? .easeInOut(duration: 0.15) : NetMaxMotion.standard,
+        .animation(reduceMotion ? .easeInOut(duration: 0.15)
+                                : .spring(response: 0.4, dampingFraction: 0.85),
                    value: selection)
         .accessibilityLabel("NetMax sections")
         .netMaxTabShortcuts(selection: $selection)
@@ -125,6 +135,14 @@ struct MainTabView: View {
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Direction of travel for the transition: +1 = to a higher tag (push
+    /// left), -1 = back toward a lower tag (pull right).
+    private var slideDirection: CGFloat {
+        selection >= previousSelection ? 1 : -1
+    }
+
+    @State private var previousSelection = 0
 
     @ViewBuilder
     private func pane<Content: View>(_ tag: Int,
@@ -134,10 +152,17 @@ struct MainTabView: View {
             if isActive {
                 content()
                     .transition(reduceMotion
-                                ? .opacity
-                                : .opacity.combined(with: .offset(y: 8)))
+                        ? .opacity
+                        : .asymmetric(
+                            insertion: .opacity
+                                .combined(with: .offset(x: 24 * slideDirection)),
+                            removal: .opacity
+                                .combined(with: .offset(x: -18 * slideDirection))
+                        ))
             }
         }
+        .onChange(of: selection) { previousSelection = $0 }
+        .onAppear { previousSelection = selection }
     }
 }
 
