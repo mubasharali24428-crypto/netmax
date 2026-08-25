@@ -18,6 +18,10 @@ struct MenuBarView: View {
     @State private var pinned = false
 
     var body: some View {
+        // W13 fix: whole popover content scrolls — the fixed VStack overflowed
+        // the 480pt-min window once speedometer + cards + results stacked up,
+        // clipping the bottom with no way to reach it.
+        ScrollView {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Image(systemName: "bolt.horizontal.circle")
@@ -102,7 +106,11 @@ struct MenuBarView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
-        .frame(width: 380, height: 520)
+        }
+        // W13: fixed height removed — the popover now sizes to content and
+        // scrolls; height: 520 was clipping the speedometer + cards + results
+        // stack with no way to reach the bottom.
+        .frame(width: 380)
         .onAppear(perform: reloadHistory)
     }
 
