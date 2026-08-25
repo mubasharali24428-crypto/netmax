@@ -414,6 +414,18 @@ struct DashboardCardsView: View {
 
     private var metrics: DashboardMetrics { DashboardMetrics.extract(from: records) }
 
+    /// W13B UA-3 (S-057): card detail line with the honest confidence tag —
+    /// when the sourcing mode has fewer than `lowSampleThreshold` total
+    /// samples, "(low n)" is appended so thin data is never presented as
+    /// solid. Falls back to `fallback` when there's no run to describe.
+    private func cardDetail(base: String?, mode: String?) -> String {
+        guard let base else { return "no runs yet" }
+        if let mode, ReportCardModel.isLowSample(mode: mode, records: records) {
+            return "\(base) (low n)"
+        }
+        return base
+    }
+
     private var cardRow: some View {
         let m = metrics
         return HStack(alignment: .top, spacing: 10) {
@@ -423,8 +435,8 @@ struct DashboardCardsView: View {
                 value: m.speed.map { Self.trimmed($0.value) },
                 unit: "Mbps",
                 tint: Self.speedTint(m.speed?.value),
-                detail: m.speed.map { "\($0.mode) · \(Self.relative($0.date))" }
-                    ?? "no speed run yet"
+                detail: cardDetail(base: m.speed.map { "\($0.mode) · \(Self.relative($0.date))" },
+                                   mode: m.speed?.mode)
             )
             .netMaxHoverLift()
             .netMaxStaggeredAppear(index: 0)
@@ -436,7 +448,7 @@ struct DashboardCardsView: View {
                 value: m.bloatGrade?.letter,
                 unit: nil,
                 tint: Self.gradeTint(m.bloatGrade?.letter),
-                detail: bloatDetail(m.bloatGrade)
+                detail: cardDetail(base: bloatDetail(m.bloatGrade), mode: m.bloatGrade?.mode)
             )
             .netMaxHoverLift()
             .netMaxStaggeredAppear(index: 1)
@@ -448,8 +460,8 @@ struct DashboardCardsView: View {
                 value: m.loss.map { Self.trimmed($0.value) },
                 unit: "%",
                 tint: Self.lossTint(m.loss?.value),
-                detail: m.loss.map { "\($0.mode) · \(Self.relative($0.date))" }
-                    ?? "no loss run yet"
+                detail: cardDetail(base: m.loss.map { "\($0.mode) · \(Self.relative($0.date))" },
+                                   mode: m.loss?.mode)
             )
             .netMaxHoverLift()
             .netMaxStaggeredAppear(index: 2)

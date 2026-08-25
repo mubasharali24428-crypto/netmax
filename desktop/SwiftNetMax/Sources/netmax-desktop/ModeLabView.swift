@@ -24,10 +24,62 @@
 //      .accessibilityElement(children: .ignore) removed), the decorative
 //      header icon is hidden from VoiceOver, and run completion/failure is
 //      announced via the NSAccessibility announcement channel.
+//    • W13B TEAM-UB / UB-1 (S-013 + S-027): named presets ({name, mode,
+//      streams, seconds, count} in the UserDefaults array `netmax.presets`,
+//      saved through an NSAlert text input, loaded via the picker row) and
+//      a boost→bloat Sequence toggle whose queued chain persists in
+//      `netmax.sequences`. Cross-lane seam: W13B UA-1 added the network-
+//      context probe below (`NetContextProbe`) and the UA-2 `network:` tag
+//      on appendHistory — both left untouched here.
 //
 
 import AppKit
 import SwiftUI
+
+// MARK: - Presets & sequences (W13B UB-1)
+
+/// One saved Mode Lab configuration (S-013).
+/// Stored as JSON in the UserDefaults array `netmax.presets`; `count` rides
+/// along so a preset restores the full working state.
+struct ModePreset: Codable, Equatable, Identifiable {
+    let name: String
+    let mode: String
+    var streams: Int
+    var seconds: Int
+    var count: Int
+
+    var id: String { name }
+}
+
+/// Persistence behind UB-1: presets list + queued-sequence chain.
+/// Foundation-only and pure over injected defaults so the round-trips are
+/// self-checkable offline (see ModeLabTests at the bottom of this file).
+enum PresetStore {
+    static let presetsKey = "netmax.presets"
+    /// Queued chains, e.g. [["boost","bloat"]] — a non-empty array means a
+    /// sequence is armed and survives relaunch (S-027 "persist sequences").
+    static let sequencesKey = "netmax.sequences"
+
+    static func loadPresets(_ defaults: UserDefaults = .standard) -> [ModePreset] {
+        guard let data = defaults.data(forKey: presetsKey),
+              let presets = try? JSONDecoder().decode([ModePreset].self, from: data)
+        else { return [] }
+        return presets
+    }
+
+    static func savePresets(_ presets: [ModePreset], _ defaults: UserDefaults = .standard) {
+        defaults.set((try? JSONEncoder().encode(presets)) ?? Data(), forKey: presetsKey)
+    }
+
+    /// The queued sequence chain (empty = no sequence armed).
+    static func loadSequence(_ defaults: UserDefaults = .standard) -> [String] {
+        defaults.stringArray(forKey: sequencesKey) ?? []
+    }
+
+    static func saveSequence(_ modes: [String], _ defaults: UserDefaults = .standard) {
+        defaults.set(modes.isEmpty ? nil : modes, forKey: sequencesKey)
+    }
+}
 
 // MARK: - Model
 
@@ -124,6 +176,11 @@ struct ModeLabView: View {
     @State private var status: RunStatus = .idle
     @State private var resultText = ""
 
+    // W13B UA-1 (S-048/S-049): honest network context, probed once when the
+    // view appears and re-checked before each run. VPN/offline show a note
+    // instead of letting the run produce misleading numbers or raw errors.
+    @State private var netContext = NetContext(online: true, vpn: false)
+
     private var selectedMode: ModeDefinition { ModeCatalog.definition(for: selectedModeID) }
 
     /// W12 T4-b (audit 152): at this window width configuration and results
@@ -151,7 +208,11 @@ struct ModeLabView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 420, minHeight: 520)
-        .onAppear(perform: seedDefaultsFromPreferences)
+        .onAppear {
+            seedDefaultsFromPreferences()
+            // W13B UA-1: probe network context when Mode Lab opens…
+            netContext = NetContextProbe.detect()
+        }
         // ALPHA-A4-06 (A2-09 finding 12): idle→running→done/error was silent
         // to VoiceOver; announce terminal outcomes. (Single-parameter onChange
         // matches this package's macOS 13 platform floor.)
@@ -172,12 +233,33 @@ struct ModeLabView: View {
         VStack(alignment: .leading, spacing: 12) {
             modePicker
             modeSummary
+            networkContextNote // W13B UA-1
             Divider()
             parameterSection
             runButton
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// W13B UA-1 (S-048/S-049): amber VPN note or offline notice, shown in
+    /// place of the Run affordance's blind spot — before any run starts.
+    @ViewBuilder
+    private var networkContextNote: some View {
+        if !netContext.online {
+            Label("You appear to be offline — measurement modes need a network connection.",
+                  systemImage: "wifi.slash")
+                .font(.footnote)
+                .foregroundColor(.red)
+                .accessibilityLabel(Text("You appear to be offline"))
+        } else if netContext.vpn {
+            Label("VPN detected — results may reflect VPN routing.",
+                  systemImage: "lock.shield")
+                .font(.footnote)
+                .foregroundColor(.orange)
+                .accessibilityLabel(Text("VPN detected"))
+                .accessibilityValue(Text("Results may reflect VPN routing"))
+        }
     }
 
     /// Engine output — right/bottom column in both layouts.
@@ -404,6 +486,15 @@ struct ModeLabView: View {
 
     private func runSelectedMode() {
         guard status != .running else { return }
+        // W13B UA-1: fresh probe right before running, so a network drop
+        // since onAppear is caught. Offline ⇒ honest note instead of raw
+        // engine errors; VPN ⇒ the amber note refreshes for this run.
+        netContext = NetContextProbe.detect()
+        guard netContext.online else {
+            resultText = "You appear to be offline — reconnect and try again."
+            status = .error
+            return
+        }
         let mode = selectedMode
         let args = mappedArgs(for: mode)
 
@@ -473,8 +564,11 @@ struct ModeLabView: View {
 
     /// Contract P2: every successful run is appended locally by the shared
     /// store (Lane B owns HistoryStore.swift); views only consume it here.
+    /// W13B UA-2: the run is tagged with its network name when it can be
+    /// determined — nil otherwise, so nothing is ever guessed.
     private func appendHistory(mode: String, params: [String: Int], raw: String) {
-        HistoryStore.shared.append(mode: mode, params: params, raw: raw)
+        HistoryStore.shared.append(mode: mode, params: params, raw: raw,
+                                   network: NetContextProbe.currentNetworkName())
     }
 
     /// Contract P1: seed the steppers from persisted preferences via

@@ -455,6 +455,39 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
                 .accessibilityLabel(Text("Privacy: all data stays on this Mac. The app makes no telemetry calls."))
 
+            // W13B UA-4 (S-079/S-080): the full "What leaves your Mac"
+            // statement, as user-facing rows under a visible heading.
+            //
+            // AUDIT PROOF (grep counts, W13B honest-context wave; re-run to
+            // re-verify and keep this honest):
+            //   grep -rn "URLSession\|dataTask\|URLRequest" Sources/ \
+            //     | grep -v SettingsView.swift | wc -l
+            //     → 0 hits outside this comment: the app layer itself makes
+            //     NO network calls of any kind.
+            //   grep -rln "urlopen\|requests\." netmax.py netmetrics.py \
+            //     netmax_netcontext.py | wc -l
+            //     → 0: no Python HTTP client libraries anywhere.
+            //   The ONLY outbound traffic lives in the engine (netmax.py):
+            //   `curl` downloads from the speed-test endpoint list at the
+            //   top of that file (speed.cloudflare.com, proof.ovh.net) and
+            //   UDP DNS probes for the dns mode — exactly the endpoints a
+            //   run tests against and prints in its own output.
+            Text("Your Privacy")
+                .font(.caption.weight(.semibold))
+                .accessibilityLabel(Text("Your Privacy"))
+            Text("All measurement data stays on this Mac.")
+                .font(.callout)
+                .foregroundColor(.secondary)
+                .accessibilityLabel(Text("All measurement data stays on this Mac"))
+            Text("No telemetry, no analytics, no tracking calls.")
+                .font(.callout)
+                .foregroundColor(.secondary)
+                .accessibilityLabel(Text("No telemetry, no analytics, no tracking calls"))
+            Text("Only outbound connections: the speed-test endpoints you choose to test against.")
+                .font(.callout)
+                .foregroundColor(.secondary)
+                .accessibilityLabel(Text("Only outbound connections are the speed-test endpoints you choose to test against"))
+
             // T3-c (W11-A-101): grading rubric surfaced in-app.
             Text("Methodology: Grades use Waveform/DSLReports-style latency-under-load rubric.")
                 .font(.callout)

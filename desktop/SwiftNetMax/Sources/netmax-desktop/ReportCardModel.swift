@@ -349,6 +349,11 @@ public enum ReportCardModel {
     /// - Baseline = median of that metric's usable values across window
     ///   records; fewer than `baselineMinSamples` such values ⇒
     ///   `.noBaseline` with a `nil` median, never a thin-median guess.
+    /// - W13B UA-2 (S-098): only records measured on the SAME network as
+    ///   `currentRecord` count (`network` field equality). A pre-W13B record
+    ///   without a network matches other network-less records exactly as
+    ///   before, so existing history behaves identically; an SSID-tagged run
+    ///   never borrows a baseline from another network.
     /// - Within ±5% of the baseline (scaled by |baseline|, so a 0%-loss
     ///   floor stays honest: only 0-vs-0 is flat there) ⇒ `.flat`;
     ///   beyond the band the metric's direction decides better/worse.
@@ -367,6 +372,7 @@ public enum ReportCardModel {
         ]
         let current = parse(resultRaw: currentRecord.resultRaw)
         let inWindow = history.filter { record in
+            guard record.network == currentRecord.network else { return false } // UA-2
             let days = currentRecord.ts.timeIntervalSince(record.ts) / 86_400
             return baselineWindowDays.contains(days)
         }
@@ -488,10 +494,54 @@ public enum ReportCardModel {
               baselineComparisons(currentRecord: record(ageDays: 0, mbps: 100), history: farEdgeOut)
                   .first?.trend == .noBaseline)
 
+        // W13B UA-2 (S-098): baselines never cross networks.
+        func tagged(ageDays: Double, mbps: Double?, network: String?) -> HistoryRecord {
+            var rec = record(ageDays: ageDays, mbps: mbps)
+            rec = HistoryRecord(ts: rec.ts, mode: rec.mode, params: rec.params,
+                                resultRaw: rec.resultRaw, network: network)
+            return rec
+        }
+        let homeRuns = (1...5).map { tagged(ageDays: 10 + Double($0), mbps: 100, network: "HomeNet") }
+        let homeCurrent = tagged(ageDays: 0, mbps: 100, network: "HomeNet")
+        let officeCurrent = tagged(ageDays: 0, mbps: 100, network: "OfficeNet")
+        let legacyCurrent = tagged(ageDays: 0, mbps: 100, network: nil)
+        let sameNet = baselineComparisons(currentRecord: homeCurrent, history: homeRuns)
+        check("UA-2: same-network baseline still works",
+              sameNet.first?.trend == .flat && sameNet.first?.baselineMedian == 100)
+        check("UA-2: different-network runs are excluded",
+              baselineComparisons(currentRecord: officeCurrent, history: homeRuns)
+                  .allSatisfy { $0.trend == .noBaseline })
+        // Mixed pool: current without a network only matches network-less
+        // history — an SSID-tagged run can't borrow its baseline. The lone
+        // network-less sample left over is too thin for a real baseline
+        // (5-sample gate), so noBaseline everywhere proves the exclusion.
+        let mixedPool = homeRuns + [tagged(ageDays: 12, mbps: 100, network: nil)]
+        let mixed = baselineComparisons(currentRecord: legacyCurrent, history: mixedPool)
+        check("UA-2: network-less current ignores SSID-tagged history (thin ⇒ noBaseline)",
+              mixed.allSatisfy { $0.trend == .noBaseline })
+        // Five network-less window runs on their own still baseline normally.
+        let legacyRuns = (1...5).map { tagged(ageDays: 10 + Double($0), mbps: 100, network: nil) }
+        let legacyOnly = baselineComparisons(currentRecord: legacyCurrent, history: legacyRuns)
+        check("UA-2: network-less current matches network-less history",
+              legacyOnly.first?.trend == .flat && legacyOnly.first?.baselineMedian == 100)
+
         print(failures == 0 ? "runAll: all checks passed" : "runAll: \(failures) check(s) FAILED")
         return failures
     }
 #endif
+
+    // MARK: - Confidence tag (W13B UA-3, S-057)
+
+    /// A mode with fewer than this many total samples is honestly tagged
+    /// "low n" on dashboard cards and history rows — a median of 2 runs is a
+    /// coin flip dressed up as statistics (house style).
+    public static let lowSampleThreshold = 5
+
+    /// True when `mode` has fewer than `lowSampleThreshold` total samples
+    /// across `records`. Pure + static so any view can call it.
+    static func isLowSample(mode: String, records: [HistoryRecord]) -> Bool {
+        records.filter { $0.mode == mode }.count < lowSampleThreshold
+    }
 
     // MARK: - Internals (pure helpers)
 

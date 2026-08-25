@@ -13,16 +13,29 @@ struct HistoryRecord: Codable, Equatable {
     let params: [String: Int]
     let resultRaw: String
 
+    /// W13B UA-2 (S-098): network name (SSID) the run was measured on, when
+    /// it could be determined; `nil` otherwise. Optional + decoded with
+    /// `decodeIfPresent`, so pre-W13B records (no `network` key) load as-is.
+    let network: String?
+
+    /// W13B UA-3 (S-028): user annotation ("moved router"). Same backward-
+    /// compatibility contract as `network`.
+    var note: String?
+
     enum CodingKeys: String, CodingKey {
         case ts, mode, params
         case resultRaw = "result_raw"
+        case network, note
     }
 
-    init(ts: Date, mode: String, params: [String: Int], resultRaw: String) {
+    init(ts: Date, mode: String, params: [String: Int], resultRaw: String,
+         network: String? = nil, note: String? = nil) {
         self.ts = ts
         self.mode = mode
         self.params = params
         self.resultRaw = resultRaw
+        self.network = network
+        self.note = note
     }
 
     /// Decode tolerant copy used when reading possibly-stale lines.
@@ -32,6 +45,8 @@ struct HistoryRecord: Codable, Equatable {
         mode = try c.decode(String.self, forKey: .mode)
         params = try c.decode([String: Int].self, forKey: .params)
         resultRaw = try c.decode(String.self, forKey: .resultRaw)
+        network = try c.decodeIfPresent(String.self, forKey: .network)
+        note = try c.decodeIfPresent(String.self, forKey: .note)
     }
 }
 
@@ -89,8 +104,11 @@ final class HistoryStore {
     ///   - mode: engine mode name (e.g. "baseline", "turbo").
     ///   - params: run parameters as passed to the engine (e.g. ["streams": 8]).
     ///   - raw: the engine's raw result payload (pretty-printed JSON text).
-    func append(mode: String, params: [String: Int], raw: String) {
-        let record = HistoryRecord(ts: Date(), mode: mode, params: params, resultRaw: raw)
+    ///   - network: network name (SSID) for W13B UA-2 network-scoped baselines;
+    ///     pass `nil` when it can't be determined (old callers stay valid).
+    func append(mode: String, params: [String: Int], raw: String, network: String? = nil) {
+        let record = HistoryRecord(ts: Date(), mode: mode, params: params,
+                                   resultRaw: raw, network: network)
         lock.lock()
         defer { lock.unlock() }
         do {
@@ -285,6 +303,37 @@ final class HistoryStore {
     }
 
     // MARK: - Internals
+
+    /// W13B UA-3 (S-028): set or clear a run's user annotation, matched by
+    /// the same ts+mode identity the store round-trips losslessly. Rewrites
+    /// the file atomically; no match is a no-op; empty/whitespace-only text
+    /// clears. Returns true when the file was updated. Thread-safe.
+    @discardableResult
+    func updateNote(_ note: String?, for record: HistoryRecord) -> Bool {
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = (trimmed?.isEmpty == true) ? nil : trimmed
+        lock.lock()
+        defer { lock.unlock() }
+        var records = Self.readRecords(from: fileURL, decoder: decoder)
+        guard let index = records.firstIndex(where: {
+            $0.ts == record.ts && $0.mode == record.mode
+        }) else { return false }
+        records[index].note = cleaned
+        do {
+            var blob = Data()
+            for line in records {
+                blob.append(try encoder.encode(line))
+                blob.append(0x0A) // JSON Lines: newline-terminated
+            }
+            try blob.write(to: fileURL, options: .atomic)
+            return true
+        } catch {
+            #if DEBUG
+            print("[HistoryStore] updateNote failed: \(error.localizedDescription)")
+            #endif
+            return false
+        }
+    }
 
     private static func readRecords(from url: URL, decoder: JSONDecoder) -> [HistoryRecord] {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }

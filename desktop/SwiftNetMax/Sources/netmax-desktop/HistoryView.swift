@@ -69,8 +69,35 @@ struct HistoryView: View {
     /// reloads then stop overriding their choice for the rest of the visit.
     @State private var userTouchedTrends = false
 
+    /// W13B UA-3 (S-028): run queued for "Add Note…" in the row context menu;
+    /// hosts the NSAlert text-input prompt.
+    @State private var pendingNoteRecord: HistoryRecord?
+
+    /// W13B UA-3: draft text for the Add Note prompt.
+    @State private var noteDraft = ""
+
+    // MARK: W13B UA-2 (S-098) — network change banner
+
+    /// One-time banner state, keyed per network name so a LATER switch
+    /// (OfficeNet → HomeNet) can show it again; dismissing "HomeNet" only
+    /// suppresses HomeNet announcements. `nil` when there's nothing new.
+    @AppStorage("netmax.history.dismissedNetworkBanner")
+    private var dismissedNetworkBanner = ""
+
+    /// True while the newest run's network differs from the previous
+    /// newest run's AND the user hasn't dismissed this network's banner.
+    var networkChangedBannerVisible: Bool {
+        guard let newest = newestFirst.first, let previous = newestFirst.dropFirst().first else {
+            return false
+        }
+        return newest.network != previous.network && dismissedNetworkBanner != newest.network
+    }
+
     var body: some View {
         List {
+            if networkChangedBannerVisible {
+                networkChangeBanner
+            }
             if records.count >= 3, !timelineHintShown {
                 HStack(spacing: 8) {
                     Image(systemName: "lightbulb")
@@ -190,6 +217,30 @@ struct HistoryView: View {
         .sheet(item: $selectedRun) { run in
             RunDetailSheet(record: run.record)
         }
+        .alert(
+            "Add Note",
+            isPresented: Binding(
+                get: { pendingNoteRecord != nil },
+                set: { if !$0 { pendingNoteRecord = nil } }
+            ),
+            presenting: pendingNoteRecord
+        ) { record in
+            // W13B UA-3 (S-028): NSAlert-style text-input prompt; empty text
+            // clears the note.
+            TextField("Note", text: $noteDraft)
+            Button("Save") {
+                HistoryStore.shared.updateNote(noteDraft, for: record)
+                noteDraft = ""
+                pendingNoteRecord = nil
+                reload()
+            }
+            Button("Cancel", role: .cancel) {
+                noteDraft = ""
+                pendingNoteRecord = nil
+            }
+        } message: { record in
+            Text("A short annotation shown with this \(record.mode) run (e.g. “moved router”).")
+        }
         .sheet(isPresented: $showingTimeline) {
             TimelineSheet(rows: TimelineModel.build(
                 historyFileURL: HistoryStore.defaultFileURL,
@@ -200,6 +251,36 @@ struct HistoryView: View {
     }
 
     // MARK: - Sections
+
+    /// W13B UA-2 (S-098): one-time banner when the newest run was measured
+    /// on a different network than the one before it. Dismiss persists via
+    /// @AppStorage keyed per network, so a later switch re-shows it.
+    private var networkChangeBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wifi")
+                .foregroundStyle(.yellow)
+                .accessibilityHidden(true)
+            Text("Network changed — comparisons now use \(newestFirst.first?.network ?? "the new network") runs only.")
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            Button("Got it") {
+                dismissedNetworkBanner = newestFirst.first?.network ?? ""
+            }
+            .buttonStyle(NetMaxPressStyle())
+            .help("Hide this notice for this network")
+            .accessibilityLabel(Text("Dismiss the network-change notice"))
+        }
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.vertical, Theme.Spacing.xs)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.control)
+                .fill(hintFill)
+        )
+        .listRowSeparator(.hidden)
+        .accessibilityElement(children: .contain)
+        .transition(.opacity)
+    }
 
     /// W12 T1-a (audit 093): 30-second undo window right after a Clear —
     /// one tap moves the holding bin back into history.
@@ -339,7 +420,7 @@ struct HistoryView: View {
                     Button {
                         selectedRun = IdentifiedRun(record: record)
                     } label: {
-                        HistoryRow(record: record)
+                        HistoryRow(record: record, allRecords: records)
                     }
                     .buttonStyle(NetMaxPressStyle()) // W8 A1: press feedback
                     .netMaxHoverLift() // W9 G3
@@ -351,6 +432,10 @@ struct HistoryView: View {
                         }
                         Button("Copy Result") {
                             copyResult(of: record)
+                        }
+                        // W13B UA-3 (S-028): annotate a run ("moved router").
+                        Button(record.note == nil ? "Add Note…" : "Edit Note…") {
+                            pendingNoteRecord = record
                         }
                         Button("Delete This Run", role: .destructive) {
                             pendingDelete = record
@@ -504,6 +589,16 @@ struct HistoryView: View {
 private struct HistoryRow: View {
     let record: HistoryRecord
 
+    /// W13B UA-3 (S-057): full log, used only to judge sample thinness for
+    /// this record's mode (<5 total runs ⇒ "low n" tag).
+    var allRecords: [HistoryRecord] = []
+
+    /// W13B UA-3: true when the record's mode has fewer than
+    /// `ReportCardModel.lowSampleThreshold` total samples in the log.
+    var isLowSample: Bool {
+        !allRecords.isEmpty && ReportCardModel.isLowSample(mode: record.mode, records: allRecords)
+    }
+
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .abbreviated
@@ -518,6 +613,17 @@ private struct HistoryRow: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1)
                     .background(Capsule().fill(Color.accentColor.opacity(0.18)))
+                if isLowSample {
+                    // W13B UA-3 (S-057): honest confidence tag for sparse data.
+                    Text("low n")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Capsule().strokeBorder(Color.secondary.opacity(0.4)))
+                        .accessibilityLabel(Text("fewer than \(ReportCardModel.lowSampleThreshold) samples — low confidence"))
+                        .help("Fewer than \(ReportCardModel.lowSampleThreshold) runs of this mode — treat the result as low-confidence")
+                }
                 Spacer()
                 Text(Self.relativeFormatter.localizedString(for: record.ts, relativeTo: Date()))
                     .font(.caption)
@@ -527,6 +633,13 @@ private struct HistoryRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
+            if let note = record.note, !note.isEmpty {
+                // W13B UA-3 (S-028): the run's user annotation.
+                Text(note)
+                    .font(.caption.italic())
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+            }
         }
         .padding(.vertical, 2)
     }
