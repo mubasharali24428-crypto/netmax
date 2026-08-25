@@ -20,9 +20,10 @@ never raises past main(); every failure lands in the envelope.
 Engine stdout is mostly human text: valid JSON is embedded parsed, any
 other stdout is wrapped as {"raw": "..."} inside `data`.
 
-`selftest` performs OFFLINE checks only (argument mapping, envelope
-writer against a temp file, interpreter-resolution logic with mocked
-env). It never spawns the engine and never touches the network.
+`selftest` performs OFFLINE checks only (argument mapping, argument
+range bounds, envelope writer against a temp file, interpreter-
+resolution logic with mocked env). It never spawns the engine and never
+touches the network.
 """
 from __future__ import annotations
 
@@ -77,6 +78,15 @@ MODE_FLAGS: dict[str, tuple[str, ...]] = {
 ALLOWED_MODES: tuple[str, ...] = tuple(MODE_FLAGS)
 
 _FLAG_SPELLING = {"streams": "--streams", "seconds": "--seconds", "count": "--count"}
+
+# W7-4 (F2): inclusive bridge-side bounds mirroring netmax.py's argparse.
+# Enforced here so a bad UI value lands in the envelope instead of spawning
+# an engine subprocess that the engine's argparse would reject anyway.
+RANGE_BOUNDS: dict[str, tuple[int, int]] = {
+    "streams": (1, 32),
+    "seconds": (5, 30),
+    "count": (1, 100),
+}
 
 
 # ── pure helpers (unit-tested offline) ───────────────────────────────────────
@@ -133,6 +143,30 @@ def build_command(
 def stderr_tail(text: str, limit: int = STDERR_TAIL_CHARS) -> str:
     """Last `limit` characters of `text` (contract: tail <=400 chars)."""
     return (text or "")[-limit:]
+
+
+def validate_ranges(
+    streams: int | None, seconds: int | None, count: int | None
+) -> str | None:
+    """Bridge-side range check (W7-4/F2), BEFORE any subprocess spawn.
+
+    Returns None when every given value is within RANGE_BOUNDS (unset
+    flags pass); otherwise returns netmax.py's exact argparse message,
+    e.g. "netmax: --seconds must be 5..30, got 0".
+    """
+    given: dict[str, int | None] = {
+        "streams": streams,
+        "seconds": seconds,
+        "count": count,
+    }
+    for name in ("streams", "seconds", "count"):
+        value = given[name]
+        if value is None:
+            continue
+        low, high = RANGE_BOUNDS[name]
+        if not low <= int(value) <= high:
+            return f"netmax: --{name} must be {low}..{high}, got {int(value)}"
+    return None
 
 
 def write_envelope(
@@ -201,6 +235,18 @@ def run_engine(
 ) -> int:
     """Run one engine mode and write the envelope. Returns exit code."""
     root = REPO_ROOT if repo_root is None else Path(repo_root)
+    # W7-4/F2: reject out-of-range values BEFORE spawning anything.
+    range_error = validate_ranges(streams, seconds, count)
+    if range_error:
+        write_envelope(
+            json_out,
+            success=False,
+            mode=mode,
+            data=None,
+            error=stderr_tail(range_error),
+        )
+        print(f"engine_bridge: {range_error}", file=sys.stderr)
+        return 1
     command, dropped_flags = build_command(
         mode, streams, seconds, count, python=resolve_interpreter(env)
     )
@@ -308,12 +354,45 @@ def _check_interpreter_resolution() -> None:
         raise AssertionError("blank NETMAX_PYTHON must fall back")
 
 
+def _check_range_validation() -> None:
+    if validate_ranges(None, None, None) is not None:
+        raise AssertionError("unset flags must validate clean")
+    if validate_ranges(1, 30, 100) is not None:
+        raise AssertionError("inclusive bounds must validate clean")
+    cases: list[tuple[str, int, str]] = [
+        ("streams", 0, "netmax: --streams must be 1..32, got 0"),
+        ("streams", 33, "netmax: --streams must be 1..32, got 33"),
+        ("seconds", 4, "netmax: --seconds must be 5..30, got 4"),
+        ("seconds", 31, "netmax: --seconds must be 5..30, got 31"),
+        ("count", 0, "netmax: --count must be 1..100, got 0"),
+        ("count", 101, "netmax: --count must be 1..100, got 101"),
+    ]
+    for name, bad, expected in cases:
+        kwargs: dict[str, int | None] = {
+            "streams": None,
+            "seconds": None,
+            "count": None,
+        }
+        kwargs[name] = bad
+        got = validate_ranges(
+            kwargs["streams"], kwargs["seconds"], kwargs["count"]
+        )
+        if got != expected:
+            raise AssertionError(f"--{name}={bad}: {got!r} != {expected!r}")
+
+
 def selftest() -> int:
     """Offline self-checks. Prints PASS/FAIL lines; exits 0/1."""
     results: list[tuple[str, bool, str]] = []
     with tempfile.TemporaryDirectory(prefix="netmax-bridge-selftest-") as tmp_dir:
+        def _args_and_ranges() -> None:
+            # Range validation folds under the arg-mapping check so the
+            # selftest surface stays 3/3 (W7-4/F2).
+            _check_arg_mapping()
+            _check_range_validation()
+
         checks: list[tuple[str, Any]] = [
-            ("arg_mapping_per_mode", lambda: _check_arg_mapping()),
+            ("arg_mapping_per_mode", _args_and_ranges),
             ("envelope_writer_temp_file", lambda: _check_envelope_writer(tmp_dir)),
             ("interpreter_resolution_mocked_env", _check_interpreter_resolution),
         ]

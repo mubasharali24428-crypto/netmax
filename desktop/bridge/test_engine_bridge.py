@@ -121,6 +121,54 @@ def test_defaults_omit_unset_flags():
     assert dropped == []
 
 
+# ── W7-4 (F2): bridge-side range validation ──────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "name,value,expected",
+    [
+        ("streams", 0, "netmax: --streams must be 1..32, got 0"),
+        ("streams", 1, None),
+        ("streams", 32, None),
+        ("streams", 33, "netmax: --streams must be 1..32, got 33"),
+        ("seconds", 4, "netmax: --seconds must be 5..30, got 4"),
+        ("seconds", 5, None),
+        ("seconds", 30, None),
+        ("seconds", 31, "netmax: --seconds must be 5..30, got 31"),
+        ("count", 0, "netmax: --count must be 1..100, got 0"),
+        ("count", 1, None),
+        ("count", 100, None),
+        ("count", 101, "netmax: --count must be 1..100, got 101"),
+    ],
+)
+def test_validate_ranges_boundaries(name, value, expected):
+    kwargs = {"streams": None, "seconds": None, "count": None}
+    kwargs[name] = value
+    assert eb.validate_ranges(**kwargs) == expected
+
+
+def test_validate_ranges_unset_flags_pass_and_inclusive_bounds_hold():
+    assert eb.validate_ranges(None, None, None) is None
+    assert eb.validate_ranges(1, 5, 1) is None
+    assert eb.validate_ranges(32, 30, 100) is None
+
+
+def test_run_engine_rejects_out_of_range_before_spawning(tmp_path):
+    """F2 contract: bad value -> failure envelope + exit 1, engine NEVER runs."""
+
+    def runner(cmd, **kw):  # pragma: no cover - must never be reached
+        raise AssertionError(f"engine spawned despite invalid range: {cmd}")
+
+    out = tmp_path / "env.json"
+    code = eb.run_engine("boost", 4, 0, None, str(out), runner=runner)
+    env = json.loads(out.read_text(encoding="utf-8"))
+    assert code == 1
+    assert env["success"] is False
+    assert env["mode"] == "boost"
+    assert env["data"] is None
+    assert env["error"] == "netmax: --seconds must be 5..30, got 0"
+
+
 def test_bundled_flag_prepends_B_and_keeps_absolute_engine_path():
     cmd, _dropped = eb.build_command("dns", python=PY, bundled=True)
     assert cmd[:2] == [PY, "-B"] and cmd[2] == str(eb.ENGINE_PATH)
