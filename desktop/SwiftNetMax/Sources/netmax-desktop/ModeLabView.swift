@@ -81,6 +81,14 @@ enum PresetStore {
     }
 }
 
+/// One completed leg of a chained sequence run (UB-1): mode + raw payload,
+/// shown stacked in the results area so BOTH results are visible.
+struct SequenceLegResult: Identifiable, Equatable {
+    let id = UUID()
+    let mode: String
+    let raw: String
+}
+
 // MARK: - Model
 
 /// The tunable parameters the engine accepts across its modes.
@@ -181,6 +189,19 @@ struct ModeLabView: View {
     // instead of letting the run produce misleading numbers or raw errors.
     @State private var netContext = NetContext(online: true, vpn: false)
 
+    // MARK: W13B UB-1 (S-013 + S-027) — presets & sequence state
+
+    /// Saved configurations, loaded once per appearance from PresetStore.
+    @State private var presets: [ModePreset] = []
+    /// Picker selection: the loaded preset's name, nil = "No preset".
+    @State private var activePresetID: String?
+    /// Sequence mode: when on, Run chains boost→bloat back-to-back.
+    @State private var sequenceEnabled = false
+    /// One entry per completed leg of the current sequence (both shown).
+    @State private var sequenceResults: [SequenceLegResult] = []
+    /// Draft text for the Save Preset name prompt.
+    @State private var presetNameDraft = ""
+
     private var selectedMode: ModeDefinition { ModeCatalog.definition(for: selectedModeID) }
 
     /// W12 T4-b (audit 152): at this window width configuration and results
@@ -212,6 +233,9 @@ struct ModeLabView: View {
             seedDefaultsFromPreferences()
             // W13B UA-1: probe network context when Mode Lab opens…
             netContext = NetContextProbe.detect()
+            // W13B UB-1: restore saved presets + an armed sequence queue.
+            presets = PresetStore.loadPresets()
+            sequenceEnabled = !PresetStore.loadSequence().isEmpty
         }
         // ALPHA-A4-06 (A2-09 finding 12): idle→running→done/error was silent
         // to VoiceOver; announce terminal outcomes. (Single-parameter onChange
@@ -234,6 +258,8 @@ struct ModeLabView: View {
             modePicker
             modeSummary
             networkContextNote // W13B UA-1
+            presetRow // W13B UB-1 (S-013)
+            sequenceRow // W13B UB-1 (S-027)
             Divider()
             parameterSection
             runButton
@@ -278,6 +304,112 @@ struct ModeLabView: View {
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel("Mode description")
             .accessibilityValue(selectedMode.summary)
+    }
+
+    // MARK: Presets & sequence (W13B UB-1)
+
+    /// S-013: preset picker (loads values) + "Save Preset…" (NSAlert text
+    /// input). Hidden entirely until at least one preset exists, so the
+    /// first-run layout is unchanged.
+    @ViewBuilder
+    private var presetRow: some View {
+        if !presets.isEmpty {
+            HStack(spacing: 8) {
+                Picker("Preset", selection: $activePresetID) {
+                    Text("No preset").tag(String?.none)
+                    ForEach(presets) { preset in
+                        Text(preset.name).tag(Optional(preset.name))
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .onChange(of: activePresetID) { loadPreset(named: $0) }
+                .disabled(status == .running)
+                .help("Load a saved mode + parameters")
+                .accessibilityLabel("Saved presets")
+                .accessibilityHint("Loading a preset restores its mode and parameters")
+
+                Button {
+                    promptForPresetNameAndSave()
+                } label: {
+                    Label("Save Preset…", systemImage: "square.and.arrow.down")
+                }
+                .disabled(status == .running)
+                .help("Save the current mode and parameters under a name")
+                .accessibilityLabel("Save current settings as a named preset")
+            }
+        }
+    }
+
+    /// S-027: Sequence toggle — Run then chains boost→bloat back-to-back,
+    /// both results shown. The queued chain itself persists via PresetStore.
+    private var sequenceRow: some View {
+        Toggle(isOn: $sequenceEnabled) {
+            Label {
+                Text("Sequence boost → bloat")
+            } icon: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+            }
+        }
+        .toggleStyle(.checkbox)
+        .disabled(status == .running)
+        .help("Run boost, then bloat, back-to-back with one click — both results shown")
+        .accessibilityLabel("Sequence mode")
+        .accessibilityValue(sequenceEnabled ? "boost then bloat" : "off")
+        .onChange(of: sequenceEnabled) { armed in
+            // Persist the queue so an armed chain survives relaunch.
+            PresetStore.saveSequence(armed ? Self.sequenceModes : [])
+            if armed { selectedModeID = Self.sequenceModes[0] }
+        }
+    }
+
+    /// Fixed chained order for UB-1's sequence.
+    static let sequenceModes = ["boost", "bloat"]
+
+    /// Applies a saved preset to the working controls. Unknown names are a
+    /// no-op; values are clamped defensively into their stepper ranges so a
+    /// hand-edited defaults file can't wedge the UI.
+    private func loadPreset(named name: String?) {
+        guard let name, let preset = presets.first(where: { $0.name == name }) else { return }
+        if ModeCatalog.modes.contains(where: { $0.id == preset.mode }) {
+            selectedModeID = preset.mode
+        }
+        streams = min(max(preset.streams, ModeParameter.streams.range.lowerBound),
+                      ModeParameter.streams.range.upperBound)
+        seconds = min(max(preset.seconds, ModeParameter.seconds.range.lowerBound),
+                      ModeParameter.seconds.range.upperBound)
+        count = min(max(preset.count, ModeParameter.count.range.lowerBound),
+                    ModeParameter.count.range.upperBound)
+    }
+
+    /// NSAlert text-input prompt (per lane spec) for the new preset's name;
+    /// empty/blank names cancel without saving. A duplicate name replaces the
+    /// old entry (rename semantics) instead of silently duplicating rows.
+    private func promptForPresetNameAndSave() {
+        let alert = NSAlert()
+        alert.messageText = "Save Preset"
+        alert.informativeText = "Name this mode + parameters configuration."
+        alert.alertStyle = .informational
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.placeholderString = "Preset name"
+        alert.accessoryView = field
+
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        let response = alert.runModal() // sheet-modal; returns only on button tap
+        let name = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard response == .alertFirstButtonReturn, !name.isEmpty else { return }
+
+        var updated = presets.filter { $0.name != name }
+        updated.append(ModePreset(name: name,
+                                  mode: selectedModeID,
+                                  streams: streams,
+                                  seconds: seconds,
+                                  count: count))
+        presets = updated
+        PresetStore.savePresets(updated)
+        activePresetID = name
     }
 
     // MARK: Header
@@ -432,7 +564,19 @@ struct ModeLabView: View {
 
     private var resultArea: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if !droppedFlagNames.isEmpty {
+            // W13B UB-1: after a chained sequence run, show each leg's raw
+            // payload stacked (both results visible), instead of the single
+            // result box.
+            if !sequenceResults.isEmpty && status != .running {
+                ForEach(sequenceResults) { leg in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("sequence · \(leg.mode)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        legText(leg.raw)
+                    }
+                }
+            } else if !droppedFlagNames.isEmpty {
                 // W12 T1-d (W11-A-042): the bridge surfaces unsupported
                 // per-mode flags in the envelope's `droppedFlags`; show an
                 // honest inline note instead of leaving them invisible.
@@ -445,22 +589,43 @@ struct ModeLabView: View {
                 .accessibilityLabel(Text("Measured without unsupported flags"))
                 .accessibilityValue(Text(droppedFlagNames.joined(separator: ", ")))
             }
-            TextEditor(text: Binding(
-                get: { resultText.isEmpty ? "No results yet." : resultText },
-                set: { _ in /* engine output — intentionally read-only */ }
-            ))
-            .font(.system(.caption, design: .monospaced))
-            .scrollContentBackground(.hidden)
-            .background(Color(nsColor: .textBackgroundColor))
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color(nsColor: .separatorColor))
-            )
-            .cornerRadius(6)
-            .frame(minHeight: 200)
-            .accessibilityLabel("Mode Lab results")
-            .accessibilityValue(resultText.isEmpty ? "No results yet" : resultText)
+            if sequenceResults.isEmpty || status == .running {
+                legText(resultText.isEmpty ? "No results yet." : resultText,
+                        editable: true)
+            }
         }
+    }
+
+    /// One monospaced result box; `editable: false` renders the read-only
+    /// twin used for stacked sequence legs.
+    private func legText(_ text: String, editable: Bool = false) -> some View {
+        Group {
+            if editable {
+                TextEditor(text: Binding(
+                    get: { text },
+                    set: { _ in /* engine output — intentionally read-only */ }
+                ))
+                .frame(minHeight: 200)
+            } else {
+                ScrollView {
+                    Text(text)
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(minHeight: 120, maxHeight: 200)
+            }
+        }
+        .font(.system(.caption, design: .monospaced))
+        .scrollContentBackground(.hidden)
+        .background(Color(nsColor: .textBackgroundColor))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(Color(nsColor: .separatorColor))
+        )
+        .cornerRadius(6)
+        .accessibilityLabel(editable ? "Mode Lab results" : "Sequence leg result")
+        .accessibilityValue(text.isEmpty ? "No results yet" : text)
     }
 
     /// W12 T1-d: flag names from the envelope's `droppedFlags` array, when
@@ -495,6 +660,12 @@ struct ModeLabView: View {
             status = .error
             return
         }
+        // W13B UB-1 (S-027): armed sequence runs the chain back-to-back
+        // instead of a single mode. Both results accumulate in sequenceResults.
+        if sequenceEnabled {
+            runSequence()
+            return
+        }
         let mode = selectedMode
         let args = mappedArgs(for: mode)
 
@@ -515,6 +686,41 @@ struct ModeLabView: View {
                     resultText = "Error: \(error.localizedDescription)"
                     status = .error
                 }
+            }
+        }
+    }
+
+    /// UB-1 sequence engine (S-027): run `sequenceModes` strictly in order —
+    /// each leg starts only after the previous one finished (success OR
+    /// failure; a failed leg is recorded and the chain continues so both
+    /// results always end up shown). One structured Task per leg keeps every
+    /// hop on the main actor.
+    private func runSequence() {
+        status = .running
+        resultText = ""
+        sequenceResults = []
+        Task {
+            for modeID in Self.sequenceModes {
+                let mode = ModeCatalog.definition(for: modeID)
+                let args = mappedArgs(for: mode)
+                do {
+                    let output = try await client.run(mode.id, args: args)
+                    await MainActor.run {
+                        sequenceResults.append(SequenceLegResult(mode: mode.id, raw: output))
+                        appendHistory(mode: mode.id,
+                                      params: parameterValues(for: mode),
+                                      raw: output)
+                    }
+                } catch {
+                    await MainActor.run {
+                        sequenceResults.append(
+                            SequenceLegResult(mode: mode.id,
+                                              raw: "Error: \(error.localizedDescription)"))
+                    }
+                }
+            }
+            await MainActor.run {
+                status = .done
             }
         }
     }
@@ -622,6 +828,62 @@ private enum RunStatus {
         }
     }
 }
+
+#if DEBUG
+// MARK: - Offline self-checks (W13B UB-1)
+//
+// Same convention as HistoryStoreTests / DashboardCardsTests: Package.swift
+// has no test target, so these compile into the DEBUG build as plain static
+// checks (never executed at runtime). PresetStore is pure over an injected
+// UserDefaults suite, so the round-trips are exercised for real here.
+enum ModeLabTests {
+    @discardableResult
+    static func runAll() -> Int {
+        var failures = 0
+        func check(_ condition: Bool, _ name: String) {
+            failures += condition ? 0 : 1
+            if !condition { print("[ModeLabTests] FAIL: \(name)") }
+        }
+
+        let suite = UserDefaults(suiteName: "netmax-mode-lab-tests")!
+        suite.removePersistentDomain(forName: "netmax-mode-lab-tests")
+        defer { suite.removePersistentDomain(forName: "netmax-mode-lab-tests") }
+
+        // Empty store reads as no presets and no armed sequence.
+        check(PresetStore.loadPresets(suite).isEmpty, "empty presets read empty")
+        check(PresetStore.loadSequence(suite).isEmpty, "empty sequence read empty")
+
+        // Preset round-trip preserves every field.
+        let original = ModePreset(name: "Evening", mode: "boost",
+                                  streams: 12, seconds: 20, count: 10)
+        PresetStore.savePresets([original], suite)
+        let loaded = PresetStore.loadPresets(suite)
+        check(loaded == [original], "preset round-trips intact")
+
+        // Duplicate names are prevented in the VIEW's save flow
+        // (filter-then-append); persisting that output replaces the old
+        // entry rather than stacking rows.
+        let renamed = ModePreset(name: original.name, mode: "bloat",
+                                 streams: original.streams,
+                                 seconds: original.seconds,
+                                 count: original.count)
+        let updated = [original].filter { $0.name != renamed.name } + [renamed]
+        PresetStore.savePresets(updated, suite)
+        let deduped = PresetStore.loadPresets(suite)
+        check(deduped.count == 1 && deduped.first?.mode == "bloat",
+              "filter-then-append save replaces a same-name preset")
+
+        // Sequence queue persists and clears.
+        PresetStore.saveSequence(["boost", "bloat"], suite)
+        check(PresetStore.loadSequence(suite) == ["boost", "bloat"],
+              "sequence round-trips in order")
+        PresetStore.saveSequence([], suite)
+        check(PresetStore.loadSequence(suite).isEmpty, "empty sequence clears")
+
+        return failures
+    }
+}
+#endif
 
 #Preview("Mode Lab") {
     ModeLabView()

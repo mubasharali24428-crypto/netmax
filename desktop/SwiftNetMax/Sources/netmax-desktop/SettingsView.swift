@@ -77,6 +77,7 @@ struct SettingsView: View {
                 modeLabDefaults
                 interpreter
                 startup
+                historyRetention // W13B UB-4
                 notifications
                 onboardingReset
                 about
@@ -366,6 +367,42 @@ struct SettingsView: View {
         .accessibilityIdentifier("notifications.rule.\(kind.rawValue)")
     }
 
+    // MARK: - History housekeeping (W13B TEAM-UB / UB-4)
+
+    /// "Keep history for N days" — enforced by HistoryStore.loadAll, which
+    /// moves older records to archive-history.jsonl instead of destroying
+    /// them. 0 = keep forever (default). Bound to the EXACT shared key
+    /// `netmax.history.retentionDays` via HistoryStore.retentionDaysKey.
+    @AppStorage(HistoryStore.retentionDaysKey) private var retentionDays = 0
+
+    private var historyRetention: some View {
+        Section {
+            Stepper(value: $retentionDays, in: 0...365) {
+                HStack {
+                    Text("Keep history for")
+                    Spacer()
+                    Text(retentionDays == 0
+                         ? "Forever"
+                         : "\(retentionDays) day\(retentionDays == 1 ? "" : "s")")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+            }
+            .accessibilityLabel(Text("Keep history for N days"))
+            .accessibilityValue(Text(retentionDays == 0
+                                     ? "Forever" : "\(retentionDays) days"))
+            .accessibilityHint(Text(
+                "Runs older than this move to an archive file on disk rather than being deleted. Zero keeps everything forever."))
+        } header: {
+            Text("History Housekeeping")
+        } footer: {
+            Text(retentionDays == 0
+                 ? "All runs are kept forever."
+                 : "Runs older than \(retentionDays) day\(retentionDays == 1 ? "" : "s") move to archive-history.jsonl — nothing is ever silently destroyed.")
+        }
+        .id(SettingsSection.startup.id) // nearest existing anchor; no new section enum case needed for one row
+    }
+
     // MARK: - Onboarding
 
     private var onboardingReset: some View {
@@ -434,6 +471,17 @@ struct SettingsView: View {
     /// Opens the releases page in the user's default browser.
     static func openReleasesPage() {
         if let url = URL(string: releasesPageURL) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// W13B TEAM-UB / UB-5 (S-100): discussions board the feedback row
+    /// opens. A constant so tests and future wiring share one spelling.
+    static let feedbackPageURL = "https://github.com/netmax/discussions"
+
+    /// Opens the GitHub Discussions page in the user's default browser.
+    static func openFeedbackPage() {
+        if let url = URL(string: feedbackPageURL) {
             NSWorkspace.shared.open(url)
         }
     }
@@ -523,6 +571,29 @@ struct SettingsView: View {
             .accessibilityLabel(Text("Check for updates"))
             .accessibilityHint(Text("There is no automatic updater yet. Opens the NetMax releases page in your browser so you can compare against the version shown here."))
             .accessibilityIdentifier("settings.checkForUpdates")
+
+            // W13B TEAM-UB / UB-5 (S-100): feedback link — Help-menu-style
+            // row in About, opening GitHub Discussions in the browser.
+            Button {
+                Self.openFeedbackPage()
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Send Feedback…")
+                        Text("Opens GitHub Discussions in your browser")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "envelope")
+                        .foregroundColor(.accentColor)
+                }
+            }
+            .buttonStyle(.plain)
+            .help("Share ideas or report issues on the NetMax discussions board")
+            .accessibilityLabel(Text("Send feedback"))
+            .accessibilityHint(Text("Opens the NetMax GitHub Discussions page in your browser so you can share ideas or report issues."))
+            .accessibilityIdentifier("settings.sendFeedback")
         } header: {
             Text("About")
         } footer: {

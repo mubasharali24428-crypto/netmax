@@ -137,10 +137,82 @@ final class HistoryStore {
     ///
     /// Missing file → empty array. Corrupt/partial lines are skipped silently,
     /// so a truncated last line (crash mid-write) costs nothing.
+    ///
+    /// W13B TEAM-UB / UB-4: this is also where the "Keep history for N days"
+    /// setting is ENFORCED — expired records move to `archive-history.jsonl`
+    /// before being excluded from the result. `0` (the default) keeps
+    /// everything forever and never touches the files.
     func loadAll() -> [HistoryRecord] {
+        let retentionDays = UserDefaults.standard.integer(forKey: Self.retentionDaysKey)
         lock.lock()
         defer { lock.unlock() }
-        return Self.readRecords(from: fileURL, decoder: decoder)
+        guard retentionDays > 0 else {
+            return Self.readRecords(from: fileURL, decoder: decoder)
+        }
+        return enforceRetentionLocked(days: retentionDays)
+    }
+
+    /// Retention pass with the lock already held (`loadAll`'s fast path takes
+    /// it once; `enforceRetention(days:)` is the public testable wrapper that
+    /// takes it itself). See `enforceRetention` for the full contract.
+    private func enforceRetentionLocked(days retentionDays: Int,
+                                        now: Date = Date()) -> [HistoryRecord] {
+        let all = Self.readRecords(from: fileURL, decoder: decoder)
+        let cutoff = now.addingTimeInterval(-Double(retentionDays) * 86_400)
+        let expired = all.filter { $0.ts < cutoff }
+        guard !expired.isEmpty else { return all }
+
+        // 1) Append the expired batch to the archive file. Best-effort: a
+        //    failed archive write aborts the prune so nothing is lost.
+        do {
+            let archiveURL = Self.archiveFileURL(forFileAt: fileURL)
+            let dir = archiveURL.deletingLastPathComponent()
+            if !FileManager.default.fileExists(atPath: dir.path) {
+                try FileManager.default.createDirectory(at: dir,
+                                                        withIntermediateDirectories: true)
+            }
+            var archiveBlob = Data()
+            for record in expired {
+                archiveBlob.append(try encoder.encode(record))
+                archiveBlob.append(0x0A)
+            }
+            let handle: FileHandle
+            if FileManager.default.fileExists(atPath: archiveURL.path) {
+                handle = try FileHandle(forWritingTo: archiveURL)
+            } else {
+                FileManager.default.createFile(atPath: archiveURL.path, contents: nil)
+                handle = try FileHandle(forWritingTo: archiveURL)
+            }
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: archiveBlob)
+        } catch {
+            #if DEBUG
+            print("[HistoryStore] retention archive failed: \(error.localizedDescription)")
+            #endif
+            return all // nothing pruned when archiving fails
+        }
+
+        // 2) Rewrite the live file with just the survivors.
+        let kept = all.filter { $0.ts >= cutoff }
+        do {
+            if kept.isEmpty {
+                try FileManager.default.removeItem(at: fileURL)
+            } else {
+                var blob = Data()
+                for record in kept {
+                    blob.append(try encoder.encode(record))
+                    blob.append(0x0A)
+                }
+                try blob.write(to: fileURL, options: .atomic)
+            }
+        } catch {
+            #if DEBUG
+            print("[HistoryStore] retention rewrite failed: \(error.localizedDescription)")
+            #endif
+            return all // live file untouched; archive holds a safe duplicate
+        }
+        return kept
     }
 
     /// W12 T1-a (W11-A-093): Clear is soft-delete — the whole file MOVES to
@@ -278,28 +350,66 @@ final class HistoryStore {
     /// match is a no-op; deleting the last record removes the file entirely
     /// (the next append recreates it, same policy as `clear()`). Thread-safe.
     func delete(_ record: HistoryRecord) {
+        deleteMany([record])
+    }
+
+    /// W13B TEAM-UB / UB-4 (S-034/S-035): bulk delete behind HistoryView's
+    /// multi-select mode. One atomic rewrite (never N passes); records are
+    /// matched by the store's lossless ts+mode identity, so a caller's stale
+    /// copies still match. Returns the number of records actually removed.
+    @discardableResult
+    func deleteMany(_ records: [HistoryRecord]) -> Int {
+        guard !records.isEmpty else { return 0 }
         lock.lock()
         defer { lock.unlock() }
-        var records = Self.readRecords(from: fileURL, decoder: decoder)
-        guard let index = records.firstIndex(of: record) else { return }
-        records.remove(at: index)
+        let doomed = Set(records.map(Self.identityKey))
+        let kept = Self.readRecords(from: fileURL, decoder: decoder)
+            .filter { !doomed.contains(Self.identityKey($0)) }
+        let removed = Self.readRecords(from: fileURL, decoder: decoder).count - kept.count
+        guard removed > 0 else { return 0 }
         do {
-            if records.isEmpty {
+            if kept.isEmpty {
                 try FileManager.default.removeItem(at: fileURL)
-                return
+            } else {
+                var blob = Data()
+                for line in kept {
+                    blob.append(try encoder.encode(line))
+                    blob.append(0x0A) // JSON Lines: newline-terminated
+                }
+                try blob.write(to: fileURL, options: .atomic)
             }
-            var blob = Data()
-            for line in records {
-                blob.append(try encoder.encode(line))
-                blob.append(0x0A) // JSON Lines: newline-terminated
-            }
-            try blob.write(to: fileURL, options: .atomic)
         } catch {
             // Same best-effort policy as append/clear: never crash the app.
             #if DEBUG
-            print("[HistoryStore] delete failed: \(error.localizedDescription)")
+            print("[HistoryStore] bulk delete failed: \(error.localizedDescription)")
             #endif
         }
+        return removed
+    }
+
+    // MARK: Retention & archive (W13B TEAM-UB / UB-4)
+
+    /// Settings key backing "Keep history for N days" (0 = keep forever).
+    static let retentionDaysKey = "netmax.history.retentionDays"
+
+    /// Archive location: records pruned by retention move here instead of
+    /// being destroyed (`archive-history.jsonl` beside the live history).
+    static func archiveFileURL(forFileAt url: URL = HistoryStore.defaultFileURL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent("archive-history.jsonl")
+    }
+
+    /// Enforce the retention window: records older than `retentionDays` are
+    /// MOVED to `archive-history.jsonl` (append — never silently destroyed)
+    /// and excluded from the returned array. `retentionDays <= 0` keeps
+    /// everything forever and never touches disk. Public testable wrapper —
+    /// takes the lock itself; production loads reach this via `loadAll()`.
+    /// - Returns: records kept (file/oldest-first order preserved).
+    func enforceRetention(days retentionDays: Int,
+                          now: Date = Date()) -> [HistoryRecord] {
+        guard retentionDays > 0 else { return Self.readRecords(from: fileURL, decoder: decoder) }
+        lock.lock()
+        defer { lock.unlock() }
+        return enforceRetentionLocked(days: retentionDays, now: now)
     }
 
     // MARK: - Internals

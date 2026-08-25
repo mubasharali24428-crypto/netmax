@@ -132,6 +132,128 @@ struct DashboardMetrics: Equatable {
         }
     }
 
+    // MARK: Week-over-week deltas + hour coverage (W13B TEAM-UB / UB-3)
+
+    /// One trailing-7d vs prior-7d comparison for a metric.
+    /// `delta` is nil unless BOTH windows have usable samples (a missing
+    /// prior week must say so honestly — S-051's core rule).
+    struct WeekDelta: Equatable {
+        enum Direction { case up, down, flat }
+        let currentMedian: Double
+        let previousMedian: Double?
+        var delta: Double? {
+            guard let previousMedian, previousMedian != 0 else { return nil }
+            return (currentMedian - previousMedian) / previousMedian * 100
+        }
+        var direction: Direction {
+            guard let delta, abs(delta) >= Self.flatBandPercent else { return .flat }
+            return delta > 0 ? .up : .down
+        }
+        /// Within ±5% a metric counts as unchanged (documented product band).
+        static let flatBandPercent = 5.0
+
+        /// The honest one-line form shown on the cards. Lower-is-better for
+        /// loss: an increase there reads "▲" but the wording never implies
+        /// better/worse — the number speaks for itself.
+        var text: String {
+            guard let delta else {
+                return "no prior week to compare"
+            }
+            let arrow = direction == .up ? "▲" : direction == .down ? "▼" : "•"
+            let magnitude = Int(abs(delta).rounded())
+            return "\(arrow) \(magnitude)% vs last week"
+        }
+    }
+
+    /// Median of a numeric series (average of middle two on even counts).
+    static func median(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let mid = sorted.count / 2
+        if sorted.count % 2 == 1 { return sorted[mid] }
+        return (sorted[mid - 1] + sorted[mid]) / 2
+    }
+
+    /// Trailing-window vs previous-window medians over records carrying
+    /// `read`. Windows are [now−w, now) and [now−2w, now−w); `now` injectable
+    /// for determinism. Current window empty → all-nil delta (honest).
+    static func weekDelta(from records: [HistoryRecord],
+                          read: (HistoryRecord) -> Double?,
+                          windowDays: Double = 7,
+                          now: Date = Date()) -> WeekDelta {
+        let cutoffCurrent = now.addingTimeInterval(-windowDays * 86_400)
+        let cutoffPrevious = now.addingTimeInterval(-2 * windowDays * 86_400)
+        let current = records.filter { $0.ts >= cutoffCurrent }.compactMap(read)
+        let previous = records.filter { $0.ts < cutoffCurrent && $0.ts >= cutoffPrevious }
+            .compactMap(read)
+        guard let currentMedian = median(current) else {
+            // Nothing measurable this week; still surface the prior median
+            // when it exists so the line can say why it stays quiet.
+            return WeekDelta(currentMedian: median(previous) ?? 0,
+                             previousMedian: median(previous))
+        }
+        return WeekDelta(currentMedian: currentMedian,
+                         previousMedian: median(previous))
+    }
+
+    /// Convenience readers for the three delta lines under the cards.
+    static func speedWeekDelta(from records: [HistoryRecord], now: Date = Date()) -> WeekDelta {
+        weekDelta(from: records,
+                  read: { MetricExtractor.latestSpeedMbps(in: $0.resultRaw) },
+                  now: now)
+    }
+
+    static func lossWeekDelta(from records: [HistoryRecord], now: Date = Date()) -> WeekDelta {
+        weekDelta(from: records,
+                  read: { MetricExtractor.latestPacketLossPercent(in: $0.resultRaw) },
+                  now: now)
+    }
+
+    /// Bloat deltas compare the loaded-latency Δ in ms when payloads carry it.
+    static func bloatWeekDelta(from records: [HistoryRecord], now: Date = Date()) -> WeekDelta {
+        weekDelta(from: records,
+                  read: { MetricExtractor.latestBloatGrade(in: $0.resultRaw)?.deltaMs },
+                  now: now)
+    }
+
+    /// Hour-of-day test coverage (S-029 groundwork): count of runs started
+    /// in each LOCAL hour, oldest-first input order irrelevant. Exactly 24
+    /// buckets, index 0 = midnight–00:59 local.
+    static func hourCoverage(from records: [HistoryRecord],
+                             calendar: Calendar = .current) -> [Int] {
+        var buckets = [Int](repeating: 0, count: 24)
+        for record in records {
+            let hour = calendar.component(.hour, from: record.ts)
+            guard hour >= 0 && hour < 24 else { continue } // defensive; can't happen
+            buckets[hour] += 1
+        }
+        return buckets
+    }
+
+    /// Opacity ramp for one coverage cell: zero samples stay nearly invisible
+    /// (honest absence), the busiest hour is fully opaque, everything between
+    /// scales linearly with a visible floor.
+    static func coverageOpacity(count: Int, peak: Int) -> Double {
+        guard peak > 0, count > 0 else { return 0.08 }
+        return 0.25 + 0.75 * (Double(count) / Double(peak))
+    }
+
+    /// Tooltip for one cell ("2pm · 5 runs"; empty hours say so plainly).
+    static func coverageHelp(hour: Int, count: Int) -> String {
+        let label = "\(hour % 12 == 0 ? 12 : hour % 12)\(hour < 12 ? "am" : "pm")"
+        return count == 0 ? "\(label) — no tests" : "\(label) · \(count) run\(count == 1 ? "" : "s")"
+    }
+
+    /// Spoken summary of the strip: the busiest hour(s), or honest absence.
+    static func coverageSummary(_ buckets: [Int]) -> String {
+        guard let peak = buckets.max(), peak > 0 else { return "No runs yet" }
+        let busiest = buckets.indices.filter { buckets[$0] == peak }
+        let names = busiest.map { coverageHelp(hour: $0, count: $0) }.map {
+            $0.components(separatedBy: " · ").first ?? $0
+        }
+        return names.joined(separator: ", ") + ", most tested"
+    }
+
     private static func speedRank(_ mbps: Double?) -> Int? {
         guard let mbps, mbps >= 0 else { return nil }
         if mbps >= 100 { return 0 }
@@ -152,9 +274,12 @@ struct DashboardMetrics: Equatable {
 // MARK: - Extraction helpers
 
 /// Regex-based value readers for the engine's human-readable result text and
-/// the bridge's pretty-printed JSON `data` payloads. File-private: only
-/// `DashboardMetrics.extract` consumes these.
-private enum MetricExtractor {
+/// the bridge's pretty-printed JSON `data` payloads.
+/// Internal since W13B TEAM-UB (UB-2): the Reports monthly-summary card and
+/// History's run-comparison sheet parse payloads through these SAME readers,
+/// so a card, the trend sparkline, the monthly PDF, and a diff row can never
+/// disagree about the same result_raw.
+enum MetricExtractor {
 
     /// Most recent speed-looking value (Mbps) in one raw payload.
     ///
@@ -325,6 +450,12 @@ struct DashboardCardsView: View {
     /// line immediately; the relative text itself ticks via TimelineView.
     @ObservedObject private var scheduler = Scheduler.shared
 
+    /// W13B UB-5 (S-061): "What's New" sheet — shown once per version change
+    /// (`netmax.whatsNew.seenVersion` vs the bundle version). The sheet is
+    /// hosted here, on the landing tab, so a returning user meets it once.
+    @AppStorage(WhatsNew.seenVersionKey) private var whatsNewSeenVersion = ""
+    @State private var showingWhatsNew = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
@@ -339,6 +470,8 @@ struct DashboardCardsView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         cardRow
                         speedTrendSection
+                        // W13B UB-3 (S-029): hour-of-day coverage strip.
+                        coverageStripSection
                     }
                         .padding(.vertical, 2)
                 }
@@ -353,7 +486,15 @@ struct DashboardCardsView: View {
         }
         .padding(16)
         .frame(minWidth: 420, minHeight: 300)
-        .onAppear(perform: reload)
+        .onAppear {
+            reload()
+            // W13B UB-5 (S-061): first appearance after a version change
+            // raises the What's New sheet exactly once.
+            showingWhatsNew = WhatsNew.shouldShow(seen: whatsNewSeenVersion)
+        }
+        .sheet(isPresented: $showingWhatsNew) {
+            WhatsNewSheet(seenVersion: $whatsNewSeenVersion)
+        }
     }
 
     // MARK: Next run (T2-d, W11-A-046)
@@ -436,7 +577,8 @@ struct DashboardCardsView: View {
                 unit: "Mbps",
                 tint: Self.speedTint(m.speed?.value),
                 detail: cardDetail(base: m.speed.map { "\($0.mode) · \(Self.relative($0.date))" },
-                                   mode: m.speed?.mode)
+                                   mode: m.speed?.mode),
+                deltaLine: DashboardMetrics.speedWeekDelta(from: records).text
             )
             .netMaxHoverLift()
             .netMaxStaggeredAppear(index: 0)
@@ -448,7 +590,8 @@ struct DashboardCardsView: View {
                 value: m.bloatGrade?.letter,
                 unit: nil,
                 tint: Self.gradeTint(m.bloatGrade?.letter),
-                detail: cardDetail(base: bloatDetail(m.bloatGrade), mode: m.bloatGrade?.mode)
+                detail: cardDetail(base: bloatDetail(m.bloatGrade), mode: m.bloatGrade?.mode),
+                deltaLine: DashboardMetrics.bloatWeekDelta(from: records).text
             )
             .netMaxHoverLift()
             .netMaxStaggeredAppear(index: 1)
@@ -461,7 +604,8 @@ struct DashboardCardsView: View {
                 unit: "%",
                 tint: Self.lossTint(m.loss?.value),
                 detail: cardDetail(base: m.loss.map { "\($0.mode) · \(Self.relative($0.date))" },
-                                   mode: m.loss?.mode)
+                                   mode: m.loss?.mode),
+                deltaLine: DashboardMetrics.lossWeekDelta(from: records).text
             )
             .netMaxHoverLift()
             .netMaxStaggeredAppear(index: 2)
@@ -476,6 +620,69 @@ struct DashboardCardsView: View {
             .netMaxHoverLift()
             .netMaxStaggeredAppear(index: 3)
         }
+    }
+
+    /// W13B UB-3 (S-029 groundwork): compact 24-cell hour-of-day strip under
+    /// the sparkline — one cell per LOCAL hour, opacity by sample count, so
+    /// "when do I actually test?" is answerable at a glance. Hidden entirely
+    /// while there is no history (never an empty decoration).
+    private var coverageStripSection: some View {
+        let buckets = DashboardMetrics.hourCoverage(from: records)
+        let peak = buckets.max() ?? 0
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: "clock.badge.questionmark")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text("Test coverage by hour")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(records.count) run\(records.count == 1 ? "" : "s") total")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(0..<24, id: \.self) { hour in
+                    let opacity = DashboardMetrics.coverageOpacity(
+                        count: buckets[hour], peak: peak)
+                    let tooltip = DashboardMetrics.coverageHelp(
+                        hour: hour, count: buckets[hour])
+                    Capsule()
+                        .fill(Color.accentColor.opacity(opacity))
+                        .frame(height: 14)
+                        .frame(maxWidth: .infinity)
+                        .help(tooltip)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Hour-of-day test coverage strip")
+            .accessibilityValue(Text(DashboardMetrics.coverageSummary(buckets)))
+            HStack {
+                Text("12a")
+                Spacer()
+                Text("6a")
+                Spacer()
+                Text("12p")
+                Spacer()
+                Text("6p")
+                Spacer()
+                Text("11p")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color(nsColor: .separatorColor))
+        )
     }
 
     // MARK: Speed trend
@@ -611,6 +818,63 @@ struct DashboardCardsView: View {
     }
 }
 
+// MARK: - What's New sheet (W13B UB-5, S-061)
+
+/// Release-highlights sheet, shown once per version change from the
+/// Dashboard. Dismissing (Done) stamps the current version into
+/// `netmax.whatsNew.seenVersion`, so the next launch stays quiet until the
+/// version changes again.
+struct WhatsNewSheet: View {
+    /// Bound to the persisted marker; writing the current version on Done
+    /// is the whole "once per version" mechanism.
+    @Binding var seenVersion: String
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.blue)
+                    .accessibilityHidden(true)
+                Text("What's New in NetMax")
+                    .font(.headline)
+                Spacer()
+                Text(WhatsNew.currentVersion)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(WhatsNew.highlights) { entry in
+                VStack(alignment: .leading, spacing: 2) {
+                    Label(entry.title, systemImage: "dot.square")
+                        .font(.subheadline.weight(.medium))
+                    Text(entry.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+            }
+
+            Spacer(minLength: 0)
+
+            HStack {
+                Spacer()
+                Button("Done") {
+                    seenVersion = WhatsNew.currentVersion
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .accessibilityLabel("Done — hide What's New until the next release")
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 380, idealWidth: 420, minHeight: 360, idealHeight: 400)
+        .accessibilityIdentifier("whatsnew.sheet")
+    }
+}
+
 // MARK: - One card (pure subview)
 
 /// Presentational metric tile: label row, big value, supporting detail.
@@ -622,6 +886,10 @@ struct MetricCard: View {
     let unit: String?
     let tint: Color
     let detail: String
+    /// W13B UB-3 (S-051): optional week-over-week line ("▲ 12% vs last
+    /// week", or the honest "no prior week to compare"). Defaults nil so
+    /// MenuBarView's pre-existing compact tiles compile unchanged.
+    var deltaLine: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -653,6 +921,18 @@ struct MetricCard: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let deltaLine {
+                Text(deltaLine)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(Text("Compared to last week"))
+                    .accessibilityValue(Text(deltaLine))
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -780,6 +1060,64 @@ enum DashboardCardsTests {
         check(trend.count == 20, "trend capped at 20")
         check(trend.count == 20 && trend.first == 106 && trend.last == 125,
               "trend keeps newest 20, oldest-first")
+
+        // MARK: W13B UB-3 — week-over-week deltas + hour coverage
+
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        func rec(_ daysAgo: Double, mbps: Double) -> HistoryRecord {
+            HistoryRecord(ts: now.addingTimeInterval(-daysAgo * 86_400),
+                          mode: "turbo", params: [:], resultRaw: "{\"mbps\": \(mbps)}")
+        }
+        // This week ~100, last week ~50 → about +100%.
+        let deltaRuns = (1...4).map { rec(Double($0), mbps: 100) }
+            + (8...11).map { rec(Double($0), mbps: 50) }
+        let speedDelta = DashboardMetrics.speedWeekDelta(from: deltaRuns, now: now)
+        check(speedDelta.previousMedian == 50, "prior-week median computed")
+        check(speedDelta.direction == .up && abs((speedDelta.delta ?? 0) - 100) < 1,
+              "week-over-week up direction and magnitude")
+
+        // No prior week → honest nil delta, no invented comparison.
+        let thinDelta = DashboardMetrics.speedWeekDelta(
+            from: (1...3).map { rec(Double($0), mbps: 80) }, now: now)
+        check(thinDelta.delta == nil
+                  && thinDelta.text == "no prior week to compare",
+              "thin history says no prior week honestly")
+
+        // Within the ±5% band reads flat.
+        let flatDelta = DashboardMetrics.speedWeekDelta(
+            from: (1...2).map { rec(Double($0), mbps: 102) }
+                + (9...10).map { rec(Double($0), mbps: 100) }, now: now)
+        check(flatDelta.direction == .flat && flatDelta.delta != nil,
+              "±5% band counts as flat")
+
+        // Median: odd/even handling.
+        check(DashboardMetrics.median([3, 1, 2]) == 2, "median odd count")
+        check(DashboardMetrics.median([1, 2, 3, 4]) == 2.5, "median even count")
+        check(DashboardMetrics.median([]) == nil, "median empty is nil")
+
+        // Hour coverage: exactly 24 buckets, local-hour membership, counts.
+        let hourBase = DateComponents(calendar: cal, year: 2026, month: 8, day: 20,
+                                      hour: 14, minute: 0).date!
+        let hourRuns = (0...2).map { offsetHours in
+            HistoryRecord(ts: hourBase.addingTimeInterval(Double(offsetHours) * 3600),
+                          mode: "baseline", params: [:], resultRaw: "{}")
+        }
+        let coverage = DashboardMetrics.hourCoverage(
+            from: hourRuns, calendar: cal)
+        check(coverage.count == 24, "coverage strip has exactly 24 cells")
+        check(coverage[14] == 1 && coverage[15] == 1 && coverage[16] == 1,
+              "runs bucket into their local hours")
+        check(DashboardMetrics.hourCoverage(from: [], calendar: cal)
+            == [Int](repeating: 0, count: 24), "empty history covers nothing")
+
+        // Cell opacity ramp: empty stays faint, peak is full.
+        check(DashboardMetrics.coverageOpacity(count: 0, peak: 5) == 0.08,
+              "empty cell nearly invisible")
+        check(DashboardMetrics.coverageOpacity(count: 5, peak: 5) == 1.0,
+              "peak cell fully opaque")
+        check(DashboardMetrics.coverageHelp(hour: 0, count: 0).contains("no tests"),
+              "empty-hour tooltip says so")
 
         return failures
     }

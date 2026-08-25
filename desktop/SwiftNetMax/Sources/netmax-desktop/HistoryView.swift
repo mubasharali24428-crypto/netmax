@@ -55,6 +55,27 @@ struct HistoryView: View {
     /// context menu, confirmed through the destructive-only dialog rule.
     @State private var pendingDelete: HistoryRecord?
 
+    // MARK: W13B UB-2 (S-014) — Compare selection mode
+
+    /// Compare mode on/off ("Select to Compare" toolbar toggle). In this
+    /// mode every Past Runs row shows a checkbox instead of opening details.
+    @State private var compareMode = false
+    /// Selected runs' identity keys (max 2), keyed like the store's own
+    /// ts+mode dedupe identity so selection survives reloads of equal data.
+    @State private var compareSelection: Set<String> = []
+    /// Presents the side-by-side comparison sheet once exactly 2 are picked.
+    @State private var showingCompare = false
+
+    // MARK: W13B UB-4 (S-034/S-035) — multi-select bulk delete
+
+    /// Bulk-edit mode ("Edit" toolbar toggle). Rows gain checkboxes; the
+    /// destructive "Delete Selected" item appears once anything is checked.
+    @State private var bulkEditMode = false
+    /// Keys of the runs queued for bulk deletion (ts+mode identity).
+    @State private var bulkSelection: Set<String> = []
+    /// Presents the bulk-delete confirmation (destructive-only rule).
+    @State private var showingBulkDeleteConfirmation = false
+
     /// W12 T4-a (audit 151): collapse threshold for the Trends section.
     static let trendsCollapseThreshold = 50
 
@@ -164,6 +185,40 @@ struct HistoryView: View {
                 .help("Bring back the runs removed by the most recent clear")
                 .accessibilityIdentifier("history.restoreLastClear")
             }
+            ToolbarItem {
+                Button {
+                    compareMode.toggle()
+                    // Leaving the mode clears any half-made selection.
+                    if !compareMode { compareSelection = [] }
+                    // The two selection modes are mutually exclusive.
+                    if compareMode && bulkEditMode { bulkEditMode = false }
+                } label: {
+                    Label(compareMode ? "Done Comparing" : "Select to Compare",
+                          systemImage: compareMode
+                              ? "checkmark.square.fill" : "plus.square.on.square")
+                }
+                .disabled(records.count < 2)
+                .help("Pick two runs and see their metrics side by side")
+                .accessibilityLabel(Text("Compare runs"))
+                .accessibilityValue(Text(compareMode ? "on" : "off"))
+            }
+            // W13B UB-4 (S-034): Edit toggles multi-select mode for bulk
+            // deletion — the standard iOS/macOS "Edit" convention.
+            ToolbarItem {
+                Button {
+                    bulkEditMode.toggle()
+                    if !bulkEditMode { bulkSelection = [] }
+                    if bulkEditMode && compareMode { compareMode = false }
+                } label: {
+                    Label(bulkEditMode ? "Done" : "Edit",
+                          systemImage: bulkEditMode ? "checkmark.circle.fill" : "pencil")
+                }
+                .disabled(records.isEmpty)
+                .help("Select multiple runs to delete them in one go")
+                .accessibilityLabel(Text("Edit history"))
+                .accessibilityValue(Text(bulkEditMode ? "on" : "off"))
+                .accessibilityIdentifier("history.bulkEdit")
+            }
             // §16 wayfinding/familiarity: the destructive action sits at
             // the trailing edge, away from the read-only controls it could
             // be mis-clicked against (macOS puts destructive last).
@@ -175,6 +230,19 @@ struct HistoryView: View {
                 }
                 .disabled(records.isEmpty)
                 .help("Delete all saved runs")
+            }
+            // W13B UB-4 (S-035): bulk delete — destructive-only confirmation.
+            if bulkEditMode {
+                ToolbarItem {
+                    Button {
+                        showingBulkDeleteConfirmation = true
+                    } label: {
+                        Label("Delete Selected", systemImage: "trash.fill")
+                    }
+                    .disabled(bulkSelection.isEmpty)
+                    .help("Delete the checked runs (they cannot be restored)")
+                    .accessibilityIdentifier("history.bulkDelete")
+                }
             }
         }
         .confirmationDialog(
@@ -214,6 +282,20 @@ struct HistoryView: View {
                 "Removes the \(record.mode) run from \(Self.relativeStamp(record.ts)) from this Mac."
             } ?? "")
         }
+        // W13B UB-4 (S-035): bulk delete confirmation — one destructive pass.
+        .confirmationDialog(
+            "Delete selected runs?",
+            isPresented: $showingBulkDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(bulkSelection.count) Run\(bulkSelection.count == 1 ? "" : "s")",
+                   role: .destructive) {
+                performBulkDelete()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes \(bulkSelection.count) saved run\(bulkSelection.count == 1 ? "" : "s") from this Mac. Unlike Clear History, this selection cannot be undone.")
+        }
         .sheet(item: $selectedRun) { run in
             RunDetailSheet(record: run.record)
         }
@@ -247,7 +329,41 @@ struct HistoryView: View {
                 eventsFileURL: WifiEventsReader.defaultFileURL
             ))
         }
+        // W13B UB-2 (S-014): side-by-side comparison of the two picked runs.
+        .sheet(isPresented: $showingCompare) {
+            if let pair = comparePair {
+                RunCompareSheet(older: pair.older, newer: pair.newer)
+            } else {
+                Text("Pick exactly two runs to compare.")
+                    .padding(24)
+            }
+        }
         .onAppear(perform: reload)
+    }
+
+    /// UB-2: the two currently selected records, oldest-first for the sheet
+    /// (left column = earlier run, right = newer). Nil until exactly two
+    /// distinct stored records match the selection keys.
+    private var comparePair: (older: HistoryRecord, newer: HistoryRecord)? {
+        let picked = records.filter { compareSelection.contains(Self.compareKey(of: $0)) }
+        guard picked.count == 2 else { return nil }
+        let ordered = picked.sorted { $0.ts < $1.ts }
+        return (ordered[0], ordered[1])
+    }
+
+    /// Selection identity — the same ts+mode pair the store round-trips
+    /// losslessly and uses for its own merge/dedupe.
+    static func compareKey(of record: HistoryRecord) -> String {
+        "\(record.ts.timeIntervalSince1970)|\(record.mode)"
+    }
+
+    /// Honest counter line under Compare mode ("0 selected", …).
+    static func compareStatusText(selected: Int) -> String {
+        switch selected {
+        case 0: "Select two runs to compare"
+        case 1: "1 run selected — pick one more"
+        default: "2 runs selected"
+        }
     }
 
     // MARK: - Sections
@@ -416,34 +532,102 @@ struct HistoryView: View {
                             "\(filteredRuns.count) of \(records.count) runs match the search"
                         ))
                 }
+                // W13B UB-2 (S-014): honest selection counter while comparing.
+                if compareMode {
+                    Text(Self.compareStatusText(selected: compareSelection.count))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel(Text("Runs selected for comparison"))
+                        .accessibilityValue(Text(
+                            Self.compareStatusText(selected: compareSelection.count)))
+                }
                 ForEach(newestFilteredFirst, id: \.ts) { record in
-                    Button {
-                        selectedRun = IdentifiedRun(record: record)
-                    } label: {
-                        HistoryRow(record: record, allRecords: records)
-                    }
-                    .buttonStyle(NetMaxPressStyle()) // W8 A1: press feedback
-                    .netMaxHoverLift() // W9 G3
-                    // W12 T4-b (audits 152/154): right-click shortcuts for the
-                    // three per-run actions; same targets as the visible UI.
-                    .contextMenu {
-                        Button("Open Details") {
+                    // W13B UB-2/UB-4: in Compare or bulk-Edit mode rows carry
+                    // a checkbox instead of opening details on click.
+                    if compareMode || bulkEditMode {
+                        HStack(spacing: 8) {
+                            selectionToggle(for: record)
+                            HistoryRow(record: record, allRecords: records)
+                        }
+                    } else {
+                        Button {
                             selectedRun = IdentifiedRun(record: record)
+                        } label: {
+                            HistoryRow(record: record, allRecords: records)
                         }
-                        Button("Copy Result") {
-                            copyResult(of: record)
-                        }
-                        // W13B UA-3 (S-028): annotate a run ("moved router").
-                        Button(record.note == nil ? "Add Note…" : "Edit Note…") {
-                            pendingNoteRecord = record
-                        }
-                        Button("Delete This Run", role: .destructive) {
-                            pendingDelete = record
+                        .buttonStyle(NetMaxPressStyle()) // W8 A1: press feedback
+                        .netMaxHoverLift() // W9 G3
+                        // W12 T4-b (audits 152/154): right-click shortcuts for the
+                        // three per-run actions; same targets as the visible UI.
+                        .contextMenu {
+                            Button("Open Details") {
+                                selectedRun = IdentifiedRun(record: record)
+                            }
+                            Button("Copy Result") {
+                                copyResult(of: record)
+                            }
+                            // W13B UA-3 (S-028): annotate a run ("moved router").
+                            Button(record.note == nil ? "Add Note…" : "Edit Note…") {
+                                pendingNoteRecord = record
+                            }
+                            Button("Delete This Run", role: .destructive) {
+                                pendingDelete = record
+                            }
                         }
                     }
                 }
             }
         }
+    }
+
+    /// W13B UB-2/UB-4: the row checkbox shared by Compare mode (caps at 2
+    /// and auto-opens the sheet) and bulk-edit mode (unbounded selection).
+    private func selectionToggle(for record: HistoryRecord) -> some View {
+        let isCompare = compareMode
+        return Toggle(isOn: Binding(
+            get: {
+                (isCompare ? compareSelection : bulkSelection)
+                    .contains(Self.compareKey(of: record))
+            },
+            set: { on in
+                let key = Self.compareKey(of: record)
+                if isCompare {
+                    if on {
+                        // Cap at two: the oldest pick falls off.
+                        if compareSelection.count >= 2 {
+                            compareSelection.removeFirst()
+                        }
+                        compareSelection.insert(key)
+                    } else {
+                        compareSelection.remove(key)
+                    }
+                    showingCompare = compareSelection.count == 2
+                } else {
+                    if on {
+                        bulkSelection.insert(key)
+                    } else {
+                        bulkSelection.remove(key)
+                    }
+                }
+            }
+        )) {
+            Image(systemName: "slider.horizontal.3")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+        }
+        .toggleStyle(.checkbox)
+        .accessibilityLabel(Text(isCompare
+            ? "Select this \(record.mode) run for comparison"
+            : "Select this \(record.mode) run for deletion"))
+    }
+
+    /// W13B UB-4: one destructive pass over the checked runs.
+    private func performBulkDelete() {
+        let doomedKeys = bulkSelection
+        let doomed = records.filter { doomedKeys.contains(Self.compareKey(of: $0)) }
+        HistoryStore.shared.deleteMany(doomed)
+        bulkSelection = []
+        reload()
     }
 
     // MARK: - Derived data
@@ -654,6 +838,167 @@ private struct HistoryRow: View {
                 .joined(separator: ", ")
     }
 }
+
+// MARK: - Run comparison sheet (W13B UB-2, S-014)
+
+/// Side-by-side metrics table for two picked history runs. Rows are the
+/// shared dashboard metrics (speed / loss / bloat grade + delta) plus mode
+/// and timestamp; "—" honestly marks what a payload never carried. Parsing
+/// goes through MetricExtractor so this table can never disagree with the
+/// dashboard cards or the monthly summary.
+struct RunCompareSheet: View {
+    let older: HistoryRecord
+    let newer: HistoryRecord
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "plus.square.on.square")
+                    .foregroundStyle(.blue)
+                    .accessibilityHidden(true)
+                Text("Compare Runs")
+                    .font(.headline)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+
+            Text("\(Self.stamp(older.ts))  →  \(Self.stamp(newer.ts))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(Text("Comparing an earlier run to a newer run"))
+
+            // Metrics table: label column + one value column per run.
+            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+                GridRow {
+                    Text("").gridCellAnchor(.leading)
+                    columnHeader(mode: older.mode,
+                                 time: Self.relative(older.ts))
+                    columnHeader(mode: newer.mode,
+                                 time: Self.relative(newer.ts))
+                }
+                Divider().gridCellUnsizedAxes([.horizontal])
+                compareRow(label: "Speed (Mbps)",
+                           older: Self.speedText(older), newer: Self.speedText(newer))
+                compareRow(label: "Packet loss (%)",
+                           older: Self.lossText(older), newer: Self.lossText(newer))
+                compareRow(label: "Bufferbloat grade",
+                           older: Self.gradeText(older), newer: Self.gradeText(newer))
+                compareRow(label: "Loaded latency Δ",
+                           older: Self.deltaText(older), newer: Self.deltaText(newer))
+            }
+            .accessibilityElement(children: .contain)
+
+            Spacer(minLength: 0)
+
+            Text("Only values each run actually measured are shown.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(minWidth: 440, idealWidth: 500, minHeight: 320, idealHeight: 360)
+        .accessibilityIdentifier("history.compareSheet")
+    }
+
+    private func columnHeader(mode: String, time: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(mode)
+                .font(.subheadline.weight(.semibold))
+            Text(time)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .gridCellAnchor(.leading)
+    }
+
+    /// One metric row: honest per-run cells; when both runs carry the value,
+    /// a delta line rides under the label.
+    private func compareRow(label: String, older: String, newer: String) -> some View {
+        GridRow(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.callout.weight(.medium))
+                .gridCellAnchor(.leading)
+            Text(older).monospacedDigit()
+            Text(newer).monospacedDigit()
+        }
+    }
+
+    // MARK: Cell formatting (shared extractor, honest dashes)
+
+    static func speedText(_ record: HistoryRecord) -> String {
+        MetricExtractor.latestSpeedMbps(in: record.resultRaw)
+            .map { String(format: "%.1f", $0) } ?? "—"
+    }
+
+    static func lossText(_ record: HistoryRecord) -> String {
+        MetricExtractor.latestPacketLossPercent(in: record.resultRaw)
+            .map { String(format: "%.1f", $0) } ?? "—"
+    }
+
+    static func gradeText(_ record: HistoryRecord) -> String {
+        MetricExtractor.latestBloatGrade(in: record.resultRaw)?.letter ?? "—"
+    }
+
+    static func deltaText(_ record: HistoryRecord) -> String {
+        guard let delta = MetricExtractor.latestBloatGrade(in: record.resultRaw)?.deltaMs
+        else { return "—" }
+        return String(format: "%+.1f ms", delta)
+    }
+
+    static func stamp(_ date: Date) -> String {
+        let fmt = DateFormatter()
+        fmt.dateStyle = .medium
+        fmt.timeStyle = .short
+        return fmt.string(from: date)
+    }
+
+    static func relative(_ date: Date) -> String {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+#if DEBUG
+// MARK: - Offline self-checks (W13B UB-2 comparison side)
+enum HistoryCompareTests {
+    @discardableResult
+    static func runAll() -> Int {
+        var failures = 0
+        func check(_ condition: Bool, _ name: String) {
+            failures += condition ? 0 : 1
+            if !condition { print("[HistoryCompareTests] FAIL: \(name)") }
+        }
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        let fast = HistoryRecord(ts: base, mode: "turbo", params: [:],
+                                 resultRaw: "{\"mbps\": 120}\npacket loss: 0.5%")
+        let slow = HistoryRecord(ts: base.addingTimeInterval(3600), mode: "baseline",
+                                 params: [:],
+                                 resultRaw: "{\"mbps\": 60}\ngrade: C")
+        // Cells cite only what each payload carried — no cross-contamination.
+        check(RunCompareSheet.speedText(fast) == "120.0"
+                  && RunCompareSheet.lossText(fast) == "0.5",
+              "speed/loss read from the same payload shapes as cards")
+        check(RunCompareSheet.gradeText(slow) == "C"
+                  && RunCompareSheet.lossText(slow) == "—",
+              "missing metric renders an honest dash")
+        check(RunCompareSheet.deltaText(fast) == "—",
+              "absent loaded-latency delta says so")
+
+        // Selection identity is ts+mode and stable across re-sorts.
+        check(HistoryView.compareKey(of: fast)
+                  == HistoryView.compareKey(of: HistoryRecord(
+                      ts: fast.ts, mode: "turbo", params: [:], resultRaw: "x")),
+              "compare key ignores payload text")
+        check(HistoryView.compareStatusText(selected: 1)
+                  .contains("one more"), "status text guides toward two picks")
+
+        return failures
+    }
+}
+#endif
 
 // MARK: - Trends mini-chart
 
