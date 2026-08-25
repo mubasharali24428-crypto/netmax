@@ -26,6 +26,25 @@ struct HistoryView: View {
     @State private var showingTimeline = false
     @State private var timelineRange: TimelineRange = .oneDay
 
+    /// W12 T4-a (audit 151): Trends section starts collapsed once the log
+    /// grows past 50 runs. User toggles win until the view is recreated.
+    @State private var trendsExpanded = false
+
+    /// W12 T4-b (audit 154): run queued by "Delete This Run" in the row
+    /// context menu, confirmed through the destructive-only dialog rule.
+    @State private var pendingDelete: HistoryRecord?
+
+    /// W12 T4-a (audit 151): collapse threshold for the Trends section.
+    static let trendsCollapseThreshold = 50
+
+    /// W12 T4-a (audit 151): set the first time the user expands Trends; a
+    /// manual expand wins over reload-time re-collapse for this visit.
+    @State private var userExpandedTrends = false
+
+    /// W12 T4-a (audit 151): true once the user toggles Trends themselves;
+    /// reloads then stop overriding their choice for the rest of the visit.
+    @State private var userTouchedTrends = false
+
     var body: some View {
         List {
             if records.count >= 3, !timelineHintShown {
@@ -84,10 +103,10 @@ struct HistoryView: View {
                 Button {
                     showingClearConfirmation = true
                 } label: {
-                    Label("Clear History", systemImage: "trash")
+                    Label("Clear history", systemImage: "trash")
                 }
                 .disabled(records.isEmpty)
-                .help("Delete all saved measurement history")
+                .help("Delete all saved runs")
             }
         }
         .confirmationDialog(
@@ -95,13 +114,38 @@ struct HistoryView: View {
             isPresented: $showingClearConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Delete All History", role: .destructive) {
+            Button("Delete all history", role: .destructive) {
                 HistoryStore.shared.clear()
                 reload()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This permanently removes all \(records.count) saved run(s) from this Mac.")
+        }
+        // W12 T4-b (audit 154): per-run destructive action goes through the
+        // same confirmation pattern as Clear History (destructive-only rule).
+        .confirmationDialog(
+            "Delete this run?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete This Run", role: .destructive) {
+                if let record = pendingDelete {
+                    HistoryStore.shared.delete(record)
+                }
+                pendingDelete = nil
+                reload()
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDelete = nil
+            }
+        } message: {
+            Text(pendingDelete.map { record in
+                "Removes the \(record.mode) run from \(Self.relativeStamp(record.ts)) from this Mac."
+            } ?? "")
         }
         .sheet(item: $selectedRun) { run in
             RunDetailSheet(record: run.record)
@@ -119,20 +163,49 @@ struct HistoryView: View {
 
     @ViewBuilder
     private var trendsSection: some View {
+        // W12 T4-a (audit 151): with a long log, Trends starts collapsed so
+        // Past Runs are reachable without scrolling past the chart.
         Section("Trends") {
-            if let mode = effectiveTrendMode {
-                TrendChart(records: Self.trendSeries(for: mode, in: records))
-                    .padding(.vertical, 4)
-            } else {
-                Text("Run a measurement to see its trend here.")
-                    .foregroundStyle(.secondary)
+            DisclosureGroup(isExpanded: $trendsExpanded) {
+                trendsContent
+            } label: {
+                Label(
+                    trendsExpanded ? "Hide trend chart" : "Show trend chart",
+                    systemImage: "chart.bar"
+                )
+                .font(.callout)
             }
-            if availableModes.count > 1 {
-                Picker("Mode", selection: $trendMode) {
-                    ForEach(availableModes, id: \.self) { Text($0) }
-                }
-                .pickerStyle(.menu)
+            .accessibilityLabel(Text("Trends"))
+            .accessibilityValue(Text(trendsExpanded ? "Expanded" : "Collapsed"))
+            .accessibilityHint(Text(
+                records.count > Self.trendsCollapseThreshold
+                    ? "Starts collapsed once history grows past \(Self.trendsCollapseThreshold) runs."
+                    : "Shows the per-mode mini bar chart."
+            ))
+            // W12 T4-a (audit 151): a user toggle sticks — reloads triggered
+            // by appends/deletes no longer re-collapse (or re-expand) it.
+            .onChange(of: trendsExpanded) { _ in
+                userTouchedTrends = true
+                if trendsExpanded { userExpandedTrends = true }
             }
+        }
+    }
+
+    /// Previous Trends body, unchanged except for living inside the group.
+    @ViewBuilder
+    private var trendsContent: some View {
+        if let mode = effectiveTrendMode {
+            TrendChart(records: Self.trendSeries(for: mode, in: records))
+                .padding(.vertical, 4)
+        } else {
+            Text("Measure to see its trend here.")
+                .foregroundStyle(.secondary)
+        }
+        if availableModes.count > 1 {
+            Picker("Mode", selection: $trendMode) {
+                ForEach(availableModes, id: \.self) { Text($0) }
+            }
+            .pickerStyle(.menu)
         }
     }
 
@@ -142,7 +215,7 @@ struct HistoryView: View {
             if records.isEmpty {
                 // §16 simplicity: empty states answer "what do I do next"
                 // with one specific action, in an honest voice.
-                Text("No measurements yet. Start a run in Mode Lab and it will be saved here.")
+                Text("No runs yet. Measure in Mode Lab and they will be saved here.")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(newestFirst, id: \.ts) { record in
@@ -153,6 +226,19 @@ struct HistoryView: View {
                     }
                     .buttonStyle(NetMaxPressStyle()) // W8 A1: press feedback
                     .netMaxHoverLift() // W9 G3
+                    // W12 T4-b (audits 152/154): right-click shortcuts for the
+                    // three per-run actions; same targets as the visible UI.
+                    .contextMenu {
+                        Button("Open Details") {
+                            selectedRun = IdentifiedRun(record: record)
+                        }
+                        Button("Copy Result") {
+                            copyResult(of: record)
+                        }
+                        Button("Delete This Run", role: .destructive) {
+                            pendingDelete = record
+                        }
+                    }
                 }
             }
         }
@@ -186,6 +272,30 @@ struct HistoryView: View {
         if let current = trendMode, !availableModes.contains(current) {
             trendMode = nil // cleared history or unknown mode → fall back
         }
+        applyTrendsCollapseDefault()
+    }
+
+    /// W12 T4-a (audit 151): re-collapse Trends on reload once the log passes
+    /// the threshold, unless the user expanded it during this visit.
+    private func applyTrendsCollapseDefault() {
+        if records.count > Self.trendsCollapseThreshold {
+            trendsExpanded = userExpandedTrends
+        } else if !userTouchedTrends {
+            trendsExpanded = true
+        }
+    }
+
+    /// Clipboard payload for "Copy Result": the engine's raw result text.
+    private func copyResult(of record: HistoryRecord) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(record.resultRaw, forType: .string)
+    }
+
+    /// Short relative stamp used in the delete confirmation message.
+    private static func relativeStamp(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     /// Hint-bar fill: `.ultraThinMaterial` chip per W8 law #4; users with

@@ -54,6 +54,7 @@ struct ScheduleEditorView: View {
             enableSection
             intervalSection
             summarySection
+            glossarySection
             commitSection
         }
         .formStyle(.grouped)
@@ -142,6 +143,60 @@ struct ScheduleEditorView: View {
             }
         } header: {
             Text("Status")
+        }
+    }
+
+    /// T2-d (W11-A-031/032): the background runner speaks launchd — "plist",
+    /// "loaded", "unload" are macOS plumbing jargon. This glossary lives in
+    /// the same Schedule tab so the terms decode where users meet them.
+    /// (BackgroundRunnerControlsView.swift itself is outside this lane's
+    /// owned paths; these rows cover its vocabulary.)
+    private var glossarySection: some View {
+        Section {
+            HStack {
+                Image(systemName: "doc.text")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("plist").font(.callout)
+                    Text("A settings file launchd reads to know what to run and when.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .help("plist: a small settings file on disk. NetMax installs one so "
+                + "launchd can relaunch the background checker even after a reboot.")
+
+            HStack {
+                Image(systemName: "bolt.horizontal")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Loaded / unloaded status").font(.callout)
+                    Text("Whether macOS has registered (loaded) the agent right now.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .help("Loaded means macOS launchd currently has the agent registered "
+                + "and will honor its schedule; not loaded means it is installed "
+                + "on disk but dormant until you press Update Agent.")
+
+            HStack {
+                Image(systemName: "arrow.uturn.backward.circle")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Install / remove").font(.callout)
+                    Text("Installs or deletes that plist file; removing stops automatic runs.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .help("Install writes the plist and registers it with launchd "
+                + "(idempotent — safe to press again). Remove unloads the agent "
+                + "and deletes the file; scheduled checks stop until reinstalled.")
+        } header: {
+            Text("Background runner terms")
+        } footer: {
+            Text("Hover any row for details. The agent itself is managed under Background Test Runner.")
         }
     }
 

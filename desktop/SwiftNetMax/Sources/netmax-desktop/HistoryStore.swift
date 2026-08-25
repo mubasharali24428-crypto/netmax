@@ -125,17 +125,142 @@ final class HistoryStore {
         return Self.readRecords(from: fileURL, decoder: decoder)
     }
 
-    /// Delete the entire history file. The next append recreates it.
+    /// W12 T1-a (W11-A-093): Clear is soft-delete — the whole file MOVES to
+    /// `cleared-history.jsonl` beside it (same dir) instead of being deleted,
+    /// so "Undo"/"Restore Last Clear" can bring it back. A second clear
+    /// replaces the holding bin: it holds the LAST cleared batch (Trash-style).
+    /// The next append recreates the (now missing) history file.
     func clear() {
         lock.lock()
         defer { lock.unlock() }
         do {
-            try FileManager.default.removeItem(at: fileURL)
-        } catch where (error as NSError).code == NSFileNoSuchFileError {
-            // Nothing to clear — already clean.
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                return // Nothing to clear — already clean.
+            }
+            let binURL = Self.holdingBinURL(forFileAt: fileURL)
+            if FileManager.default.fileExists(atPath: binURL.path) {
+                try FileManager.default.removeItem(at: binURL) // last-clear wins
+            }
+            try FileManager.default.moveItem(at: fileURL, to: binURL)
         } catch {
             #if DEBUG
             print("[HistoryStore] clear failed: \(error.localizedDescription)")
+            #endif
+        }
+    }
+
+    // MARK: Holding bin (W12 T1-a)
+
+    /// Location of the clear-holding bin: `cleared-history.jsonl` in the same
+    /// directory as `history.jsonl`.
+    static func holdingBinURL(forFileAt url: URL = HistoryStore.defaultFileURL) -> URL {
+        url.deletingLastPathComponent().appendingPathComponent("cleared-history.jsonl")
+    }
+
+    /// True while a cleared batch sits in the holding bin (drives the
+    /// "Restore Last Clear" toolbar item and the post-Clear undo affordance).
+    func holdingBinExists() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return Self.binHasContent(forFileAt: fileURL)
+    }
+
+    /// Move the holding bin back into history (W12 T1-a).
+    ///
+    /// Held records MERGE into any newer ones appended since the clear;
+    /// duplicates are detected by ts+mode identity (same pair the store
+    /// round-trips losslessly) so restoring twice cannot double-insert.
+    /// The bin is consumed either way. Returns true when held records were
+    /// restored (or were already all present); false when there was nothing
+    /// restorable (no bin, or no readable records in it).
+    ///
+    /// Static per the lane contract; the work runs on `shared`, under the
+    /// store's lock, against the shared store's file.
+    @discardableResult
+    static func restoreLastClear() -> Bool {
+        HistoryStore.shared.restoreHoldingBin()
+    }
+
+    private func restoreHoldingBin() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let binURL = Self.holdingBinURL(forFileAt: fileURL)
+        guard FileManager.default.fileExists(atPath: binURL.path) else { return false }
+
+        let held = Self.readRecords(from: binURL, decoder: decoder)
+        try? FileManager.default.removeItem(at: binURL) // consumed regardless
+        guard !held.isEmpty else { return false }
+
+        var current = Self.readRecords(from: fileURL, decoder: decoder)
+        let keys = Set(current.map(Self.identityKey))
+        for record in held where !keys.contains(Self.identityKey(record)) {
+            current.append(record)
+        }
+        // Keep the documented on-disk invariant: oldest-first, atomic swap.
+        current.sort { $0.ts < $1.ts }
+        do {
+            if current.isEmpty {
+                // Unreachable in practice (held non-empty ⇒ current non-empty);
+                // kept symmetric with delete(_:) so the invariant can't drift.
+                try FileManager.default.removeItem(at: fileURL)
+            } else {
+                var blob = Data()
+                for record in current {
+                    blob.append(try encoder.encode(record))
+                    blob.append(0x0A) // JSON Lines: newline-terminated
+                }
+                try blob.write(to: fileURL, options: .atomic)
+            }
+            return true
+        } catch {
+            #if DEBUG
+            print("[HistoryStore] restore failed: \(error.localizedDescription)")
+            #endif
+            return false
+        }
+    }
+
+    /// Merge/dedupe identity: ts + mode (P2 fields the store round-trips
+    /// losslessly; two runs in the same mode share a ts only on collision).
+    private static func identityKey(_ record: HistoryRecord) -> String {
+        "\(record.ts.timeIntervalSince1970)|\(record.mode)"
+    }
+
+    /// Bin counts as existing only when it holds at least one readable record
+    /// (an emptied/corrupt bin offers nothing to restore).
+    private static func binHasContent(forFileAt url: URL) -> Bool {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return !readRecords(from: holdingBinURL(forFileAt: url), decoder: decoder).isEmpty
+    }
+
+    /// Deletes ONE run: the first stored record equal to `record`.
+    ///
+    /// W12 T4-b (audit 154): backs HistoryView's right-click "Delete This Run".
+    /// Rewrites the file atomically, preserving oldest-first order; a missing
+    /// match is a no-op; deleting the last record removes the file entirely
+    /// (the next append recreates it, same policy as `clear()`). Thread-safe.
+    func delete(_ record: HistoryRecord) {
+        lock.lock()
+        defer { lock.unlock() }
+        var records = Self.readRecords(from: fileURL, decoder: decoder)
+        guard let index = records.firstIndex(of: record) else { return }
+        records.remove(at: index)
+        do {
+            if records.isEmpty {
+                try FileManager.default.removeItem(at: fileURL)
+                return
+            }
+            var blob = Data()
+            for line in records {
+                blob.append(try encoder.encode(line))
+                blob.append(0x0A) // JSON Lines: newline-terminated
+            }
+            try blob.write(to: fileURL, options: .atomic)
+        } catch {
+            // Same best-effort policy as append/clear: never crash the app.
+            #if DEBUG
+            print("[HistoryStore] delete failed: \(error.localizedDescription)")
             #endif
         }
     }

@@ -113,36 +113,43 @@ struct ModeLabView: View {
     @State private var seconds = 10
     @State private var count = 10
 
+    // W12 T4-c (audits 164/165): last session's mode + streams/seconds,
+    // restored across launches. Key spellings come straight from the W12
+    // brief (`netmax.state.lastMode/lastStreams/lastSeconds`); `count`
+    // stays preference-seeded — it is not part of those keys.
+    @AppStorage("netmax.state.lastMode") private var storedModeID = ""
+    @AppStorage("netmax.state.lastStreams") private var storedStreams = 0
+    @AppStorage("netmax.state.lastSeconds") private var storedSeconds = 0
+
     @State private var status: RunStatus = .idle
     @State private var resultText = ""
 
     private var selectedMode: ModeDefinition { ModeCatalog.definition(for: selectedModeID) }
 
+    /// W12 T4-b (audit 152): at this window width configuration and results
+    /// sit side by side; below it they stack (the previous single-column look).
+    static let sideBySideWidth: CGFloat = 700
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
+        GeometryReader { geo in
+            VStack(alignment: .leading, spacing: 12) {
+                header
 
-            modePicker
-            Text(selectedMode.summary)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel("Mode description")
-                .accessibilityValue(selectedMode.summary)
-
-            Divider()
-
-            parameterSection
-
-            runButton
-
-            Divider()
-
-            resultArea
-
-            Spacer(minLength: 0)
+                if geo.size.width >= Self.sideBySideWidth {
+                    HStack(alignment: .top, spacing: 16) {
+                        configColumn
+                        Divider()
+                        resultsColumn
+                    }
+                } else {
+                    configColumn
+                    Divider()
+                    resultsColumn
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(16)
         .frame(minWidth: 420, minHeight: 520)
         .onAppear(perform: seedDefaultsFromPreferences)
         // ALPHA-A4-06 (A2-09 finding 12): idle→running→done/error was silent
@@ -151,6 +158,44 @@ struct ModeLabView: View {
         .onChange(of: status) { newStatus in
             handleStatusAnnouncement(newStatus)
         }
+        // W12 T4-c: persist the working mode + parameters for next launch.
+        .onChange(of: selectedModeID) { storedModeID = $0 }
+        .onChange(of: streams) { storedStreams = $0 }
+        .onChange(of: seconds) { storedSeconds = $0 }
+    }
+
+    // MARK: Layout columns (W12 T4-b)
+
+    /// Mode choice, parameters and Run button — left/top column in both
+    /// layouts. Members unchanged from the single-column version.
+    private var configColumn: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            modePicker
+            modeSummary
+            Divider()
+            parameterSection
+            runButton
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Engine output — right/bottom column in both layouts.
+    private var resultsColumn: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            resultArea
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var modeSummary: some View {
+        Text(selectedMode.summary)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel("Mode description")
+            .accessibilityValue(selectedMode.summary)
     }
 
     // MARK: Header
@@ -192,6 +237,10 @@ struct ModeLabView: View {
         .pickerStyle(.menu)
         .labelsHidden()
         .disabled(status == .running)
+        // T2-b (W11-A-011): descriptions are visible immediately under the
+        // picker (pre-selection AND pre-run); the tooltip additionally makes
+        // each mode's summary browsable without committing a selection.
+        .help("Description of \(selectedMode.id): \(selectedMode.summary)")
         .accessibilityLabel("Engine mode")
         .accessibilityValue(selectedModeID)
         .accessibilityHint("Choose one of the ten NetMax engine modes")
@@ -216,55 +265,85 @@ struct ModeLabView: View {
         let rowHint = supported
             ? parameter.accessibilityHint
             : "\(parameter.label) is not used by mode \(selectedMode.id)"
-        return HStack {
+        // T2-b (W11-A-012): the accepted range is printed right on the row,
+        // before any validation error can teach it.
+        return VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text(parameter.label)
-                    .frame(width: 70, alignment: .leading)
-                Text("\(value.wrappedValue)")
-                    .font(.system(.body, design: .monospaced))
-                    .frame(width: 36, alignment: .trailing)
-            }
-            // ALPHA-A4-06 (A2-09 finding 6, P0): the collapse-to-one-element
-            // now covers ONLY the two static texts. The Stepper sits OUTSIDE
-            // it, so VoiceOver keeps a separate adjustable element whose
-            // increment/decrement actions work (previously the row-level
-            // .ignore stripped them). Same label/value/hint contract as the
-            // old collapsed row.
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(parameter.label) value")
-            .accessibilityValue("\(value.wrappedValue)")
-            .accessibilityHint(rowHint)
-            Stepper("\(parameter.label): \(value.wrappedValue)",
-                    value: value,
-                    in: parameter.range)
-                .labelsHidden()
-                .disabled(!supported || status == .running)
+                HStack {
+                    Text(parameter.label)
+                        .frame(width: 70, alignment: .leading)
+                    Text("\(value.wrappedValue)")
+                        .font(.system(.body, design: .monospaced))
+                        .frame(width: 36, alignment: .trailing)
+                }
+                // ALPHA-A4-06 (A2-09 finding 6, P0): the collapse-to-one-element
+                // now covers ONLY the two static texts. The Stepper sits OUTSIDE
+                // it, so VoiceOver keeps a separate adjustable element whose
+                // increment/decrement actions work (previously the row-level
+                // .ignore stripped them). Same label/value/hint contract as the
+                // old collapsed row.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(parameter.label) value")
+                .accessibilityValue("\(value.wrappedValue)")
                 .accessibilityHint(rowHint)
-            if !supported {
-                Text("not used by \(selectedMode.id)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    // ALPHA-A4-06 (A2-09 finding 7): stays silent; the fact is
-                    // conveyed by rowHint above.
-                    .accessibilityHidden(true)
+                Stepper("\(parameter.label): \(value.wrappedValue)",
+                        value: value,
+                        in: parameter.range)
+                    .labelsHidden()
+                    .disabled(!supported || status == .running)
+                    .accessibilityHint(rowHint)
+                if !supported {
+                    Text("not used by \(selectedMode.id)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        // ALPHA-A4-06 (A2-09 finding 7): stays silent; the fact is
+                        // conveyed by rowHint above.
+                        .accessibilityHidden(true)
+                }
             }
+            Text(rangeCaption(for: parameter))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true) // range is already in rowHint above
         }
         .opacity(supported ? 1 : 0.55)
+    }
+
+    /// T2-b (W11-A-012): human range caption per parameter ("5–30 seconds").
+    private func rangeCaption(for parameter: ModeParameter) -> String {
+        switch parameter {
+        case .streams:
+            "\(parameter.range.lowerBound)–\(parameter.range.upperBound) parallel streams"
+        case .seconds:
+            "\(parameter.range.lowerBound)–\(parameter.range.upperBound) seconds"
+        case .count:
+            "\(parameter.range.lowerBound)–\(parameter.range.upperBound) probes"
+        }
     }
 
     // MARK: Run
 
     private var runButton: some View {
-        Button {
-            runSelectedMode()
-        } label: {
-            Label(status == .running ? "Running…" : "Run",
-                  systemImage: "play.circle")
+        VStack(spacing: 6) {
+            Button {
+                runSelectedMode()
+            } label: {
+                Label(status == .running ? "Running…" : "Run",
+                      systemImage: "play.circle")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(status == .running)
+            .accessibilityLabel("Run \(selectedModeID)")
+            .accessibilityHint("Starts the selected engine mode with the chosen parameters and shows results below")
+
+            // T2-b (W11-A-013): long runs (the seconds parameter can reach
+            // 30 s) get a visible in-progress cue instead of a silent wait.
+            if status == .running && selectedMode.supports(.seconds) && seconds > 10 {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Run in progress")
+            }
         }
-        .buttonStyle(.borderedProminent)
-        .disabled(status == .running)
-        .accessibilityLabel("Run \(selectedModeID)")
-        .accessibilityHint("Starts the selected engine mode with the chosen parameters and shows results below")
     }
 
     // MARK: Results
@@ -368,11 +447,26 @@ struct ModeLabView: View {
     /// AppPreferences ONLY (Lane C owns AppPreferences.swift — never touch
     /// UserDefaults directly from this file). Clamped defensively into the
     /// mission's stepper ranges so an out-of-band stored value can't wedge UI.
+    ///
+    /// W12 T4-c: on top of the preference defaults, the last working state is
+    /// restored — mode from `netmax.state.lastMode`, streams/seconds from
+    /// `lastStreams`/`lastSeconds` (validated against the catalog/ranges so a
+    /// stale key can't select an unknown mode or wedge a stepper).
     private func seedDefaultsFromPreferences() {
         let prefs = AppPreferences.shared
         streams = min(max(prefs.defaultStreams, 2), 16)
         seconds = min(max(prefs.defaultSeconds, 5), 30)
         count = min(max(prefs.defaultCount, 5), 50)
+
+        if storedStreams >= 2 && storedStreams <= 16 {
+            streams = storedStreams
+        }
+        if storedSeconds >= 5 && storedSeconds <= 30 {
+            seconds = storedSeconds
+        }
+        if ModeCatalog.modes.contains(where: { $0.id == storedModeID }) {
+            selectedModeID = storedModeID
+        }
     }
 }
 

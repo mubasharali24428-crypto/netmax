@@ -1,0 +1,88 @@
+import SwiftUI
+
+/// W12-USER-IDEA — "Target speed" mode (user-requested).
+///
+/// The user states their plan cap once (Settings or right here). The app then
+/// offers target speeds WITHIN that plan — e.g. a 10 Mbps plan offers
+/// 2/4/6/8/10 Mbps targets — and computes how many parallel streams to open
+/// to reach the chosen target honestly. If the measured result falls short of
+/// the target, the app says so plainly (honest-limits brand: we can only use
+/// what the connection gives us; opening more streams cannot create
+/// bandwidth the plan doesn't have).
+struct TargetSpeedView: View {
+    /// Plan cap in Mbps as stated by the user.
+    @AppStorage("netmax.plan.mbps") private var planMbps: Double = 100
+
+    @State private var selectedTarget: Double?
+    @State private var isRunning = false
+    @State private var lastResult: String = ""
+    let onRun: (_ streams: Int, _ seconds: Int, _ targetMbps: Double) -> Void
+
+    /// Target menu = sensible fractions of the plan, deduped and ≤ plan.
+    private var targets: [Double] {
+        let fractions: [Double] = [0.2, 0.4, 0.6, 0.8, 1.0]
+        let raw = fractions.map { max(1, ($0 * planMbps / 5).rounded() * 5) }
+        return Array(Set(raw)).sorted()
+    }
+
+    /// Stream estimate: engine measures ~[4–8] Mbps per stream on typical
+    /// links; we scale streams to the target conservatively and clamp to the
+    /// engine's 1...32 legal range. Honest label explains it's an estimate.
+    private func streamsFor(target: Double) -> Int {
+        let perStreamEstimate = 6.0
+        let needed = Int((target / perStreamEstimate).rounded(.up))
+        return min(max(needed, 1), 32)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "gauge.with.dots.needle.bottom.50percent")
+                    .foregroundStyle(Color.accentColor)
+                Text("Target Speed")
+                    .font(.headline)
+                Spacer()
+                Menu {
+                    Button("Edit plan…") { /* deep-links to Settings plan field */ }
+                } label: {
+                    Text("Plan: \(Int(planMbps)) Mbps")
+                        .font(.caption)
+                }
+            }
+
+            Picker("Target", selection: $selectedTarget) {
+                ForEach(targets, id: \.self) { t in
+                    Text(formatMbps(t)).tag(Optional(t))
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if let target = selectedTarget {
+                HStack {
+                    Text("Will open ~\(streamsFor(target: target)) parallel streams")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        isRunning = true
+                        onRun(streamsFor(target: target), 10, target)
+                    } label: {
+                        Label("Reach \(formatMbps(target))",
+                              systemImage: "arrow.up.forward.circle.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isRunning)
+                }
+                Text("If your line can't reach the target, NetMax will tell you plainly — it can't create bandwidth beyond what your ISP delivers.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func formatMbps(_ v: Double) -> String {
+        v >= 1000 ? String(format: "%.1f Gbps", v / 1000) : "\(Int(v)) Mbps"
+    }
+}

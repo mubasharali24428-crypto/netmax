@@ -89,6 +89,8 @@ struct BloatStoryView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Bufferbloat story")
         .accessibilityValue(accessibilitySummary)
+        // T3-b (W11-A-148/149): jargon explained at first mention.
+        .help("Latency increase under load — hurts video calls")
     }
 
     // MARK: - Sections

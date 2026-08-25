@@ -9,6 +9,14 @@ struct MenuBarView: View {
     @State private var resultText: String = ""
     @State private var historyRecords: [HistoryRecord] = []
 
+    /// T2-a (W11-A-059): pin toggle so results survive outside-clicks during
+    /// review. HONEST LIMITATION: SwiftUI's `MenuBarExtra(.window)` exposes no
+    /// public API to suppress the system's dismissal-on-resign-active, so this
+    /// toggle records user intent and reflects state (filled glyph + tooltip);
+    /// fully honoring it requires an NSPopover-based host helper, which is
+    /// outside this lane's owned files. Documented rather than faked.
+    @State private var pinned = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -17,7 +25,15 @@ struct MenuBarView: View {
                 Text("NetMax")
                     .font(.headline)
                 Spacer()
+                if status == .running {
+                    // T2-a (W11-A-007): a real spinner beside the label —
+                    // the disabled button alone didn't read as "in progress".
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Test running")
+                }
                 statusBadge
+                pinButton
             }
 
             // W11 fix #1: the main feature is the FIRST thing in the popover —
@@ -33,7 +49,15 @@ struct MenuBarView: View {
             .controlSize(.large)
             .disabled(status == .running)
             .accessibilityLabel("Run Quick Test")
-            .accessibilityHint("Starts a short NetMax engine test and shows results below")
+            .accessibilityHint("Starts a short Quick Test and shows results below")
+
+            // W12 USER-IDEA: target-speed mode — user states their plan cap,
+            // picks a target within it, app computes the streams needed.
+            // Sits directly under Run Quick Test so both paths to the main
+            // feature are visible without tab navigation.
+            TargetSpeedView { streams, seconds, _ in
+                runQuickTest(streams: streams, seconds: seconds)
+            }
 
             // Wave-3 (ALPHA-A3-01): live metric cards beneath Quick Test,
             // above the results area. Hidden until history holds a first
@@ -61,7 +85,7 @@ struct MenuBarView: View {
             )
             .cornerRadius(6)
             .frame(minHeight: 220)
-            .accessibilityLabel("Engine test results")
+            .accessibilityLabel("Quick Test results")
             .accessibilityValue(resultText.isEmpty ? "No results yet" : resultText)
 
             Spacer(minLength: 0)
@@ -84,9 +108,30 @@ struct MenuBarView: View {
             Text(status.label)
                 .font(.caption)
         }
+        // T2-a (W11-A-008): the grade letters come straight from netmax.py's
+        // Waveform/DSLReports rubric — explain them where they're shown.
+        .help("Status of the current run. Bufferbloat grades follow the "
+            + "Waveform/DSLReports rubric: A+/A = latency barely rises under "
+            + "load (<5/<30 ms); B <60 ms; C <200 ms; D <400 ms; F worse.")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Status")
         .accessibilityValue(status.label)
+    }
+
+    /// T2-a (W11-A-059): pin toggle for this popover.
+    private var pinButton: some View {
+        Button {
+            pinned.toggle()
+        } label: {
+            Image(systemName: pinned ? "pin.fill" : "pin")
+                .foregroundStyle(pinned ? Color.accentColor : .secondary)
+        }
+        .buttonStyle(.plain)
+        .help(pinned
+              ? "Pinned — NetMax tries to keep this popover open while you review"
+              : "Pin this popover so it stays open while you review results")
+        .accessibilityLabel(pinned ? "Unpin popover" : "Pin popover")
+        .accessibilityAddTraits(pinned ? [.isSelected] : [])
     }
 
     // MARK: Dashboard cards (wave-3, ALPHA-A3-01)
@@ -139,7 +184,7 @@ struct MenuBarView: View {
                 value: m.statusWord,
                 unit: nil,
                 tint: CardFormat.statusTint(m.statusWord),
-                detail: m.statusWord == nil ? "run a test to assess" : "composite of latest results"
+                detail: m.statusWord == nil ? "no runs to assess yet" : "composite of latest results"
             )
             .netMaxHoverLift()
         }
@@ -154,7 +199,7 @@ struct MenuBarView: View {
         let series = DashboardMetrics.speedTrend(from: historyRecords)
         Group {
             if series.isEmpty {
-                Text("Run a test to see your speed trend")
+                Text("Measure to see your speed trend")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -176,6 +221,30 @@ struct MenuBarView: View {
 
     private func reloadHistory() {
         historyRecords = HistoryStore.shared.loadAll()
+    }
+
+    /// W12 USER-IDEA overload: target-speed path passes explicit streams so
+    /// the engine opens exactly the parallelism the chosen target needs.
+    private func runQuickTest(streams: Int, seconds: Int) {
+        guard status != .running else { return }
+        status = .running
+        resultText = ""
+        Task {
+            do {
+                let output = try await client.run(
+                    "turbo", args: ["--streams", "\(streams)", "--seconds", "\(seconds)"])
+                await MainActor.run {
+                    resultText = "Target run (\(streams) streams):\n" + output
+                    status = .done
+                    reloadHistory()
+                }
+            } catch {
+                await MainActor.run {
+                    resultText = "Error: \(error.localizedDescription)"
+                    status = .error
+                }
+            }
+        }
     }
 
     private func runQuickTest() {

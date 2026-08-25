@@ -321,10 +321,15 @@ private enum MetricExtractor {
 /// sparkline strip (only when history carries speeds), empty state otherwise.
 struct DashboardCardsView: View {
     @State private var records: [HistoryRecord] = []
+    /// T2-d (W11-A-046): observed so saving a schedule elsewhere updates this
+    /// line immediately; the relative text itself ticks via TimelineView.
+    @ObservedObject private var scheduler = Scheduler.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+
+            nextRunLine
 
             if records.isEmpty {
                 DashboardEmptyState()
@@ -351,6 +356,38 @@ struct DashboardCardsView: View {
         .onAppear(perform: reload)
     }
 
+    // MARK: Next run (T2-d, W11-A-046)
+
+    /// "next auto-check in 12m" under the header — shown only while the
+    /// schedule is enabled and a fire time is known. Re-renders every 30 s
+    /// (same cadence ScheduleEditorView uses) so a parked window never shows
+    /// a stale minute figure. Reads Scheduler.shared's facade only.
+    @ViewBuilder
+    private var nextRunLine: some View {
+        if scheduler.isEnabled {
+            TimelineView(.periodic(from: .now, by: 30)) { _ in
+                if let text = nextRunText {
+                    Label {
+                        Text(text)
+                    } icon: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(text)
+                    .accessibilityIdentifier("dashboard.nextRun")
+                    .help("Scheduled checks are on. Change the cadence in the Schedule tab.")
+                }
+            }
+        }
+    }
+
+    private var nextRunText: String? {
+        guard scheduler.isEnabled, let next = scheduler.nextFireDate else { return nil }
+        let minutes = max(1, Int((next.timeIntervalSinceNow / 60).rounded(.up)))
+        return "next auto-check in \(minutes)m"
+    }
+
     // MARK: Header
 
     private var header: some View {
@@ -368,7 +405,7 @@ struct DashboardCardsView: View {
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
-            .help("Reload measurement history from disk")
+            .help("Reload saved runs from disk")
             .accessibilityLabel("Refresh dashboard")
         }
     }
@@ -391,6 +428,8 @@ struct DashboardCardsView: View {
             )
             .netMaxHoverLift()
             .netMaxStaggeredAppear(index: 0)
+            // T3-b (W11-A-088): the Mbps/MBps distinction, at first mention.
+            .help("Megabits per second — the unit ISPs advertise")
             MetricCard(
                 title: "Bufferbloat",
                 icon: "waveform.path",
@@ -401,6 +440,8 @@ struct DashboardCardsView: View {
             )
             .netMaxHoverLift()
             .netMaxStaggeredAppear(index: 1)
+            // T3-b (W11-A-148/149): jargon explained at first mention.
+            .help("Latency increase under load — hurts video calls")
             MetricCard(
                 title: "Packet Loss",
                 icon: "wifi.exclamationmark",
@@ -418,7 +459,7 @@ struct DashboardCardsView: View {
                 value: m.statusWord,
                 unit: nil,
                 tint: Self.statusTint(m.statusWord),
-                detail: m.statusWord == nil ? "run a test to assess" : "composite of latest results"
+                detail: m.statusWord == nil ? "no runs to assess yet" : "composite of latest results"
             )
             .netMaxHoverLift()
             .netMaxStaggeredAppear(index: 3)
@@ -636,7 +677,7 @@ private struct DashboardEmptyState: View {
             Image(systemName: "bolt.horizontal.circle")
                 .font(.system(size: 36))
                 .foregroundStyle(.secondary)
-            Text("No measurements yet")
+            Text("No runs yet")
                 .font(.headline)
             Text("Runs you start in Mode Lab (or the menu bar) are saved locally and summarized here as cards.")
                 .font(.footnote)

@@ -14,7 +14,36 @@
 //  note).
 //
 
+import AppKit
 import SwiftUI
+
+// MARK: - Section anchors (W12 T4-a, audit 150)
+
+/// Jump targets for the settings section picker. `id` doubles as the
+/// ScrollViewReader anchor id attached to each Form section.
+private enum SettingsSection: String, CaseIterable, Identifiable {
+    case discovery
+    case modeLabDefaults
+    case interpreter
+    case startup
+    case notifications
+    case onboarding
+    case about
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .discovery: "Feature Discovery"
+        case .modeLabDefaults: "Mode Lab Defaults"
+        case .interpreter: "Python Interpreter"
+        case .startup: "Startup"
+        case .notifications: "Notifications"
+        case .onboarding: "Onboarding"
+        case .about: "About"
+        }
+    }
+}
 
 struct SettingsView: View {
     /// W10-4: lets the feature-discovery cards switch the root tab.
@@ -27,30 +56,94 @@ struct SettingsView: View {
     /// Set while the Reset Onboarding confirmation is up.
     @State private var confirmingOnboardingReset = false
 
+    /// W12 USER-IDEA: plan cap shared with TargetSpeedView (same key).
+    @AppStorage("netmax.plan.mbps") private var planMbps: Double = 100
+
     /// Self-persisting store behind the notification rules (`netmax.notify.*`),
     /// owned by NotificationPreferences; this view binds through it exactly as
     /// NotificationPrefsView does so both surfaces share live state.
     @ObservedObject private var notifyPrefs = NotificationPreferences.shared
 
+    /// W12 T4-a (audit 150): picker row at the top that jumps to a section.
+    /// Stays empty between jumps so re-choosing the same entry fires again.
+    @State private var jumpTarget: SettingsSection?
+
     var body: some View {
-        Form {
-            featureDiscovery
-            modeLabDefaults
-            interpreter
-            startup
-            notifications
-            onboardingReset
-            about
+        ScrollViewReader { proxy in
+            Form {
+                sectionPicker
+                planCapSection
+                featureDiscovery
+                modeLabDefaults
+                interpreter
+                startup
+                notifications
+                onboardingReset
+                about
+            }
+            .formStyle(.grouped)
+            .frame(minWidth: 420, idealWidth: 460, minHeight: 520)
+            .accessibilityIdentifier("settings.root")
+            .onChange(of: jumpTarget) { target in
+                guard let target else { return }
+                withAnimation {
+                    proxy.scrollTo(target.id, anchor: .top)
+                }
+                // Reset so picking the SAME section again jumps again.
+                jumpTarget = nil
+            }
         }
-        .formStyle(.grouped)
-        .frame(minWidth: 420, idealWidth: 460, minHeight: 520)
-        .accessibilityIdentifier("settings.root")
+    }
+
+    // MARK: - Section picker (W12 T4-a)
+
+    /// "Grouped nav" for the long settings pane: pick a name, the form
+    /// scrolls to that anchor (audit 150).
+    private var sectionPicker: some View {
+        Section {
+            Picker("Go to", selection: $jumpTarget) {
+                Text("All Sections").tag(SettingsSection?.none)
+                ForEach(SettingsSection.allCases) { section in
+                    Text(section.title).tag(Optional(section))
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityLabel(Text("Jump to settings section"))
+            .accessibilityHint(Text("Scrolls the settings list to the chosen section."))
+            .accessibilityIdentifier("settings.sectionPicker")
+        }
+    }
+
+    // MARK: - Plan cap (W12 USER-IDEA: target-speed mode needs the plan)
+
+    /// The user's stated plan cap in Mbps. TargetSpeedView offers targets
+    /// only within this; both surfaces share the same AppStorage key.
+    private var planCapSection: some View {
+        Section {
+            Stepper(value: $planMbps, in: 5...1000, step: 5) {
+                HStack {
+                    Text("My plan speed")
+                    Spacer()
+                    Text(planMbps >= 1000
+                         ? "1 Gbps"
+                         : "\(Int(planMbps)) Mbps")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityLabel(Text("Your internet plan's advertised speed"))
+            .accessibilityHint(Text("Target Speed offers goals at or below this"))
+        } header: {
+            Text("My Internet Plan")
+        } footer: {
+            Text("Used by Target Speed mode — it only suggests speeds within your plan and tells you honestly if the line can't reach the target.")
+        }
     }
 
     // MARK: - Feature discovery (W10-4)
 
     private var featureDiscovery: some View {
         FeatureDiscoverySection(openTab: onOpenTab)
+            .id(SettingsSection.discovery.id) // T4-a anchor
     }
 
     // MARK: - Mode Lab defaults
@@ -80,6 +173,7 @@ struct SettingsView: View {
         } footer: {
             Text("Used when you open Mode Lab — change them there any time.")
         }
+        .id(SettingsSection.modeLabDefaults.id) // T4-a anchor
     }
 
     private func stepperRow(
@@ -139,6 +233,7 @@ struct SettingsView: View {
         } footer: {
             Text("/usr/bin/python3 or full path — leave empty to use python3 from PATH.")
         }
+        .id(SettingsSection.interpreter.id) // T4-a anchor
     }
 
     // MARK: - Startup
@@ -151,6 +246,7 @@ struct SettingsView: View {
         } header: {
             Text("Startup")
         }
+        .id(SettingsSection.startup.id) // T4-a anchor
     }
 
     // MARK: - Notifications
@@ -193,7 +289,7 @@ struct SettingsView: View {
                 )
                 notificationRuleRow(
                     title: "Run failed",
-                    subtitle: "A measurement fails right after a successful one.",
+                    subtitle: "A run fails right after a successful one.",
                     isOn: $notifyPrefs.failureEnabled,
                     kind: .successToFailure,
                     hint: "Alerts when the connection appears to drop out — a failed run following a successful one."
@@ -201,11 +297,12 @@ struct SettingsView: View {
             } header: {
                 Text("Alert Rules")
             } footer: {
-                Text("Rules apply to every measurement while the master switch is on.")
+                Text("Rules apply to every run while the master switch is on.")
             }
             .disabled(!notifyPrefs.notificationsEnabled)
             .opacity(notifyPrefs.notificationsEnabled ? 1 : 0.55)
         }
+        .id(SettingsSection.notifications.id) // T4-a anchor
     }
 
     /// NotificationPrefsView's standard rule row: title + one-line effect,
@@ -237,14 +334,14 @@ struct SettingsView: View {
             Button(role: .destructive) {
                 confirmingOnboardingReset = true
             } label: {
-                Text("Reset Onboarding")
+                Text("Reset onboarding")
             }
             .confirmationDialog(
                 "Show the intro again on next launch?",
                 isPresented: $confirmingOnboardingReset,
                 titleVisibility: .visible
             ) {
-                Button("Reset Onboarding", role: .destructive) {
+                Button("Reset onboarding", role: .destructive) {
                     resetOnboarding()
                 }
             }
@@ -255,6 +352,7 @@ struct SettingsView: View {
         } footer: {
             Text("Replays the four-step intro next time you open NetMax. Your settings and history are kept.")
         }
+        .id(SettingsSection.onboarding.id) // T4-a anchor
     }
 
     /// Flips the exact shared key B1's shell watches (`netmax.onboarding.complete`)
@@ -282,12 +380,31 @@ struct SettingsView: View {
                 .font(.callout)
                 .foregroundColor(.secondary)
                 .accessibilityLabel(Text("engine: 157 offline tests"))
+
+            // T3-c (W11-A-102): telemetry stance, stated in-app.
+            Text("Privacy: All data stays on this Mac. The app makes no telemetry calls.")
+                .font(.callout)
+                .foregroundColor(.secondary)
+                .accessibilityLabel(Text("Privacy: all data stays on this Mac. The app makes no telemetry calls."))
+
+            // T3-c (W11-A-101): grading rubric surfaced in-app.
+            Text("Methodology: Grades use Waveform/DSLReports-style latency-under-load rubric.")
+                .font(.callout)
+                .foregroundColor(.secondary)
+                .accessibilityLabel(Text("Methodology: grades use a Waveform/DSLReports-style latency-under-load rubric."))
+
+            // T3-c (W11-A-132): license posture, stated in-app.
+            Text("Licenses: SwiftUI · Apple engines · no third-party runtime deps")
+                .font(.callout)
+                .foregroundColor(.secondary)
+                .accessibilityLabel(Text("Licenses: SwiftUI, Apple engines, no third-party runtime dependencies"))
         } header: {
             Text("About")
         } footer: {
             Text("Results reflect what your connection delivers right now — they vary with network conditions and don't guarantee peak speed.")
                 .accessibilityLabel(Text("Honest limits: results reflect current conditions, vary with the network, and don't guarantee peak speed."))
         }
+        .id(SettingsSection.about.id) // T4-a anchor
     }
 }
 

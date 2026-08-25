@@ -27,7 +27,10 @@ struct RootView: View {
 /// Post-onboarding navigation. Sidebar on the main window feels native;
 /// the same view works in the menu-bar popover where it collapses gracefully.
 struct MainTabView: View {
-    @State private var selection = 0
+    /// W12 T4-c (audit 164): the selected tab persists across launches under
+    /// `netmax.state.lastTab`. `TabView(selection:)` writes straight through
+    /// this binding, so the @AppStorage property observer does the saving.
+    @AppStorage("netmax.state.lastTab") private var selection = 0
 
     /// W10-4: binding wrapper so deep views (Settings feature cards) can
     /// switch tabs without owning state.
@@ -39,7 +42,7 @@ struct MainTabView: View {
         TabView(selection: tabSelection) {
             MenuBarView()
                 .tabItem { Label("Dashboard ⌘1", systemImage: "gauge") }
-                .help("Dashboard — run tests, see live metrics (⌘1)")
+                .help("Dashboard — live metrics and Quick Test (⌘1)")
                 .tag(0)
             // ALPHA-A4-06: attach the A2-09 Mode Lab a11y addendum here, at the
             // tab host, per ModeLabA11y.swift's header note (never inside
