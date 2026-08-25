@@ -59,6 +59,12 @@ struct MenuBarView: View {
                 runQuickTest(streams: streams, seconds: seconds)
             }
 
+            // W13: live speedometer — real-time throughput of every app on
+            // this Mac, sampled each second from interface byte counters.
+            Divider()
+            SpeedometerView()
+                .frame(maxWidth: .infinity)
+
             // Wave-3 (ALPHA-A3-01): live metric cards beneath Quick Test,
             // above the results area. Hidden until history holds a first
             // record; refreshed on appear and after every successful run.
