@@ -10,6 +10,11 @@ import SwiftUI
 ///   and params summary.
 /// - Toolbar: Clear History (with confirmation dialog) and Refresh.
 struct HistoryView: View {
+    /// One-time feature-discovery flag: set once the user acknowledges the
+    /// Quality Timeline hint bar below (persisted across launches).
+    @AppStorage("netmax.hints.timelineShown")
+    private var timelineHintShown = false
+
     @State private var records: [HistoryRecord] = []
     @State private var trendMode: String?
     @State private var showingClearConfirmation = false
@@ -19,6 +24,23 @@ struct HistoryView: View {
 
     var body: some View {
         List {
+            if records.count >= 3, !timelineHintShown {
+                HStack(spacing: 8) {
+                    Image(systemName: "lightbulb")
+                        .foregroundStyle(.yellow)
+                        .accessibilityLabel("Tip: new Quality Timeline feature")
+                    Text("New: see your runs as a timeline with WiFi events — try the Quality Timeline button.")
+                        .font(.callout)
+                    Spacer()
+                    Button("Got it") {
+                        timelineHintShown = true
+                    }
+                    .help("Hide this tip permanently")
+                    .accessibilityLabel("Got it — dismiss the Quality Timeline hint")
+                }
+                .padding(.vertical, 2)
+                .listRowSeparator(.hidden)
+            }
             trendsSection
             runsSection
         }
