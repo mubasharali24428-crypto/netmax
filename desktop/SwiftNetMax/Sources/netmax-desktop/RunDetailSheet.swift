@@ -74,6 +74,7 @@ struct RunDetailSheet: View {
                 .foregroundStyle(.blue)
             Text("Run Details")
                 .font(.title2.weight(.semibold))
+                .kerning(-0.3) // W8 B1: display-size tracking
             Spacer()
             Button {
                 dismiss()
@@ -82,7 +83,7 @@ struct RunDetailSheet: View {
                     .foregroundStyle(.secondary)
                     .font(.title3)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NetMaxPressStyle()) // W8 A1: press-down feedback
             .keyboardShortcut(.cancelAction) // standard Esc binding
             .accessibilityLabel(Text("Close"))
             .help("Close (Esc)")
@@ -197,6 +198,7 @@ struct RunDetailSheet: View {
             Label(copiedToPasteboard ? "Copied" : "Copy",
                   systemImage: copiedToPasteboard ? "checkmark" : "doc.on.doc")
         }
+        .buttonStyle(NetMaxPressStyle()) // W8 A1
         .disabled(outputIsMissing)
         .accessibilityLabel("Copy raw output to the clipboard")
         .accessibilityValue(copiedToPasteboard ? "Copied" : "")

@@ -22,10 +22,13 @@ struct TimelineSheet: View {
                     Label("Close", systemImage: "xmark.circle.fill")
                         .labelStyle(.iconOnly)
                 }
+                .buttonStyle(NetMaxPressStyle()) // W8 A1
                 .help("Close the timeline")
                 .keyboardShortcut(.cancelAction)
             }
             .padding([.horizontal, .top])
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial) // W8 A2: chrome reads as material
 
             if windowRows.isEmpty {
                 VStack(spacing: 8) {
