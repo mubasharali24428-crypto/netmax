@@ -484,10 +484,9 @@ struct HistoryView: View {
 
     /// Short relative stamp used in the delete confirmation message.
     private static func relativeStamp(_ date: Date) -> String {
-        RelativeDateTimeFormatter.localizedString(
-            from: date,
-            relativeTo: Date()
-        )
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     /// Hint-bar fill: `.ultraThinMaterial` chip per W8 law #4; users with
