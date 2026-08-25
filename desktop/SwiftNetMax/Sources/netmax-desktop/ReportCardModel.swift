@@ -325,6 +325,174 @@ public enum ReportCardModel {
         }
     }
 
+    // MARK: - Baseline comparison (today vs. 1–3 weeks ago)
+
+    /// Baseline age window relative to the record being judged: samples
+    /// 7–21 days old count as "your recent normal". Both ends inclusive.
+    private static let baselineWindowDays: ClosedRange<Double> = 7...21
+
+    /// Fewer usable window samples than this ⇒ `.noBaseline` — a median of
+    /// four runs is a coin flip dressed up as statistics (house style).
+    private static let baselineMinSamples = 5
+
+    /// Relative dead-band around the baseline: within ±5% of it is `flat`,
+    /// not improvement or regression cosplaying as signal.
+    private static let baselineFlatBand = 0.05
+
+    /// Compare `currentRecord`'s metrics against the median of the same
+    /// metrics measured 7–21 days earlier.
+    ///
+    /// One row per metric key: `"mbps"` (download Mbps, higher is better),
+    /// `"loss"` (packet-loss %, lower is better), `"bloat-delta"`
+    /// (ms added under load, lower is better). Rules:
+    ///
+    /// - Baseline = median of that metric's usable values across window
+    ///   records; fewer than `baselineMinSamples` such values ⇒
+    ///   `.noBaseline` with a `nil` median, never a thin-median guess.
+    /// - Within ±5% of the baseline (scaled by |baseline|, so a 0%-loss
+    ///   floor stays honest: only 0-vs-0 is flat there) ⇒ `.flat`;
+    ///   beyond the band the metric's direction decides better/worse.
+    /// - A metric absent from `currentRecord` itself yields no row — there
+    ///   is nothing honest to compare. Mode-agnostic: every prior record's
+    ///   payload is parsed regardless of `mode`.
+    static func baselineComparisons(
+        currentRecord: HistoryRecord,
+        history: [HistoryRecord]
+    ) -> [BaselineComparison] {
+        // (metric key, higher-is-better?, extractor from a parsed run)
+        let specs: [(name: String, higherIsBetter: Bool, value: (ParsedRunMetrics) -> Double?)] = [
+            ("mbps", true, { $0.mbpsDown }),
+            ("loss", false, { $0.lossPct }),
+            ("bloat-delta", false, { $0.bloatDeltaMs }),
+        ]
+        let current = parse(resultRaw: currentRecord.resultRaw)
+        let inWindow = history.filter { record in
+            let days = currentRecord.ts.timeIntervalSince(record.ts) / 86_400
+            return baselineWindowDays.contains(days)
+        }
+
+        return specs.compactMap { spec in
+            guard let now = spec.value(current) else { return nil }
+            let samples = inWindow.compactMap { spec.value(parse(resultRaw: $0.resultRaw)) }
+            guard samples.count >= baselineMinSamples,
+                  let baseline = median(samples) else {
+                return BaselineComparison(
+                    metric: spec.name, current: now,
+                    baselineMedian: nil, trend: .noBaseline
+                )
+            }
+            let band = baselineFlatBand * abs(baseline)
+            let trend: BaselineTrend =
+                abs(now - baseline) <= band ? .flat
+                : (spec.higherIsBetter == (now > baseline)) ? .better : .worse
+            return BaselineComparison(
+                metric: spec.name, current: now,
+                baselineMedian: baseline, trend: trend
+            )
+        }
+    }
+
+    // MARK: - Debug self-checks (harness-only)
+
+#if DEBUG
+    /// Exercises the baseline machinery end-to-end on synthetic history.
+    /// Returns the number of failed checks (0 = clean) and prints PASS/FAIL
+    /// per check: the 5-sample `.noBaseline` gate, better/worse/flat
+    /// classification per metric direction, the loss 0-floor, and the window
+    /// boundary (a 6-day-old sample is excluded, an 8-day-old one included).
+    @discardableResult
+    static func runAll() -> Int {
+        var failures = 0
+        func check(_ name: String, _ condition: Bool) {
+            print("\(condition ? "PASS" : "FAIL"): \(name)")
+            if !condition { failures += 1 }
+        }
+        let day = 86_400.0
+        func record(ageDays: Double, mbps: Double? = nil, loss: Double? = nil, bloat: Double? = nil) -> HistoryRecord {
+            var fields: [String] = []
+            if let mbps = mbps { fields.append("\"mbps_down\": \(mbps)") }
+            if let loss = loss { fields.append("\"loss_pct\": \(loss)") }
+            if let bloat = bloat { fields.append("\"bloat_delta_ms\": \(bloat)") }
+            return HistoryRecord(
+                ts: Date(timeIntervalSince1970: 1_800_000_000 - ageDays * day),
+                mode: "full",
+                params: [:],
+                resultRaw: "{" + fields.joined(separator: ",") + "}"
+            )
+        }
+        func trends(currentMb: Double, currentLoss: Double, currentBloat: Double) -> [String: BaselineTrend] {
+            let cur = record(ageDays: 0, mbps: currentMb, loss: currentLoss, bloat: currentBloat)
+            let window = [
+                record(ageDays: 9, mbps: 98, loss: 2, bloat: 50),
+                record(ageDays: 11, mbps: 99, loss: 2, bloat: 50),
+                record(ageDays: 13, mbps: 100, loss: 2, bloat: 50),
+                record(ageDays: 15, mbps: 101, loss: 2, bloat: 50),
+                record(ageDays: 17, mbps: 102, loss: 2, bloat: 50),
+            ]
+            var byName: [String: BaselineTrend] = [:]
+            for row in baselineComparisons(currentRecord: cur, history: window) {
+                byName[row.metric] = row.trend
+            }
+            return byName
+        }
+
+        // Gate: five usable window samples ⇒ a real baseline for exactly the
+        // metric those samples carry; four ⇒ noBaseline for every metric.
+        let fiveMbps = (1...5).map { record(ageDays: 10 + Double($0), mbps: 100 + Double($0)) }
+        let mixedCurrent = record(ageDays: 0, mbps: 120, loss: 1, bloat: 30)
+        let gatedFive = baselineComparisons(currentRecord: mixedCurrent, history: fiveMbps)
+        check("gate: 5 window samples ⇒ baseline for mbps, noBaseline for absent metrics",
+              gatedFive.count == 3
+              && gatedFive.first { $0.metric == "mbps" }?.baselineMedian == 103
+              && gatedFive.first { $0.metric == "loss" }?.trend == .noBaseline
+              && gatedFive.first { $0.metric == "bloat-delta" }?.trend == .noBaseline)
+        let gatedFour = baselineComparisons(currentRecord: mixedCurrent, history: Array(fiveMbps.prefix(4)))
+        check("gate: 4 window samples ⇒ noBaseline everywhere",
+              gatedFour.count == 3
+              && gatedFour.allSatisfy { $0.trend == .noBaseline && $0.baselineMedian == nil })
+
+        // Classification: direction rules per metric.
+        let improved = trends(currentMb: 110, currentLoss: 1, currentBloat: 40)
+        check("classify: improvements are better (all metrics)",
+              improved == ["mbps": .better, "loss": .better, "bloat-delta": .better])
+        let regressed = trends(currentMb: 90, currentLoss: 3, currentBloat: 60)
+        check("classify: regressions are worse (all metrics)",
+              regressed == ["mbps": .worse, "loss": .worse, "bloat-delta": .worse])
+        let steady = trends(currentMb: 103, currentLoss: 2.05, currentBloat: 52)
+        check("classify: within ±5% is flat (all metrics)",
+              steady == ["mbps": .flat, "loss": .flat, "bloat-delta": .flat])
+
+        // Loss floor: baseline 0% leaves no relative band to hide in.
+        let zeroWindow = (1...5).map { record(ageDays: 10 + Double($0), loss: 0) }
+        let stillZero = baselineComparisons(currentRecord: record(ageDays: 0, loss: 0), history: zeroWindow)
+        let slippedZero = baselineComparisons(currentRecord: record(ageDays: 0, loss: 0.01), history: zeroWindow)
+        check("loss 0 floor: 0→0 flat, 0→anything worse",
+              stillZero.first?.trend == .flat && slippedZero.first?.trend == .worse)
+
+        // Window boundary: 6 days old is too young, 8 days counts; the far
+        // edge is inclusive at 21 days, out at 22.
+        let tooYoung = (1...6).map { _ in record(ageDays: 6, mbps: 200) }
+        check("boundary: 6-day-old sample excluded",
+              baselineComparisons(currentRecord: record(ageDays: 0, mbps: 100), history: tooYoung)
+                  .first?.trend == .noBaseline)
+        let eightDays = (1...5).map { _ in record(ageDays: 8, mbps: 100) }
+        check("boundary: 8-day-old sample included",
+              baselineComparisons(currentRecord: record(ageDays: 0, mbps: 100), history: eightDays)
+                  .first?.trend == .flat)
+        let farEdgeIn = (1...5).map { _ in record(ageDays: 21, mbps: 100) }
+        check("boundary: 21-day-old sample still in window",
+              baselineComparisons(currentRecord: record(ageDays: 0, mbps: 100), history: farEdgeIn)
+                  .first?.trend == .flat)
+        let farEdgeOut = (1...5).map { _ in record(ageDays: 22, mbps: 100) }
+        check("boundary: 22-day-old sample out of window",
+              baselineComparisons(currentRecord: record(ageDays: 0, mbps: 100), history: farEdgeOut)
+                  .first?.trend == .noBaseline)
+
+        print(failures == 0 ? "runAll: all checks passed" : "runAll: \(failures) check(s) FAILED")
+        return failures
+    }
+#endif
+
     // MARK: - Internals (pure helpers)
 
     /// Where a letter-only bloat payload sits on the delta scale, for the
@@ -497,4 +665,31 @@ public struct ReportCard: Equatable {
     public func section(_ metric: ReportMetric) -> ReportCardSection? {
         sections.first { $0.metric == metric }
     }
+}
+
+// MARK: - Baseline comparison value types
+
+/// How today's number relates to its 1–3-week-old baseline, direction-aware
+/// per metric: higher is better for throughput; lower is better for loss and
+/// bufferbloat.
+public enum BaselineTrend: Equatable {
+    case better
+    case worse
+    case flat
+    case noBaseline
+}
+
+/// One row of "how does this run's metric compare to your recent normal?" —
+/// e.g. current 110 Mbps vs a baseline median of 100 ⇒ `.better`.
+public struct BaselineComparison: Equatable {
+    /// Metric key: `"mbps"`, `"loss"`, or `"bloat-delta"`.
+    public let metric: String
+    /// The current record's value for this metric.
+    public let current: Double
+    /// Median of window samples; `nil` exactly when `trend == .noBaseline`.
+    public let baselineMedian: Double?
+    /// Classification against the baseline (±5% flat band where a relative
+    /// band exists; `.noBaseline` when the window held fewer than five
+    /// usable samples).
+    public let trend: BaselineTrend
 }
