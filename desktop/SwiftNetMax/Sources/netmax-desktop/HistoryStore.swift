@@ -197,11 +197,26 @@ final class HistoryStore {
 
         var current = Self.readRecords(from: fileURL, decoder: decoder)
         let keys = Set(current.map(Self.identityKey))
-        for record in held where !keys.contains(Self.identityKey(record)) {
-            current.append(record)
+        let fresh = held.filter { !keys.contains(Self.identityKey($0)) }
+
+        // Stable merge (W12 T1-a): both sides are oldest-first. NOTE the P2
+        // wire format stores whole seconds (ISO8601), so same-second records
+        // tie — a plain sort would be free to reorder them. The two-pointer
+        // merge below keeps existing file order ahead of restored records
+        // whenever timestamps tie, preserving the append-only chronology.
+        var merged: [HistoryRecord] = []
+        merged.reserveCapacity(current.count + fresh.count)
+        var i = 0, j = 0
+        while i < current.count && j < fresh.count {
+            if fresh[j].ts < current[i].ts {
+                merged.append(fresh[j]); j += 1
+            } else {
+                merged.append(current[i]); i += 1 // ties favor existing file order
+            }
         }
-        // Keep the documented on-disk invariant: oldest-first, atomic swap.
-        current.sort { $0.ts < $1.ts }
+        merged.append(contentsOf: current[i...])
+        merged.append(contentsOf: fresh[j...])
+        current = merged
         do {
             if current.isEmpty {
                 // Unreachable in practice (held non-empty ⇒ current non-empty);
