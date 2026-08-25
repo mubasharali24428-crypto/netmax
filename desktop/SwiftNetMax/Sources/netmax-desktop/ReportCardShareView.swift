@@ -92,6 +92,81 @@ enum ReportCardShareComposer {
         section.score.map { min(max($0 / 100, 0), 1) }
     }
 
+    // MARK: Baseline trend mapping (W7-3, consumes W7-2's comparisons)
+
+    /// Provenance sentence shown under the metric rows — only when at least
+    /// one row actually carries a baseline (see `hasAnyBaseline`).
+    static let baselineFooter =
+        "Comparisons use your own runs from 1–3 weeks ago"
+
+    /// Maps a `BaselineComparison.metric` key onto the report-card row the
+    /// trend indicator belongs beside. The P5b contract defines exactly
+    /// `"mbps"`, `"loss"`, `"bloat-delta"`; unknown keys map to `nil` so
+    /// upstream drift degrades to "no indicator", never to a wrong row.
+    /// Jitter has no key, so its row honestly shows no comparison.
+    static func metric(forComparisonKey key: String) -> ReportMetric? {
+        switch key {
+        case "mbps": .throughput
+        case "loss": .loss
+        case "bloat-delta": .bufferbloat
+        default: nil
+        }
+    }
+
+    /// True when any row carries a real 7–21-day baseline median. Gates the
+    /// footer so it never promises a comparison that isn't there.
+    static func hasAnyBaseline(_ comparisons: [BaselineComparison]) -> Bool {
+        comparisons.contains { $0.baselineMedian != nil }
+    }
+
+    /// SF Symbol for a trend, per the W7-3 lane spec: up-right for better,
+    /// down-right for worse, minus for flat, dashed for "no baseline yet".
+    static func trendSymbol(for trend: BaselineTrend) -> String {
+        switch trend {
+        case .better: "arrow.up.right.circle"
+        case .worse: "arrow.down.right.circle"
+        case .flat: "minus.circle"
+        case .noBaseline: "dashed.circle"
+        }
+    }
+
+    /// Compact human form of a compared value with its unit, mirroring the
+    /// engine's printed units (Mbps / % / ms). Whole numbers stay bare
+    /// ("100 Mbps"); fractions keep one decimal ("2.5%").
+    static func valueText(_ value: Double, forKey key: String) -> String {
+        let rounded = (value * 10).rounded() / 10
+        let number = rounded.rounded() == rounded
+            ? String(Int(rounded))
+            : String(format: "%.1f", rounded)
+        switch key {
+        case "mbps": return "\(number) Mbps"
+        case "loss": return "\(number)%"
+        default: return "\(number) ms"
+        }
+    }
+
+    /// Spoken/announced phrasing for one row's trend. Cites the actual
+    /// baseline median where one exists; `.noBaseline` says so outright
+    /// instead of dressing absence up as a verdict.
+    static func trendText(for comparison: BaselineComparison) -> String {
+        switch comparison.trend {
+        case .better:
+            return "Trend: better than your 14-day baseline of "
+                + valueText(comparison.baselineMedian ?? comparison.current,
+                            forKey: comparison.metric)
+        case .worse:
+            return "Trend: worse than your 14-day baseline of "
+                + valueText(comparison.baselineMedian ?? comparison.current,
+                            forKey: comparison.metric)
+        case .flat:
+            return "Trend: close to your 14-day baseline of "
+                + valueText(comparison.baselineMedian ?? comparison.current,
+                            forKey: comparison.metric)
+        case .noBaseline:
+            return "No baseline yet"
+        }
+    }
+
     // MARK: Descriptive lines
 
     /// Honest description of what the card covers, cited in PDF and text.
@@ -197,6 +272,15 @@ struct ReportCardShareView: View {
     @State private var showSharePicker = false
 
     private var card: ReportCard { ReportCardModel.makeCard(from: records) }
+    /// "How does the newest run compare to your 1–3-weeks-ago normal?" —
+    /// W7-2's direction-aware comparison of the latest record against the
+    /// 7–21-day window. Empty until history exists (the newest record is
+    /// what's being judged).
+    private var baselineComparisons: [BaselineComparison] {
+        guard let latest = records.last else { return [] }
+        return ReportCardModel.baselineComparisons(
+            currentRecord: latest, history: records)
+    }
     private var isSaving: Bool { status == .saving }
 
     // MARK: Body
@@ -242,9 +326,30 @@ struct ReportCardShareView: View {
         .accessibilityElement(children: .combine)
     }
 
-    /// Re-rendered SwiftUI summary of the card (screen twin of the PDF:
-    /// big overall letter, per-metric grade rows with 0–100 score bars).
     private func cardPreview(_ card: ReportCard) -> some View {
+        cardPreviewBody(card, trendByMetric: baselineTrendMap)
+    }
+
+    /// Comparison rows keyed by the report-card row they decorate, so each
+    /// `sectionRow` lookup stays O(1) and unmapped keys (upstream drift)
+    /// simply never surface.
+    private var baselineTrendMap: [ReportMetric: BaselineComparison] {
+        Dictionary(
+            baselineComparisons.compactMap { comparison in
+                ReportCardShareComposer.metric(forComparisonKey: comparison.metric)
+                    .map { ($0, comparison) }
+            },
+            uniquingKeysWith: { _, latest in latest }
+        )
+    }
+
+    /// Re-rendered SwiftUI summary of the card (screen twin of the PDF:
+    /// big overall letter, per-metric grade rows with 0–100 score bars,
+    /// plus a per-row trend indicator against the 1–3-weeks-ago baseline).
+    private func cardPreviewBody(
+        _ card: ReportCard,
+        trendByMetric: [ReportMetric: BaselineComparison]
+    ) -> some View {
         VStack(spacing: 16) {
 
             if card.runsConsidered == 0 {
@@ -285,18 +390,43 @@ struct ReportCardShareView: View {
             .accessibilityValue(accessibilityOverall(card))
 
             ForEach(card.sections, id: \.metric) { section in
-                sectionRow(section)
+                sectionRow(section, trend: trendByMetric[section.metric])
+            }
+
+            if ReportCardShareComposer.hasAnyBaseline(baselineComparisons) {
+                Text(ReportCardShareComposer.baselineFooter)
+                    .font(.caption2)
+                    .foregroundStyle(Theme.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(
+                        "Comparisons use your own runs from 1 to 3 weeks ago")
             }
         }
         .padding(.horizontal, 4)
     }
 
-    private func sectionRow(_ section: ReportCardSection) -> some View {
+    /// One metric row: grade letter, summary, score bar — plus the W7-3
+    /// trend indicator beside the row when the newest run has a comparison
+    /// for this metric (jitter honestly gets none; there is no baseline key
+    /// for it yet).
+    private func sectionRow(
+        _ section: ReportCardSection,
+        trend: BaselineComparison?
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
                 Text(section.metric.rawValue)
                     .font(.subheadline.weight(.medium))
                 Spacer()
+                if let trend {
+                    Image(systemName:
+                            ReportCardShareComposer.trendSymbol(for: trend.trend))
+                        .foregroundStyle(
+                            trendTint(for: trend.trend),
+                            trendEmphasis(for: trend.trend) ? .primary : .secondary)
+                        .imageScale(.small)
+                        .accessibilityHidden(true)
+                }
                 Text(section.grade.rawValue)
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(tint(for: section.grade))
@@ -314,8 +444,40 @@ struct ReportCardShareView: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(section.metric.rawValue)
-        .accessibilityValue("\(section.grade.rawValue). \(section.summary)")
+        // Trend phrasing rides along with the row so VoiceOver announces
+        // "Download speed. Grade B. … Trend: better than your …" in one
+        // stop instead of a separate mystery icon.
+        .accessibilityLabel(accessibilityRowText(section, trend: trend))
+    }
+
+    /// Full spoken form of one row: grade, summary, then the honest trend
+    /// sentence (or nothing at all when this metric has no comparison).
+    private func accessibilityRowText(
+        _ section: ReportCardSection,
+        trend: BaselineComparison?
+    ) -> String {
+        let base = "\(section.grade.rawValue). \(section.summary)"
+        guard let trend else { return base }
+        return "\(base). \(ReportCardShareComposer.trendText(for: trend))"
+    }
+
+    /// Indicator color: green for better, orange (grade-D token) for worse;
+    /// everything else stays de-emphasized.
+    private func trendTint(for trend: BaselineTrend) -> Color {
+        switch trend {
+        case .better: Theme.gradeA
+        case .worse: Theme.gradeD
+        case .flat, .noBaseline: Theme.secondaryText
+        }
+    }
+
+    /// `.better`/`.worse` are verdicts worth full emphasis; flat/no-baseline
+    /// render as quiet secondary glyphs.
+    private func trendEmphasis(for trend: BaselineTrend) -> Bool {
+        switch trend {
+        case .better, .worse: true
+        case .flat, .noBaseline: false
+        }
     }
 
     private var actionButtons: some View {
@@ -688,6 +850,103 @@ enum ReportCardShareSelfCheck {
         check(text.contains("Incomplete"), "summary keeps the incomplete section honest")
         check(text.hasSuffix(ReportCardShareComposer.limitsFooter),
               "summary ends with the honest-limits footer")
+
+        // MARK: W7-3 — trend-indicator mapping (consumes W7-2's comparisons)
+
+        // Synthetic history shaped exactly like W7-2's own self-checks:
+        // JSON payloads the parser reads structurally. Current carries all
+        // three comparable metrics; the 8–12-day-old window carries five
+        // usable mbps+loss samples (a real baseline) but no bloat, so the
+        // bloat row exercises the honest `.noBaseline` path.
+        func rec(ageDays: Double, json: String) -> HistoryRecord {
+            HistoryRecord(
+                ts: Date(timeIntervalSince1970: 1_800_000_000 - ageDays * 86_400),
+                mode: "full", params: [:], resultRaw: json)
+        }
+        let currentRun = rec(
+            ageDays: 0,
+            json: #"{"mbps_down": 120, "loss_pct": 0.4, "bloat_delta_ms": 30}"#)
+        let windowRuns = (8...12).map {
+            rec(ageDays: Double($0),
+                json: #"{"mbps_down": 100, "loss_pct": 2.0}"#)
+        }
+        let trends = ReportCardModel.baselineComparisons(
+            currentRecord: currentRun, history: windowRuns)
+        let mbpsRow = trends.first { $0.metric == "mbps" }
+        let lossRow = trends.first { $0.metric == "loss" }
+        let bloatRow = trends.first { $0.metric == "bloat-delta" }
+
+        check(trends.count == 3
+                  && mbpsRow?.trend == .better && mbpsRow?.baselineMedian == 100
+                  && lossRow?.trend == .better && lossRow?.baselineMedian == 2
+                  && bloatRow?.trend == .noBaseline
+                  && bloatRow?.baselineMedian == nil,
+              "window of five yields baselines; missing metric says noBaseline")
+
+        // Key → report-card row mapping, including drift-degrades-to-nil.
+        check(ReportCardShareComposer.metric(forComparisonKey: "mbps") == .throughput
+                  && ReportCardShareComposer.metric(forComparisonKey: "loss") == .loss
+                  && ReportCardShareComposer.metric(forComparisonKey: "bloat-delta")
+                      == .bufferbloat
+                  && ReportCardShareComposer.metric(forComparisonKey: "packet-loss")
+                      == nil,
+              "comparison keys map to rows; unknown keys map to nothing")
+
+        // Symbols follow the lane spec per classification.
+        check(ReportCardShareComposer.trendSymbol(for: .better)
+                  == "arrow.up.right.circle"
+                  && ReportCardShareComposer.trendSymbol(for: .worse)
+                      == "arrow.down.right.circle"
+                  && ReportCardShareComposer.trendSymbol(for: .flat)
+                      == "minus.circle"
+                  && ReportCardShareComposer.trendSymbol(for: .noBaseline)
+                      == "dashed.circle",
+              "each trend renders its specified SF Symbol")
+
+        // Spoken text cites the real median; absence stays honest.
+        check(ReportCardShareComposer.trendText(for: mbpsRow!)
+                  == "Trend: better than your 14-day baseline of 100 Mbps",
+              "better trend announces its baseline median")
+        check(ReportCardShareComposer.trendText(for: lossRow!)
+                  == "Trend: better than your 14-day baseline of 2%",
+              "lower-is-better improvement reads as better")
+        check(ReportCardShareComposer.trendText(for: bloatRow!) == "No baseline yet",
+              "noBaseline row says so outright")
+
+        // Worse + flat phrasing against the same 100 Mbps baseline.
+        let slower = ReportCardModel.baselineComparisons(
+            currentRecord: rec(ageDays: 0, json: #"{"mbps_down": 90}"#),
+            history: windowRuns).first { $0.metric == "mbps" }
+        check(slower?.trend == .worse
+                  && ReportCardShareComposer.trendText(for: slower!)
+                      == "Trend: worse than your 14-day baseline of 100 Mbps",
+              "regression announces worse against the same baseline")
+        let steady = ReportCardModel.baselineComparisons(
+            currentRecord: rec(ageDays: 0, json: #"{"mbps_down": 102}"#),
+            history: windowRuns).first { $0.metric == "mbps" }
+        check(steady?.trend == .flat
+                  && ReportCardShareComposer.trendText(for: steady!)
+                      == "Trend: close to your 14-day baseline of 100 Mbps",
+              "within the ±5% band reads as close, not better/worse")
+
+        // Footer gate: on only when at least one row carries a baseline.
+        check(ReportCardShareComposer.hasAnyBaseline(trends),
+              "footer shown when a real baseline exists")
+        let allBlind = ReportCardModel.baselineComparisons(
+            currentRecord: currentRun, history: [])
+        check(allBlind.count == 3
+                  && allBlind.allSatisfy { $0.trend == .noBaseline }
+                  && !ReportCardShareComposer.hasAnyBaseline(allBlind),
+              "empty window hides the provenance footer honestly")
+
+        // Value formatting mirrors engine units; fractions keep one decimal.
+        check(ReportCardShareComposer.valueText(100, forKey: "mbps") == "100 Mbps"
+                  && ReportCardShareComposer.valueText(42.5, forKey: "mbps")
+                      == "42.5 Mbps"
+                  && ReportCardShareComposer.valueText(2.04, forKey: "loss") == "2%"
+                  && ReportCardShareComposer.valueText(52.3, forKey: "bloat-delta")
+                      == "52.3 ms",
+              "compared values format compactly with their units")
 
         return failures
     }
