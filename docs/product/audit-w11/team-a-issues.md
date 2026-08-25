@@ -11,7 +11,7 @@
 | W11-A-002 | MenuBarView | Quick Test not the first/prominent element; main action buried | CRIT → FIXED |
 | W11-A-003 | ScheduleEditorView | Intervals fixed to [5,15,30,60] min; no 90m/2h/hours display | HIGH → FIXED |
 | W11-A-004 | ScheduleEditorView | No free numeric entry (stepper/text) for custom cadence | MED → FIXED |
-| W11-A-005 | RootView popover | TabView renders as icon-only strip at popover width — labels invisible | HIGH → PARTIAL (tooltips added; full fix = sidebar) |
+| W11-A-005 | RootView popover | TabView renders as icon-only strip at popover width — labels invisible | HIGH → FIXED W14 (NamedTabBar: icon+name always) |
 | W11-A-006 | MenuBarView | Results area requires scrolling below fold on small popovers | MED |
 | W11-A-007 | MenuBarView | No visible indication Quick Test is running except disabled button | MED → improved (Testing… label) |
 | W11-A-008 | MenuBarView | Status badge meaning unexplained (what is "B"?) | MED |
@@ -81,7 +81,7 @@
 | W11-A-072 | WifiEventEmitter | Event capture failure completely silent by design | LOW |
 | W11-A-073 | netmax_eventstore | Event store growth unchecked — no retention integration | MED |
 | W11-A-074 | netmax_trends | Python trends module unused by app (Swift port divergence risk) | MED |
-| W11-A-075 | Plugin registry | NETMAX_PLUGIN env var invisible to GUI-launched apps | HIGH |
+| W11-A-075 | Plugin registry | NETMAX_PLUGIN env var invisible to GUI-launched apps | HIGH → FIXED W12 (bridge forwards env + PYTHONPATH to engine child) |
 | W11-A-076 | Plugin registry | No plugin listing/validation command | MED |
 | W11-A-077 | build_dmg.sh | DMG name lacks arch (arm64/x86_64) suffix | LOW |
 | W11-A-078 | notarize.sh | Setup instructions print but no URL shortcuts | LOW |
@@ -200,7 +200,7 @@
 | W11-A-191 | Clipboard | Copy actions inconsistent (some raw, some formatted) | LOW |
 | W11-A-192 | Files | File associations (.netmax exports) absent | LOW |
 | W11-A-193 | Services | macOS Services menu integration absent | LOW |
-| W11-A-194 | Shortcuts | Shortcuts.app actions absent (planned) | HIGH |
+| W11-A-194 | Shortcuts | Shortcuts.app actions absent (planned) | HIGH → FIXED W12 (AppIntents: RunQuickTest + GetLatestResult + AppShortcutsProvider) |
 | W11-A-195 | Widgets | WidgetKit widgets absent (planned) | MED |
 | W11-A-196 | Watch | Companion watch experience absent (future) | LOW |
 | W11-A-197 | Cloud | Sync story absent (by design, needs decision) | MED |

@@ -30,8 +30,8 @@ struct FeatureDiscoverySection: View {
             )
             featureRow(
                 icon: "command",
-                title: "Keyboard Shortcuts",
-                pitch: "⌘1–⌘6 jump between tabs, ⌘R reruns",
+                title: "Shortcuts & Siri",
+                pitch: "⌘1–⌘6 tabs, ⌘R rerun, ⌥⌘R global — plus Shortcuts app actions",
                 tabTag: 4 // Settings (this page documents them)
             )
         }

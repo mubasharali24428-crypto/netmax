@@ -250,6 +250,20 @@ def run_engine(
     command, dropped_flags = build_command(
         mode, streams, seconds, count, python=resolve_interpreter(env)
     )
+    # W11-A-075 fix: forward NETMAX_PLUGIN so GUI-launched engine runs can
+    # load plugin modes exactly like CLI runs (env var was previously invisible
+    # to the GUI path because subprocess inherited a scrubbed environment).
+    child_env = dict(os.environ)
+    if env is not None:
+        child_env.update(env)
+    # Engine dir first on the child's PYTHONPATH so plugin modules placed
+    # beside netmax.py resolve regardless of launch context.
+    engine_dir = str(Path(__file__).resolve().parent.parent)
+    existing_pp = child_env.get("PYTHONPATH", "")
+    if engine_dir not in existing_pp.split(":"):
+        child_env["PYTHONPATH"] = (
+            f"{engine_dir}:{existing_pp}" if existing_pp else engine_dir
+        )
     try:
         completed = (subprocess.run if runner is None else runner)(
             command,
@@ -257,6 +271,7 @@ def run_engine(
             capture_output=True,
             text=True,
             timeout=timeout_s,
+            env=child_env,
         )
     except subprocess.TimeoutExpired:
         # subprocess.run killed the child before raising (contract: kill).
