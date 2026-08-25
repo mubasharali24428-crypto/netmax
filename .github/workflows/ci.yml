@@ -47,9 +47,9 @@ jobs:
         working-directory: desktop/SwiftNetMax
         run: |
           BIN_PATH=$(swift build -c release --show-bin-path)
-          echo "bin path: $BIN_PATH"
-          "BIN_PATH/netmax-desktop" --help >/dev/null 2>&1 || true
           echo "BIN_PATH=$BIN_PATH" >> $GITHUB_ENV
+          swift build -c release
+          ls -la "$BIN_PATH" | head -10
 
       - name: Verify binary exists
         run: test -x "$BIN_PATH/netmax-desktop" && echo "binary OK"
