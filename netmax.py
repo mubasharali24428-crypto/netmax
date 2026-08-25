@@ -12,6 +12,7 @@ CANNOT: exceed the bandwidth your ISP provisions. No software can — the cap is
 from __future__ import annotations
 
 import argparse
+import os
 import random
 import re
 import socket
@@ -220,6 +221,51 @@ def run_baseline(seconds: int) -> float:
     return mbps
 
 
+# ── plugin mode registry (W6-C2) ─────────────────────────────────────────────
+# Third-party modes register here instead of editing main(): each entry maps a
+# subcommand name to a runner receiving parsed-args + validated helpers.
+PLUGIN_MODES: dict[str, dict[str, object]] = {}
+
+
+def plugin_mode(name: str, help_text: str = ""):
+    """Decorator: register a plugin mode callable(args) -> None.
+
+    Usage in an external module imported via NETMAX_PLUGIN env (colon-separated
+    module paths), loaded once at startup:
+
+        import netmax
+        @netmax.plugin_mode("myprobe", "my custom probe")
+        def run(args):
+            ...
+    """
+    def _wrap(fn):
+        PLUGIN_MODES[name] = {"fn": fn, "help": help_text}
+        return fn
+    return _wrap
+
+
+def _load_plugins() -> list[str]:
+    """Import NETMAX_PLUGIN-listed modules so their @plugin_mode decorators run."""
+    spec = os.environ.get("NETMAX_PLUGIN", "").strip()
+    if not spec:
+        return []
+    loaded: list[str] = []
+    for mod_name in [m.strip() for m in spec.split(":") if m.strip()]:
+        try:
+            __import__(mod_name)
+            loaded.append(mod_name)
+            # When run as a script, plugins import the MODULE 'netmax'; their
+            # decorators registered into THAT copy's PLUGIN_MODES. Merge them
+            # into this (possibly __main__) instance so argparse + dispatch
+            # see the plugin subcommands.
+            their = getattr(sys.modules.get("netmax"), "PLUGIN_MODES", {})
+            if their is not PLUGIN_MODES:
+                PLUGIN_MODES.update(their)
+        except ImportError as exc:
+            print(f"netmax: plugin '{mod_name}' failed to load: {exc}", file=sys.stderr)
+    return loaded
+
+
 def run_turbo(streams: int, seconds: int) -> float:
     mbps, mb = throughput(streams, seconds)
     _hr(f"Turbo — {streams} parallel streams")
@@ -377,10 +423,30 @@ def main(argv: list[str] | None = None) -> None:
     sp_bloat.add_argument("--eco", action="store_true", dest="eco",
                           help="small-probe estimate instead of full saturation")
 
+    # W6-C2: load plugin modules (NETMAX_PLUGIN env) BEFORE parse so their
+    # @plugin_mode decorators can add their own subparsers via
+    # netmax.PLUGIN_MODES + this parser reference.
+    _load_plugins()
+    for pname, entry in PLUGIN_MODES.items():
+        if pname not in {a.dest for a in parser._actions}:
+            psp = sub.add_parser(pname, help=str(entry.get("help", "plugin mode")))
+            extra_args = entry.get("arguments")
+            if isinstance(extra_args, list):
+                for pargs, pkwargs in extra_args:
+                    psp.add_argument(*pargs, **pkwargs)
+
     args = parser.parse_args(argv)
     try:
         cmd = args.cmd
-        if cmd == "fetch":
+        if cmd in PLUGIN_MODES:
+            entry = PLUGIN_MODES[cmd]
+            runner = entry.get("fn")
+            if callable(runner):
+                runner(args)
+            else:
+                print(f"netmax: plugin mode '{cmd}' has no callable fn", file=sys.stderr)
+                sys.exit(1)
+        elif cmd == "fetch":
             import netmax_fetch
             out_path = args.out or args.url.rstrip("/").split("/")[-1] or "download.bin"
             started = time.monotonic()

@@ -237,6 +237,7 @@ final class ScheduleRunner: ObservableObject {
     private func appendAndPublish(raw: String, mode: String, params: [String: Int]) {
         store.append(mode: mode, params: params, raw: raw)
         StatusBarController.publish(store: store)
+        WifiEventEmitter.captureNow() // timeline enrichment: wifi events around this run
 
         let records = store.loadAll()
         Task { @MainActor [records, notificationsAllowed] in
