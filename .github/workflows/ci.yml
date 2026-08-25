@@ -70,6 +70,7 @@ jobs:
         run: bash scripts/build_app.sh
 
       - name: Codesign verify (ad-hoc)
+        working-directory: desktop
         run: |
           codesign -v build/NetMaxDesktop.app && echo "codesign OK"
 
