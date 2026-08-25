@@ -29,8 +29,14 @@ struct RootView: View {
 struct MainTabView: View {
     @State private var selection = 0
 
+    /// W10-4: binding wrapper so deep views (Settings feature cards) can
+    /// switch tabs without owning state.
+    private var tabSelection: Binding<Int> {
+        Binding(get: { selection }, set: { selection = $0 })
+    }
+
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: tabSelection) {
             MenuBarView()
                 .tabItem { Label("Dashboard ⌘1", systemImage: "gauge") }
                 .tag(0)
@@ -50,7 +56,7 @@ struct MainTabView: View {
             ReportsView()
                 .tabItem { Label("Reports ⌘4", systemImage: "square.and.arrow.up") }
                 .tag(3)
-            SettingsView()
+            SettingsView(onOpenTab: { selection = $0 })
                 .tabItem { Label("Settings ⌘5", systemImage: "gearshape") }
                 .tag(4)
         }

@@ -17,6 +17,8 @@
 import SwiftUI
 
 struct SettingsView: View {
+    /// W10-4: lets the feature-discovery cards switch the root tab.
+    var onOpenTab: (Int) -> Void = { _ in }
 
     /// Single source of truth per contract P1; writes persist via its
     /// property observers.
@@ -32,6 +34,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            featureDiscovery
             modeLabDefaults
             interpreter
             startup
@@ -42,6 +45,12 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(minWidth: 420, idealWidth: 460, minHeight: 520)
         .accessibilityIdentifier("settings.root")
+    }
+
+    // MARK: - Feature discovery (W10-4)
+
+    private var featureDiscovery: some View {
+        FeatureDiscoverySection(openTab: onOpenTab)
     }
 
     // MARK: - Mode Lab defaults

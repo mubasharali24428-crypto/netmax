@@ -35,6 +35,7 @@ struct MenuBarView: View {
             // record; refreshed on appear and after every successful run.
             if !historyRecords.isEmpty {
                 dashboardSection
+                miniTimeline
             }
 
             Divider()
@@ -137,6 +138,26 @@ struct MenuBarView: View {
             )
             .netMaxHoverLift()
         }
+    }
+
+    // MARK: - W10-1 (P4): mini-timeline sparkline strip
+
+    /// Compact speed trend under the cards. Tapping opens the full Quality
+    /// Timeline (same data, richer lanes) — wayfinding per apple-design §16.
+    @ViewBuilder
+    private var miniTimeline: some View {
+        let series = DashboardMetrics.speedTrend(from: historyRecords)
+        Group {
+            if series.isEmpty {
+                Text("Run a test to see your speed trend")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            } else {
+                SparklineView(series, style: .line, height: 28)
+            }
+        }
+        .padding(.vertical, 4)
     }
 
     /// Same wording as DashboardCardsView.bloatDetail so both surfaces agree.
