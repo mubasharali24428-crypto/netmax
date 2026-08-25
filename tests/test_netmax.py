@@ -252,8 +252,10 @@ class TestCli:
             assert exc.value.code == 0
 
     def test_out_of_range_seconds_exits_nonzero_with_message(self, capsys):
+        # W15: duration accepts quick band (5–30 s) OR long runs (up to 6 h),
+        # so 99 is now LEGAL. Use 3 — below the universal 5 s minimum.
         with pytest.raises(SystemExit) as exc:
-            netmax.main(["baseline", "--seconds", "99"])
+            netmax.main(["baseline", "--seconds", "3"])
         assert exc.value.code == 1
         assert "--seconds must be" in capsys.readouterr().err
 

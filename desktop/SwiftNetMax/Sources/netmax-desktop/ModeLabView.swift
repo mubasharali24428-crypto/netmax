@@ -468,7 +468,15 @@ struct ModeLabView: View {
     private var parameterSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             parameterStepper(.streams, value: $streams)
-            parameterStepper(.seconds, value: $seconds)
+            // W15: editable duration w/ unit picker replaces the seconds-only
+            // stepper (user-reported: reaching "10 minutes" needed dozens of
+            // clicks; no minutes/hours choice existed).
+            if selectedMode.supports(.seconds) {
+                DurationEntryView(seconds: $seconds, isRunning: status == .running)
+                    .opacity(selectedMode.supports(.seconds) ? 1 : 0.55)
+            } else {
+                parameterStepper(.seconds, value: $seconds)
+            }
             parameterStepper(.count, value: $count)
         }
     }

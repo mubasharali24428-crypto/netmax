@@ -82,9 +82,11 @@ _FLAG_SPELLING = {"streams": "--streams", "seconds": "--seconds", "count": "--co
 # W7-4 (F2): inclusive bridge-side bounds mirroring netmax.py's argparse.
 # Enforced here so a bad UI value lands in the envelope instead of spawning
 # an engine subprocess that the engine's argparse would reject anyway.
+# W15: --seconds accepts quick band (5..30) OR long runs (up to 6 h).
+DURATION_MAX_S = 21_600
 RANGE_BOUNDS: dict[str, tuple[int, int]] = {
     "streams": (1, 32),
-    "seconds": (5, 30),
+    "seconds": (5, DURATION_MAX_S),
     "count": (1, 100),
 }
 
@@ -152,7 +154,7 @@ def validate_ranges(
 
     Returns None when every given value is within RANGE_BOUNDS (unset
     flags pass); otherwise returns netmax.py's exact argparse message,
-    e.g. "netmax: --seconds must be 5..30, got 0".
+    e.g. "netmax: --seconds must be 5..21600, got 0".
     """
     given: dict[str, int | None] = {
         "streams": streams,
@@ -377,8 +379,8 @@ def _check_range_validation() -> None:
     cases: list[tuple[str, int, str]] = [
         ("streams", 0, "netmax: --streams must be 1..32, got 0"),
         ("streams", 33, "netmax: --streams must be 1..32, got 33"),
-        ("seconds", 4, "netmax: --seconds must be 5..30, got 4"),
-        ("seconds", 31, "netmax: --seconds must be 5..30, got 31"),
+        ("seconds", 4, "netmax: --seconds must be 5..21600, got 4"),
+        ("seconds", 31, None),
         ("count", 0, "netmax: --count must be 1..100, got 0"),
         ("count", 101, "netmax: --count must be 1..100, got 101"),
     ]

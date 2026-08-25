@@ -131,10 +131,10 @@ def test_defaults_omit_unset_flags():
         ("streams", 1, None),
         ("streams", 32, None),
         ("streams", 33, "netmax: --streams must be 1..32, got 33"),
-        ("seconds", 4, "netmax: --seconds must be 5..30, got 4"),
+        ("seconds", 4, "netmax: --seconds must be 5..21600, got 4"),
         ("seconds", 5, None),
         ("seconds", 30, None),
-        ("seconds", 31, "netmax: --seconds must be 5..30, got 31"),
+        ("seconds", 31, None),
         ("count", 0, "netmax: --count must be 1..100, got 0"),
         ("count", 1, None),
         ("count", 100, None),
@@ -166,7 +166,7 @@ def test_run_engine_rejects_out_of_range_before_spawning(tmp_path):
     assert env["success"] is False
     assert env["mode"] == "boost"
     assert env["data"] is None
-    assert env["error"] == "netmax: --seconds must be 5..30, got 0"
+    assert env["error"] == "netmax: --seconds must be 5..21600, got 0"
 
 
 def test_bundled_flag_prepends_B_and_keeps_absolute_engine_path():

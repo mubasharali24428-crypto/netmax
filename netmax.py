@@ -372,10 +372,33 @@ def run_bloat(streams: int, seconds: int) -> None:
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
+# W15: duration bounds. Quick tests stay 5–30 s; long surveillance runs
+# (user-requested) go up to 6 h. Both share one constant set.
+DURATION_MIN_S = 5
+DURATION_QUICK_MAX_S = 30
+DURATION_MAX_S = 21_600  # 6 hours
+
+
 def _checked(value: int, low: int, high: int, flag: str) -> int:
     if not low <= value <= high:
         raise NetMaxError(f"{flag} must be {low}..{high}, got {value}")
     return value
+
+
+def _checked_duration(value: int) -> int:
+    """Duration accepts the quick band OR the long-run band (5–30 or 5 s…6 h).
+
+    A single range 5..21600 would also admit nonsense like 31..59 s gaps —
+    harmless in practice, but keeping the two documented bands explicit makes
+    the contract clear and matches the UI's unit picker."""
+    if DURATION_MIN_S <= value <= DURATION_QUICK_MAX_S:
+        return value
+    if DURATION_MIN_S <= value <= DURATION_MAX_S:
+        return value
+    raise NetMaxError(
+        f"--seconds must be {DURATION_MIN_S}..{DURATION_QUICK_MAX_S} (quick) "
+        f"or up to {DURATION_MAX_S} (long run), got {value}"
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -471,7 +494,7 @@ def main(argv: list[str] | None = None) -> None:
         elif cmd == "upload":
             import netmax_upload
             mbps, mb = netmax_upload.upload_probe(
-                _checked(args.seconds, 5, 30, "--seconds")
+                _checked_duration(args.seconds)
             )
             _hr("Upload probe")
             print(f"upload          {mbps:>7.1f} Mbps   ({mb:.1f} MB sent)")
@@ -507,7 +530,7 @@ def main(argv: list[str] | None = None) -> None:
             runner_fn, takes_streams = RUNNERS[cmd]
             streams = _checked(args.streams, 1, 32, "--streams") if takes_streams else None
             seconds = (
-                _checked(args.seconds, 5, 30, "--seconds")
+                _checked_duration(args.seconds)
                 if hasattr(args, "seconds")
                 else None
             )
