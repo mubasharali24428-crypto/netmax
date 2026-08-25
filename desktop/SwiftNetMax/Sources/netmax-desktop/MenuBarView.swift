@@ -107,6 +107,7 @@ struct MenuBarView: View {
                 detail: m.speed.map { "\($0.mode) · \(CardFormat.relative($0.date))" }
                     ?? "no speed run yet"
             )
+            .netMaxHoverLift()
             MetricCard(
                 title: "Bufferbloat",
                 icon: "waveform.path",
@@ -115,6 +116,7 @@ struct MenuBarView: View {
                 tint: CardFormat.gradeTint(m.bloatGrade?.letter),
                 detail: bloatDetail(m.bloatGrade)
             )
+            .netMaxHoverLift()
             MetricCard(
                 title: "Packet Loss",
                 icon: "wifi.exclamationmark",
@@ -124,6 +126,7 @@ struct MenuBarView: View {
                 detail: m.loss.map { "\($0.mode) · \(CardFormat.relative($0.date))" }
                     ?? "no loss run yet"
             )
+            .netMaxHoverLift()
             MetricCard(
                 title: "Status",
                 icon: "checkmark.seal",
@@ -132,6 +135,7 @@ struct MenuBarView: View {
                 tint: CardFormat.statusTint(m.statusWord),
                 detail: m.statusWord == nil ? "run a test to assess" : "composite of latest results"
             )
+            .netMaxHoverLift()
         }
     }
 

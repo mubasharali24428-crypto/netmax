@@ -389,6 +389,8 @@ struct DashboardCardsView: View {
                 detail: m.speed.map { "\($0.mode) · \(Self.relative($0.date))" }
                     ?? "no speed run yet"
             )
+            .netMaxHoverLift()
+            .netMaxStaggeredAppear(index: 0)
             MetricCard(
                 title: "Bufferbloat",
                 icon: "waveform.path",
@@ -397,6 +399,8 @@ struct DashboardCardsView: View {
                 tint: Self.gradeTint(m.bloatGrade?.letter),
                 detail: bloatDetail(m.bloatGrade)
             )
+            .netMaxHoverLift()
+            .netMaxStaggeredAppear(index: 1)
             MetricCard(
                 title: "Packet Loss",
                 icon: "wifi.exclamationmark",
@@ -406,6 +410,8 @@ struct DashboardCardsView: View {
                 detail: m.loss.map { "\($0.mode) · \(Self.relative($0.date))" }
                     ?? "no loss run yet"
             )
+            .netMaxHoverLift()
+            .netMaxStaggeredAppear(index: 2)
             MetricCard(
                 title: "Status",
                 icon: "checkmark.seal",
@@ -414,6 +420,8 @@ struct DashboardCardsView: View {
                 tint: Self.statusTint(m.statusWord),
                 detail: m.statusWord == nil ? "run a test to assess" : "composite of latest results"
             )
+            .netMaxHoverLift()
+            .netMaxStaggeredAppear(index: 3)
         }
     }
 

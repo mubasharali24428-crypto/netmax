@@ -37,6 +37,61 @@ extension View {
     func netMaxPressable() -> some View {
         buttonStyle(NetMaxPressStyle())
     }
+}
+
+// MARK: - W9 G3/G2 modifiers (top-level: Swift forbids nesting types in
+// protocol extensions)
+
+/// Hover lift: slight scale + deepened shadow on pointer-over. Springs from
+/// current value; Reduce Motion swaps scale for shadow-only.
+struct NetMaxHoverLift: ViewModifier {
+    @State private var hovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(hovering && !reduceMotion ? 1.01 : 1.0)
+            .shadow(
+                color: .black.opacity(hovering ? 0.18 : 0.08),
+                radius: hovering ? 10 : 5,
+                y: hovering ? 4 : 2
+            )
+            .animation(reduceMotion ? NetMaxMotion.crossFade : NetMaxMotion.standard,
+                       value: hovering)
+            .onHover { hovering = $0 }
+    }
+}
+
+extension View {
+    func netMaxHoverLift() -> some View {
+        modifier(NetMaxHoverLift())
+    }
+}
+
+/// Staggered appear: fade + slight rise, spring standard.
+/// Reduce Motion → opacity-only cross-fade.
+struct NetMaxStaggeredAppear: ViewModifier {
+    let index: Int
+    @State private var shown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 12)
+            .animation(
+                reduceMotion ? NetMaxMotion.crossFade
+                             : NetMaxMotion.standard.delay(Double(index) * 0.06),
+                value: shown
+            )
+            .onAppear { shown = true }
+    }
+}
+
+extension View {
+    func netMaxStaggeredAppear(index: Int) -> some View {
+        modifier(NetMaxStaggeredAppear(index: index))
+    }
 
     /// Motion wrapper: replaces `animation` when Reduce Motion is on.
     /// Usage: `.modifier(NetMaxMotionModifier(animation: NetMaxMotion.standard, value: x))`

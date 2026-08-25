@@ -40,6 +40,7 @@ struct HistoryView: View {
                     Button("Got it") {
                         timelineHintShown = true
                     }
+                    .buttonStyle(NetMaxPressStyle()) // W8 A1
                     .help("Hide this tip permanently")
                     .accessibilityLabel("Got it — dismiss the Quality Timeline hint")
                 }
@@ -150,7 +151,8 @@ struct HistoryView: View {
                     } label: {
                         HistoryRow(record: record)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NetMaxPressStyle()) // W8 A1: press feedback
+                    .netMaxHoverLift() // W9 G3
                 }
             }
         }
