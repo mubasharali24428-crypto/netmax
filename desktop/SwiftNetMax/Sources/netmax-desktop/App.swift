@@ -21,7 +21,10 @@ struct NetMaxDesktopApp: App {
     init() {
         StatusPublisherHook.install()
         ScheduleRunner.shared.start()
-        GlobalHotkey.install() // W12 T5-a: ⌥⌘R runs Quick Test system-wide
+        // W12 T5-a hotkey DISABLED: NSEvent global key monitors starve the
+        // main event loop (app window drew but ignored all clicks). Proper
+        // fix = Carbon RegisterEventHotKey, queued for next batch.
+        // GlobalHotkey.install()
     }
 
     var body: some Scene {

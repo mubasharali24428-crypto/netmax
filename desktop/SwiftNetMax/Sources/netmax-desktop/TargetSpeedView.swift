@@ -43,11 +43,33 @@ struct TargetSpeedView: View {
                     .font(.headline)
                 Spacer()
                 Menu {
-                    Button("Edit plan…") { /* deep-links to Settings plan field */ }
+                    // W12 fix: inline plan editor — the old stub did nothing.
+                    Section("Your plan speed") {
+                        ForEach([5, 10, 20, 50, 100, 200, 500, 1000], id: \.self) { mbps in
+                            Button {
+                                planMbps = Double(mbps)
+                            } label: {
+                                if Int(planMbps) == mbps {
+                                    Label(mbps >= 1000 ? "1 Gbps" : "\(mbps) Mbps",
+                                          systemImage: "checkmark")
+                                } else {
+                                    Text(mbps >= 1000 ? "1 Gbps" : "\(mbps) Mbps")
+                                }
+                            }
+                        }
+                    }
+                    Stepper {
+                        Text("Custom: \(Int(planMbps)) Mbps")
+                    } onIncrement: {
+                        planMbps = min(planMbps + 5, 1000)
+                    } onDecrement: {
+                        planMbps = max(planMbps - 5, 5)
+                    }
                 } label: {
                     Text("Plan: \(Int(planMbps)) Mbps")
                         .font(.caption)
                 }
+                .accessibilityLabel(Text("Your internet plan speed — tap to change"))
             }
 
             Picker("Target", selection: $selectedTarget) {
