@@ -168,6 +168,14 @@ private enum ModeCatalog {
 struct ModeLabView: View {
     @State private var client = EngineClient()
 
+    /// W16: injected by RootView so the header Back button can jump to the
+    /// Dashboard. Nil in previews/other hosts — button hides instead.
+    var backSelection: Binding<Int>? = nil
+
+    /// W16: set when the user presses Stop; the catch path shows a stopped
+    /// message instead of treating termination as an engine failure.
+    @State private var runStoppedByUser = false
+
     @State private var selectedModeID: String = ModeCatalog.modes[0].id
     @State private var streams = 8
     @State private var seconds = 10
@@ -424,6 +432,10 @@ struct ModeLabView: View {
                 .font(.headline)
             Spacer()
             statusBadge
+            // W16: labeled back navigation to Dashboard.
+            if let sel = backSelection {
+                BackToDashboardButton(selection: sel)
+            }
         }
     }
 
@@ -558,6 +570,14 @@ struct ModeLabView: View {
             .accessibilityLabel("Run \(selectedModeID)")
             .accessibilityHint("Starts the selected engine mode with the chosen parameters and shows results below")
 
+            // W16: Stop under Run (user-requested) — terminates the engine.
+            if status == .running {
+                StopRunButton(isRunning: true) {
+                    runStoppedByUser = true
+                }
+                .transition(.opacity)
+            }
+
             // T2-b (W11-A-013): long runs (the seconds parameter can reach
             // 30 s) get a visible in-progress cue instead of a silent wait.
             if status == .running && selectedMode.supports(.seconds) && seconds > 10 {
@@ -679,6 +699,7 @@ struct ModeLabView: View {
 
         status = .running
         resultText = ""
+        runStoppedByUser = false
         Task {
             do {
                 let output = try await client.run(mode.id, args: args)
@@ -689,10 +710,17 @@ struct ModeLabView: View {
                 }
             } catch {
                 await MainActor.run {
-                    // Surfaces the envelope's error string verbatim
-                    // (EngineClientError.errorDescription).
-                    resultText = "Error: \(error.localizedDescription)"
-                    status = .error
+                    if runStoppedByUser {
+                        // W16: user pressed Stop — honest, not an error.
+                        resultText = "Test stopped by user."
+                        status = .idle
+                        runStoppedByUser = false
+                    } else {
+                        // Surfaces the envelope's error string verbatim
+                        // (EngineClientError.errorDescription).
+                        resultText = "Error: \(error.localizedDescription)"
+                        status = .error
+                    }
                 }
             }
         }

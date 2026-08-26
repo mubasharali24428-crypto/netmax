@@ -120,7 +120,7 @@ struct MainTabView: View {
     private var tabContent: some View {
         ZStack {
             pane(0) { MenuBarView() }
-            pane(1) { ModeLabView().modeLabAccessibilityAddendum() }
+            pane(1) { ModeLabView(backSelection: tabSelection).modeLabAccessibilityAddendum() }
             pane(2) { HistoryView() }
             pane(3) { ReportsView() }
             pane(4) { SettingsView(onOpenTab: { selection = $0 }) }

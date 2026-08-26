@@ -7,6 +7,9 @@ import Foundation
 ///   `<python> <script> run <mode> [--args...] --json-out <tmpfile>`
 /// The bridge writes `{"success": Bool, "mode": ..., "data": {...}, "error": String?}`
 /// and exits 0/nonzero accordingly; this client surfaces the parsed envelope.
+/// W16 Stop support: live engine process handle (main-actor isolated).
+@MainActor fileprivate var engineCurrentProcess: Process?
+
 struct EngineClient {
     /// Python interpreter resolution per C1: env override, then system default.
     ///
@@ -60,6 +63,17 @@ struct EngineClient {
     ///   - args: extra CLI flags, e.g. ["--streams", "4", "--seconds", "5"].
     /// - Returns: pretty-printed `data` payload from the JSON envelope.
     /// - Throws: `EngineClientError` with a user-presentable message.
+    /// W16 — user-requested Stop: SIGTERM the running engine, escalate to
+    /// SIGKILL after a grace period. Safe to call when idle.
+    @MainActor static func stopCurrent() {
+        guard let process = engineCurrentProcess, process.isRunning else { return }
+        process.terminate() // SIGTERM — engine shuts down cleanly
+        // Escalate if it ignores TERM for 3 s.
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        }
+    }
+
     func run(_ mode: String, args: [String] = []) async throws -> String {
         guard let script = Self.locateBridgeScript() else {
             throw EngineClientError("Engine bridge not found (looked in bundle Resources/engine and ./bridge).")
@@ -79,6 +93,8 @@ struct EngineClient {
         let result: (output: Data?, error: Data?, status: Int32)
         do {
             result = try await Process.spawn(argv: argv)
+        } catch is CancellationError {
+            throw EngineClientError("Test stopped.")
         } catch let underlying as EngineClientError {
             throw underlying
         } catch {
@@ -127,6 +143,7 @@ struct EngineClientError: Error, LocalizedError {
 
 private extension Process {
     /// Run a process to completion off the main actor, capturing stdio.
+    /// Registers the live handle so EngineClient.stopCurrent() can kill it.
     static func spawn(argv: [String]) async throws -> (Data?, Data?, Int32) {
         let process = Process()
         let stdoutPipe = Pipe()
@@ -139,12 +156,14 @@ private extension Process {
         return try await withCheckedThrowingContinuation { continuation in
             do {
                 process.terminationHandler = { proc in
+                    Task { @MainActor in engineCurrentProcess = nil }
                     // Drain after exit so no data races with the writer.
                     let out = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
                     let err = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                     continuation.resume(returning: (out, err, proc.terminationStatus))
                 }
                 try process.run()
+                Task { @MainActor in engineCurrentProcess = process }
             } catch {
                 continuation.resume(throwing: error)
             }

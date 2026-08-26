@@ -55,6 +55,13 @@ struct MenuBarView: View {
             .accessibilityLabel("Run Quick Test")
             .accessibilityHint("Starts a short Quick Test and shows results below")
 
+            // W16: Stop on the dashboard (user-requested) — kills the engine.
+            if status == .running {
+                StopRunButton(isRunning: true)
+                    .transition(.opacity)
+                    .accessibilityHint("Stops the quick test currently running")
+            }
+
             // W12 USER-IDEA: target-speed mode — user states their plan cap,
             // picks a target within it, app computes the streams needed.
             // Sits directly under Run Quick Test so both paths to the main
@@ -265,6 +272,7 @@ struct MenuBarView: View {
         guard status != .running else { return }
         status = .running
         resultText = ""
+        quickTestStoppedByUser = false
         Task {
             do {
                 // "boost" = baseline vs turbo + gain % — a real C1 engine mode.
@@ -276,12 +284,22 @@ struct MenuBarView: View {
                 }
             } catch {
                 await MainActor.run {
-                    resultText = "Error: \(error.localizedDescription)"
-                    status = .error
+                    if quickTestStoppedByUser {
+                        // W16: user pressed Stop — honest, not an error.
+                        resultText = "Quick Test stopped."
+                        status = .idle
+                        quickTestStoppedByUser = false
+                    } else {
+                        resultText = "Error: \(error.localizedDescription)"
+                        status = .error
+                    }
                 }
             }
         }
     }
+
+    /// W16: set when Stop is pressed during the popover Quick Test.
+    @State private var quickTestStoppedByUser = false
 }
 
 /// Formatting/tint helpers mirrored from DashboardCardsView's private
