@@ -24,6 +24,8 @@ Target: /Users/user/netmax-app (SwiftUI menu-bar app + Python engine)
 - NF3 (INFO, fixed): SettingsView said "157 offline tests" — suite is 192.
 - NF4 (INFO, fixed): ci.yml said "177 tests" — rewritten.
 
+## Engagement verdict: PASS_WITH_FIXES (report: verify/REPORT.md)
+
 ## Open items for next engagement
 - F1: notarization — buy Apple Developer account, run desktop/scripts/notarize.sh (pipeline ready).
 - Future: SQL-grade views in Reports tab on top of history.db (F20 adoption path).
