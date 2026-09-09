@@ -31,11 +31,16 @@ jobs:
       - name: Prime matplotlib font cache (avoids subprocess in offline tests)
         run: python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot"
 
-      - name: Run engine + bridge suite (177 tests)
+      - name: Run engine + bridge suite
         run: python -m pytest -q
 
       - name: Bridge offline selftest
         run: python desktop/bridge/engine_bridge.py selftest
+
+      # W18 / audit F20: the SQLite layer is adopted (opt-in migration) and
+      # its 38 tests run standalone — keep them green in CI forever.
+      - name: engine_store suite (SQLite layer, F20)
+        run: python -m pytest desktop/engine_store/test_store.py -q
 
   swift-build:
     name: Swift app release build
@@ -73,6 +78,35 @@ jobs:
         working-directory: desktop
         run: |
           codesign -v build/NetMaxDesktop.app && echo "codesign OK"
+
+      # W18 (audit F2 follow-up): deep seal check — catches any resource
+      # added after signing (e.g. __pycache__ from a stray engine run).
+      - name: Deep seal integrity check (F2 follow-up)
+        working-directory: desktop
+        run: |
+          codesign -v --deep --strict build/NetMaxDesktop.app \
+            && echo "deep seal OK"
+
+      # W18: engine-dir permission gate — the shipped bundle's engine files
+      # must NOT be group/world-writable (the integrity check refuses to
+      # auto-run in that state, so a bad bundle must fail CI here).
+      - name: Engine dir permission gate (022 bits must be clear)
+        working-directory: desktop
+        run: |
+          BAD=0
+          for f in build/NetMaxDesktop.app/Contents/Resources/engine/*.py; do
+            MODE=$(stat -f '%Lp' "$f")
+            if [ $(( MODE & 0o022 )) -ne 0 ]; then
+              echo "::error::group/world-writable engine file: $f (mode $MODE)"
+              BAD=1
+            fi
+          done
+          DIRMODE=$(stat -f '%Lp' build/NetMaxDesktop.app/Contents/Resources/engine)
+          if [ $(( DIRMODE & 0o022 )) -ne 0 ]; then
+            echo "::error::group/world-writable engine dir (mode $DIRMODE)"
+            BAD=1
+          fi
+          [ $BAD -eq 0 ] && echo "engine perms OK"
 
       - name: Upload app artifact
         uses: actions/upload-artifact@v4

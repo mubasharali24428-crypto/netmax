@@ -20,6 +20,16 @@ struct NetMaxDesktopApp: App {
     /// Both are idempotent singletons — safe here, once per process.
     init() {
         StatusPublisherHook.install()
+        // W18 (audit F2 follow-up): refuse-to-auto-run guard when the
+        // bundled engine dir is group/world-writable pre-notarization.
+        EngineIntegrityCheck.runAtStartup()
+#if DEBUG
+        // Offline harness lane for EngineIntegrityCheckTests (HistoryStoreTests
+        // convention): runs once at dev-launch so a regression fails loudly.
+        if EngineIntegrityCheckTests.runAll() > 0 {
+            NSLog("EngineIntegrityCheckTests: FAILURES — see console")
+        }
+#endif
         ScheduleRunner.shared.start()
         // W13 dial fix: start the throughput sampler EAGERLY so the
         // speedometer is live from launch on any surface — a Mode Lab run

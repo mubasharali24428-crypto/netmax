@@ -492,10 +492,10 @@ struct SettingsView: View {
                 .font(.callout)
                 .accessibilityLabel(Text(versionLine))
 
-            Text("engine: 157 offline tests")
+            Text("engine: 192 offline tests")
                 .font(.callout)
                 .foregroundColor(.secondary)
-                .accessibilityLabel(Text("engine: 157 offline tests"))
+                .accessibilityLabel(Text("engine: 192 offline tests"))
 
             // T3-c (W11-A-102): telemetry stance, stated in-app.
             Text("Privacy: All data stays on this Mac. The app makes no telemetry calls.")

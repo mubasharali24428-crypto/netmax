@@ -1,5 +1,26 @@
 # Release Notes
 
+## v0.7.0-draft — 2026-09-08 (W18 verifier pass)
+
+### Security & Integrity
+- **Engine integrity startup check** — if the bundled engine directory is
+  group/world-writable, the app posts a security warning at launch
+  (pre-notarization defense-in-depth; audit F2 follow-up).
+- **CI hardening** — deep seal check (`codesign -v --deep --strict`), engine
+  permission gate (bundle engine files must not be group/world-writable),
+  engine_store suite in CI, honest test counts.
+- **Threat model published** — `docs/THREAT-MODEL.md` documents assets,
+  adversaries, trust boundaries, and re-audit triggers.
+
+### Data & Storage
+- **SQLite adoption path (F20)** — `desktop/scripts/migrate_to_sqlite.py`
+  imports history.jsonl into history.db (idempotent, 0600). JSONL remains
+  the primary store; the DB is the opt-in analytical layer.
+
+### Fixes
+- Settings "engine test count" honesty: 157 → 192 (stale since the audit).
+- App startup now runs the EngineIntegrityCheckTests harness in DEBUG builds.
+
 ## v0.6.0-draft — 2026-08-24
 
 ### What's New
