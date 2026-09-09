@@ -2,6 +2,11 @@
 
 ## v0.7.0-draft — 2026-09-08 (W18 verifier pass)
 
+### Modes & Tuning
+- **Max parallel streams raised 32 → 50** — engine (`netmax.py`), bridge
+  range validation, Settings limits, and the Mode Lab stepper all aligned;
+  51 now rejected with the honest `1..50` message at every layer.
+
 ### Security & Integrity
 - **Engine integrity startup check** — if the bundled engine directory is
   group/world-writable, the app posts a security warning at launch

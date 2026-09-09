@@ -30,3 +30,12 @@ Target: /Users/user/netmax-app (SwiftUI menu-bar app + Python engine)
 - F1: notarization — buy Apple Developer account, run desktop/scripts/notarize.sh (pipeline ready).
 - Future: SQL-grade views in Reports tab on top of history.db (F20 adoption path).
 - Future: promote Swift unit tests into a real XCTest target (Package.swift has none today).
+
+## W19 round — stream cap 32 -> 50 (user request)
+
+- All 7 enforcement points raised: netmax.py x2, bridge RANGE_BOUNDS, bridge
+  selftest x2, bridge test parametrize x2, AppPreferences (comment+Limits),
+  ModeLabView stepper (was 2...16 — now 2...50).
+- Fix-verify: pytest 192/192, bridge selftest 3/3, live bloat 50-stream run
+  grade A (engine AND bridge), 51 rejected at both layers with 1..50 message.
+- Swift release rebuilt clean (23.17s); bundle + DMG rebuild in flight (bash-7).

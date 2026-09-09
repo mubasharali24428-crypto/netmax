@@ -106,7 +106,7 @@ private enum ModeParameter: String, CaseIterable {
     /// (Tighter than the engine's own server-side validation — always valid.)
     var range: ClosedRange<Int> {
         switch self {
-        case .streams: 2...16
+        case .streams: 2...50
         case .seconds: 5...30
         case .count: 5...50
         }

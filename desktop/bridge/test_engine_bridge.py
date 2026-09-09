@@ -127,10 +127,10 @@ def test_defaults_omit_unset_flags():
 @pytest.mark.parametrize(
     "name,value,expected",
     [
-        ("streams", 0, "netmax: --streams must be 1..32, got 0"),
+        ("streams", 0, "netmax: --streams must be 1..50, got 0"),
         ("streams", 1, None),
-        ("streams", 32, None),
-        ("streams", 33, "netmax: --streams must be 1..32, got 33"),
+        ("streams", 50, None),
+        ("streams", 51, "netmax: --streams must be 1..50, got 51"),
         ("seconds", 4, "netmax: --seconds must be 5..21600, got 4"),
         ("seconds", 5, None),
         ("seconds", 30, None),

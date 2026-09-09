@@ -505,7 +505,7 @@ def main(argv: list[str] | None = None) -> None:
 
             stats = netmax_fetch.download(
                 args.url, out_path,
-                streams=_checked(args.streams, 1, 32, "--streams"),
+                streams=_checked(args.streams, 1, 50, "--streams"),
                 on_progress=_show,
             )
             elapsed = time.monotonic() - started
@@ -553,7 +553,7 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"{key}: {val}")
         else:
             runner_fn, takes_streams = RUNNERS[cmd]
-            streams = _checked(args.streams, 1, 32, "--streams") if takes_streams else None
+            streams = _checked(args.streams, 1, 50, "--streams") if takes_streams else None
             seconds = (
                 _checked_duration(args.seconds)
                 if hasattr(args, "seconds")

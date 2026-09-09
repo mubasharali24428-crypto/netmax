@@ -11,7 +11,7 @@
 //    UserDefaults access to these keys violates contract P1.
 //  - Every numeric assignment is clamped to a sane range regardless of
 //    source (settings UI, restored backup, future importer):
-//        streams 1...32 · seconds 1...60 · count 1...200.
+//        streams 1...50 · seconds 1...60 · count 1...200.
 //
 //  Storage notes:
 //  - Values are mirrored in `@Published` properties so SwiftUI views can
@@ -42,7 +42,7 @@ final class AppPreferences: ObservableObject {
     // MARK: Sane ranges enforced on every set.
 
     enum Limits {
-        static let streams = 1...32
+        static let streams = 1...50
         static let seconds = 1...60
         static let count   = 1...200
     }

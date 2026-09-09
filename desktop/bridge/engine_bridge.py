@@ -90,7 +90,7 @@ _FLAG_SPELLING = {"streams": "--streams", "seconds": "--seconds", "count": "--co
 # W15: --seconds accepts quick band (5..30) OR long runs (up to 6 h).
 DURATION_MAX_S = 21_600
 RANGE_BOUNDS: dict[str, tuple[int, int]] = {
-    "streams": (1, 32),
+    "streams": (1, 50),
     "seconds": (5, DURATION_MAX_S),
     "count": (1, 100),
 }
@@ -407,8 +407,8 @@ def _check_range_validation() -> None:
     if validate_ranges(1, 30, 100) is not None:
         raise AssertionError("inclusive bounds must validate clean")
     cases: list[tuple[str, int, str]] = [
-        ("streams", 0, "netmax: --streams must be 1..32, got 0"),
-        ("streams", 33, "netmax: --streams must be 1..32, got 33"),
+        ("streams", 0, "netmax: --streams must be 1..50, got 0"),
+        ("streams", 51, "netmax: --streams must be 1..50, got 51"),
         ("seconds", 4, "netmax: --seconds must be 5..21600, got 4"),
         ("seconds", 31, None),
         ("count", 0, "netmax: --count must be 1..100, got 0"),
