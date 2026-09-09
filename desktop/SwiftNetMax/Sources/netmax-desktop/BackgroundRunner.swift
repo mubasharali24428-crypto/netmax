@@ -70,13 +70,24 @@ enum BackgroundRunner {
     static func pythonArgv(
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [String] {
-        let fallback = ["/usr/bin/env", "python3"]
-        guard let override = environment["NETMAX_PYTHON"]?
+        // F11 fix: absolute /usr/bin/python3 fallback (no PATH hop).
+        // F13 fix: AppPreferences.pythonOverride honored between env and
+        // system default — mirrors EngineClient so Settings works everywhere.
+        if let override = environment["NETMAX_PYTHON"]?
             .trimmingCharacters(in: .whitespacesAndNewlines),
-            !override.isEmpty else { return fallback }
-        return override.contains("/")
-            ? [override]
-            : ["/usr/bin/env", override]
+            !override.isEmpty {
+            return override.contains("/")
+                ? [override]
+                : ["/usr/bin/env", override]
+        }
+        let pref = AppPreferences.shared.pythonOverride
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !pref.isEmpty {
+            return pref.contains("/")
+                ? [pref]
+                : ["/usr/bin/env", pref]
+        }
+        return ["/usr/bin/python3"]
     }
 
     /// Full `ProgramArguments` array for the agent job.
@@ -117,8 +128,13 @@ enum BackgroundRunner {
 
         // Carry a configured interpreter override into the agent's
         // environment; launchd jobs otherwise see launchd's sparse PATH.
-        if let override = environment["NETMAX_PYTHON"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
+        // F13: the Settings override (AppPreferences) rides along too, so
+        // agent runs use the same interpreter the user picked in the UI.
+        let envOverride = environment["NETMAX_PYTHON"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefOverride = AppPreferences.shared.pythonOverride
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let override = (envOverride?.isEmpty == false ? envOverride : prefOverride),
             !override.isEmpty {
             let envDict = "<dict>\n"
                 + "\t\t\t<key>NETMAX_PYTHON</key>\n"
@@ -168,6 +184,10 @@ enum BackgroundRunner {
         }
         try makePlistXML(interval: interval)
             .write(toFile: plistPath, atomically: true, encoding: .utf8)
+        // F14 fix: owner-only perms on the agent plist (it embeds the
+        // interpreter path and the bridge invocation).
+        try? fileManager.setAttributes([.posixPermissions: 0o600],
+                                        ofItemAtPath: plistPath)
 
         // Replace any live registration so the new interval applies.
         if await isLoaded() {

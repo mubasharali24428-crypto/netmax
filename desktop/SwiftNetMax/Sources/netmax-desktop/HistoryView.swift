@@ -376,7 +376,9 @@ struct HistoryView: View {
             Image(systemName: "wifi")
                 .foregroundStyle(.yellow)
                 .accessibilityHidden(true)
-            Text("Network changed — comparisons now use \(newestFirst.first?.network ?? "the new network") runs only.")
+            // F7: no SSID display — the tag is a hash, so the banner is
+            // neutral ("a different network") with the same behavior.
+            Text("Network changed — comparisons now use runs from the new network only.")
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer()

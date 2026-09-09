@@ -9,17 +9,22 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, "/Users/user/netmax")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import netmax  # noqa: E402
 
-import matplotlib  # noqa: E402
+try:
+    import matplotlib  # noqa: E402
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt  # noqa: E402
+    HAVE_MPL = True
+except ImportError:  # optional chart extra (pyproject [project.optional-dependencies] charts)
+    plt = None
+    HAVE_MPL = False
 
 HEADER, ACCENT, MUTED, CARD = "#1F2635", "#7C5A9B", "#8A93A6", "#FFFFFF"
 SECONDS = 8
-RESULTS_DIR = Path("/Users/user/netmax/results")
+RESULTS_DIR = Path(__file__).resolve().parent / "results"
 HISTORY_FILE = RESULTS_DIR / "history.json"
 
 
@@ -47,7 +52,7 @@ def append_history(mode: str, summary: dict, *, timestamp: str | None = None,
 
 
 def main() -> None:
-    out_dir = Path("/Users/user/netmax/results") / datetime.now().strftime("%Y%m%dT%H%M%S")
+    out_dir = RESULTS_DIR / datetime.now().strftime("%Y%m%dT%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
     rounds = 3
     base_samples, turbo_samples = [], []
@@ -81,6 +86,15 @@ def main() -> None:
     }
     with open(out_dir / "results.json", "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
+
+    if not HAVE_MPL:
+        # No chart extra installed — the measurement itself is complete;
+        # results.json + history carry everything. Skip the PNG honestly.
+        append_history("full", data)
+        print(json.dumps(data, indent=2))
+        print("note: matplotlib unavailable — skipped results.png "
+              "(pip install netmax[charts] to render)", file=sys.stderr)
+        return
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.2), dpi=130)
     fig.patch.set_facecolor(CARD)

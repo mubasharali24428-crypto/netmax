@@ -19,14 +19,15 @@ grades your connection's bufferbloat on the Waveform A+–F rubric.
 
 ## Install & run
 
-No package install needed — it's plain Python + curl. Use the interpreter at
-`/Users/user/1/bin/python` (has matplotlib/Tkinter; the default `python3` venv
-lacks them), or point `NETMAX_PYTHON` at any interpreter that does:
+No package install needed — it's plain Python + curl. Any Python 3.10+
+works; point `NETMAX_PYTHON` at a specific interpreter if the default
+`python3` lacks optional extras (matplotlib for `measure.py` charts,
+Tkinter for `netmax_gui.py`):
 
 ```bash
-export NETMAX_PYTHON=/Users/user/1/bin/python   # optional override
+export NETMAX_PYTHON=/path/to/python   # optional override
 cd ~/netmax
-$NETMAX_PYTHON netmax.py full --seconds 10      # or the explicit path
+$NETMAX_PYTHON netmax.py full --seconds 10      # or just: python3 netmax.py full --seconds 10
 ```
 
 Requires: Python 3.10+, `curl`, and network access for live measurements.
@@ -34,29 +35,29 @@ Requires: Python 3.10+, `curl`, and network access for live measurements.
 ## CLI examples
 
 ```bash
-/Users/user/1/bin/python netmax.py baseline --seconds 8    # single-stream Mbps
-/Users/user/1/bin/python netmax.py turbo --streams 6       # parallel-stream share
-/Users/user/1/bin/python netmax.py boost --streams 4       # baseline vs turbo, gain %
-/Users/user/1/bin/python netmax.py dns                     # rank resolvers by latency
-/Users/user/1/bin/python netmax.py bloat --seconds 12      # bufferbloat grade (A+–F)
-/Users/user/1/bin/python netmax.py full --seconds 10       # everything + verdict
+python3 netmax.py baseline --seconds 8    # single-stream Mbps
+python3 netmax.py turbo --streams 6       # parallel-stream share
+python3 netmax.py boost --streams 4       # baseline vs turbo, gain %
+python3 netmax.py dns                     # rank resolvers by latency
+python3 netmax.py bloat --seconds 12      # bufferbloat grade (A+–F)
+python3 netmax.py full --seconds 10       # everything + verdict
 ```
 
 ### Diagnostics (v0.4)
 
 ```bash
-/Users/user/1/bin/python netmax.py upload --seconds 10     # upload speed (Mbps)
-/Users/user/1/bin/python netmax.py loss                    # packet-loss percent
-/Users/user/1/bin/python netmax.py jitter                  # jitter (ms)
-/Users/user/1/bin/python netmax.py wifi                    # RSSI / noise / channel
-/Users/user/1/bin/python netmax.py export --fmt csv --out out.csv
-/Users/user/1/bin/python netmax.py watch --interval 30     # continuous monitor
+python3 netmax.py upload --seconds 10     # upload speed (Mbps)
+python3 netmax.py loss                    # packet-loss percent
+python3 netmax.py jitter                  # jitter (ms)
+python3 netmax.py wifi                    # RSSI / noise / channel
+python3 netmax.py export --fmt csv --out out.csv
+python3 netmax.py watch --interval 30     # continuous monitor
 ```
 
 ### GUI
 
 ```bash
-/Users/user/1/bin/python netmax_gui.py
+python3 netmax_gui.py
 ```
 
 Tkinter desktop app wrapping the CLI; each command runs in an isolated
@@ -68,9 +69,9 @@ subprocess so a failed measurement can never take down the UI.
 
 ```bash
 cd ~/netmax
-/Users/user/1/bin/python -m pytest            # engine + GUI suites
-/Users/user/1/bin/python -m pytest tests/test_netmax.py -v        # engine only
-/Users/user/1/bin/python -m pytest tests/test_netmax_gui.py -v    # GUI only
+python3 -m pytest            # engine + GUI suites
+python3 -m pytest tests/test_netmax.py -v        # engine only
+python3 -m pytest tests/test_netmax_gui.py -v    # GUI only
 ```
 
 ## Project structure

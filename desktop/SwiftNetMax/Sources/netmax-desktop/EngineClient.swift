@@ -20,16 +20,31 @@ struct EngineClient {
     /// since env would re-split it. Only a bare interpreter name
     /// ("python3", "py") goes through `/usr/bin/env <name>`, which resolves
     /// via PATH exactly like before.
+    /// Resolution order (F13/F11 fixes from the security audit):
+    ///   1. NETMAX_PYTHON env var (dev override — unchanged behavior)
+    ///   2. AppPreferences.pythonOverride — the Settings field that was
+    ///      previously persisted but never consumed (dead UI, F13)
+    ///   3. /usr/bin/python3 — absolute system interpreter; the old
+    ///      /usr/bin/env PATH hop let a hostile PATH entry silently
+    ///      substitute the interpreter (F11)
     private var pythonArgv: [String] {
-        let fallback = ["/usr/bin/env", "python3"]
-        guard let override = ProcessInfo.processInfo.environment["NETMAX_PYTHON"] else {
-            return fallback
+        if let override = ProcessInfo.processInfo.environment["NETMAX_PYTHON"] {
+            let trimmed = override.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return trimmed.contains("/")
+                    ? [trimmed]                   // path-like: one argv element
+                    : ["/usr/bin/env", trimmed]   // bare name: resolve via PATH
+            }
         }
-        let trimmed = override.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return fallback }
-        return trimmed.contains("/")
-            ? [trimmed]                       // path-like: one argv element, spaces intact
-            : ["/usr/bin/env", trimmed]       // bare name: resolve via PATH as before
+        // F13: honor the Settings interpreter override (AppPreferences)
+        let pref = AppPreferences.shared.pythonOverride
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !pref.isEmpty {
+            return pref.contains("/")
+                ? [pref]
+                : ["/usr/bin/env", pref]
+        }
+        return ["/usr/bin/python3"]
     }
 
     /// Locate the bridge script. Prefers a bundled copy; falls back to the
@@ -148,8 +163,19 @@ private extension Process {
         let process = Process()
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = argv
+        // argv[0] is already absolute (pythonArgv resolution) — exec it
+        // directly, no /usr/bin/env PATH hop. Env is scrubbed so engine
+        // children never write .pyc into the sealed bundle (F12 residue:
+        // a PATH-first uv python did exactly that) and never see a stale
+        // PYTHONPATH/PYTHONHOME.
+        process.executableURL = URL(fileURLWithPath: argv[0])
+        process.arguments = Array(argv.dropFirst())
+        var env = ProcessInfo.processInfo.environment
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        env["PYTHONNOUSERSITE"] = "1"
+        env.removeValue(forKey: "PYTHONPATH")
+        env.removeValue(forKey: "PYTHONHOME")
+        process.environment = env
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 

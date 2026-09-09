@@ -11,11 +11,25 @@ import AppKit
 enum WifiEventEmitter {
     private static let queue = DispatchQueue(label: "netmax.wifievents", qos: .utility)
     private static var lastSnapshot: [String: Any]? = nil as [String: Any]?  // parsed shape
+    /// Interpreter resolution, mirroring EngineClient/BackgroundRunner
+    /// (F11/F12 residue fixed here): never a bare "python3" PATH lookup —
+    /// the inherited PATH can surface an unexpected interpreter (a uv-
+    /// managed 3.13 was resolving first and writing .pyc files INTO the
+    /// sealed bundle, breaking the code signature). Order: bundled private
+    /// python → NETMAX_PYTHON env → Settings override → /usr/bin/python3.
     private static var pythonPath: String = {
-        Bundle.main.resourcePath.map { $0 + "/engine" }.map { engineDir in
-            let candidate = engineDir + "/python/bin/python3"
-            return FileManager.default.fileExists(atPath: candidate) ? candidate : "python3"
-        } ?? "python3"
+        if let resourcePath = Bundle.main.resourcePath {
+            let bundled = resourcePath + "/engine/python/bin/python3"
+            if FileManager.default.fileExists(atPath: bundled) { return bundled }
+        }
+        if let override = ProcessInfo.processInfo.environment["NETMAX_PYTHON"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !override.isEmpty {
+            return override
+        }
+        let pref = AppPreferences.shared.pythonOverride
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !pref.isEmpty, pref.hasPrefix("/") { return pref }
+        return "/usr/bin/python3"
     }()
 
     /// Called from ScheduleRunner after each run completes (and safe to call
@@ -33,11 +47,26 @@ enum WifiEventEmitter {
 
     private static func runOnce() {
         // One poll cycle of the existing detector: it diffs against its own
-        // persisted state file and appends new events to the event store.
+        // in-process state and appends new events to the event store.
+        // F3 FIX: the old argv was [python, "--once"] — the SCRIPT NAME was
+        // missing, so this spawned `python --once` (a CLI error) and the
+        // wifi-event timeline never produced a single event. Pass the
+        // bundled detector script explicitly.
+        let workDir = engineWorkDir()
+        let script = workDir.appendingPathComponent("netmax_wifievents.py").path
+        guard FileManager.default.fileExists(atPath: script) else { return }
         let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        proc.arguments = [pythonPath, "--once"]
-        proc.currentDirectoryURL = engineWorkDir()
+        // Direct absolute invocation (no /usr/bin/env hop) + a scrubbed
+        // env so no child ever writes .pyc into the sealed bundle.
+        proc.executableURL = URL(fileURLWithPath: pythonPath)
+        proc.arguments = [script, "--once"]
+        var env = ProcessInfo.processInfo.environment
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
+        env["PYTHONNOUSERSITE"] = "1"
+        env.removeValue(forKey: "PYTHONPATH")
+        env.removeValue(forKey: "PYTHONHOME")
+        proc.environment = env
+        proc.currentDirectoryURL = workDir
         proc.standardOutput = Pipe()
         proc.standardError = Pipe()
         do {

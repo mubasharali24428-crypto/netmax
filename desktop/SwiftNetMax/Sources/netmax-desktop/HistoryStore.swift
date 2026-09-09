@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// One persisted measurement run (contract P2).
@@ -95,7 +96,56 @@ final class HistoryStore {
         self.fileURL = fileURL
     }
 
+    // MARK: F7 — SSID minimization at rest
+
+    /// Per-install random salt, shared file with the Python engine
+    /// (`privacy.salt` beside the history file) so both lanes hash SSIDs
+    /// identically. 0600, created on first use.
+    private static func privacySalt() -> Data {
+        let url = defaultFileURL.deletingLastPathComponent()
+            .appendingPathComponent("privacy.salt")
+        if let existing = try? Data(contentsOf: url), existing.count >= 16 {
+            return existing.prefix(32)
+        }
+        var fresh = Data(count: 32)
+        let status = fresh.withUnsafeMutableBytes { ptr in
+            SecRandomCopyBytes(kSecRandomDefault, 32, ptr.baseAddress!)
+        }
+        guard status == errSecSuccess else { return Data(repeating: 0x2A, count: 32) }
+        try? fresh.write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        return fresh
+    }
+
+    /// Salted SHA-256, `nm1:`-prefixed — byte-identical to the Python
+    /// engine's `hash_identifier` (netmax_wifievents.py) so a Swift-tagged
+    /// run and a Python-tagged run compare equal.
+    static func hashNetworkTag(_ name: String?) -> String? {
+        guard let name, !name.isEmpty else { return nil }
+        var data = privacySalt()
+        data.append(0x00)
+        data.append(Data(name.utf8))
+        let digest = SHA256.hash(data: data)
+        return "nm1:" + digest.map { String(format: "%02x", $0) }.joined()
+    }
+
     // MARK: - API
+
+    /// F6 FIX (security audit): measurement history + SSID are personal
+    /// data; the files that hold them are created owner-only (0600) and the
+    /// containing dir 0700, mirroring the Python eventstore (0o600).
+    static func applyPrivacyPermissions(_ url: URL) {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                ofItemAtPath: url.path)
+    }
+
+    private static func ensurePrivateContainer(for url: URL) throws {
+        let dir = url.deletingLastPathComponent()
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+        }
+    }
 
     /// Append one completed run to the history file.
     ///
@@ -106,18 +156,22 @@ final class HistoryStore {
     ///   - raw: the engine's raw result payload (pretty-printed JSON text).
     ///   - network: network name (SSID) for W13B UA-2 network-scoped baselines;
     ///     pass `nil` when it can't be determined (old callers stay valid).
+    /// F7: the stored `network` value is the hash, never the raw SSID —
+    /// equality comparisons (baseline scoping, change banner) are
+    /// unaffected; the raw name stops persisting in history.
     func append(mode: String, params: [String: Int], raw: String, network: String? = nil) {
+        let storedNetwork = Self.hashNetworkTag(network)
         let record = HistoryRecord(ts: Date(), mode: mode, params: params,
-                                   resultRaw: raw, network: network)
+                                   resultRaw: raw, network: storedNetwork)
         lock.lock()
         defer { lock.unlock() }
         do {
-            let dir = fileURL.deletingLastPathComponent()
-            if !FileManager.default.fileExists(atPath: dir.path) {
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            }
+            try Self.ensurePrivateContainer(for: fileURL)
             if !FileManager.default.fileExists(atPath: fileURL.path) {
-                FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+                FileManager.default.createFile(atPath: fileURL.path, contents: nil,
+                                                attributes: [.posixPermissions: 0o600])
+            } else {
+                Self.applyPrivacyPermissions(fileURL) // tighten pre-existing files too
             }
             var line = try encoder.encode(record)
             line.append(0x0A) // JSON Lines: newline-terminated
@@ -166,11 +220,7 @@ final class HistoryStore {
         //    failed archive write aborts the prune so nothing is lost.
         do {
             let archiveURL = Self.archiveFileURL(forFileAt: fileURL)
-            let dir = archiveURL.deletingLastPathComponent()
-            if !FileManager.default.fileExists(atPath: dir.path) {
-                try FileManager.default.createDirectory(at: dir,
-                                                        withIntermediateDirectories: true)
-            }
+            try Self.ensurePrivateContainer(for: archiveURL)
             var archiveBlob = Data()
             for record in expired {
                 archiveBlob.append(try encoder.encode(record))
@@ -180,7 +230,8 @@ final class HistoryStore {
             if FileManager.default.fileExists(atPath: archiveURL.path) {
                 handle = try FileHandle(forWritingTo: archiveURL)
             } else {
-                FileManager.default.createFile(atPath: archiveURL.path, contents: nil)
+                FileManager.default.createFile(atPath: archiveURL.path, contents: nil,
+                                                attributes: [.posixPermissions: 0o600])
                 handle = try FileHandle(forWritingTo: archiveURL)
             }
             defer { try? handle.close() }
@@ -205,6 +256,7 @@ final class HistoryStore {
                     blob.append(0x0A)
                 }
                 try blob.write(to: fileURL, options: .atomic)
+                Self.applyPrivacyPermissions(fileURL) // F6: .atomic resets perms
             }
         } catch {
             #if DEBUG
@@ -232,6 +284,7 @@ final class HistoryStore {
                 try FileManager.default.removeItem(at: binURL) // last-clear wins
             }
             try FileManager.default.moveItem(at: fileURL, to: binURL)
+            Self.applyPrivacyPermissions(binURL) // F6: bin holds the same personal data
         } catch {
             #if DEBUG
             print("[HistoryStore] clear failed: \(error.localizedDescription)")
@@ -319,6 +372,7 @@ final class HistoryStore {
                     blob.append(0x0A) // JSON Lines: newline-terminated
                 }
                 try blob.write(to: fileURL, options: .atomic)
+                Self.applyPrivacyPermissions(fileURL) // F6: .atomic resets perms
             }
             return true
         } catch {
@@ -377,6 +431,7 @@ final class HistoryStore {
                     blob.append(0x0A) // JSON Lines: newline-terminated
                 }
                 try blob.write(to: fileURL, options: .atomic)
+                Self.applyPrivacyPermissions(fileURL) // F6: .atomic resets perms
             }
         } catch {
             // Same best-effort policy as append/clear: never crash the app.
@@ -436,6 +491,7 @@ final class HistoryStore {
                 blob.append(0x0A) // JSON Lines: newline-terminated
             }
             try blob.write(to: fileURL, options: .atomic)
+            Self.applyPrivacyPermissions(fileURL) // F6: .atomic resets perms
             return true
         } catch {
             #if DEBUG

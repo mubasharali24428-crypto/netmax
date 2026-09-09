@@ -401,6 +401,23 @@ def _checked_duration(value: int) -> int:
     )
 
 
+def _safe_fetch_out(out: str | None, url: str) -> str:
+    """Derive a SAFE output path for the fetch mode.
+
+    An explicit out argument is honoured as typed (the user chose it); the
+    URL-derived default is sanitized — path separators, '.', '..' and empty
+    names all fall back to download.bin so a URL ending '../' can never make
+    the download land at '..' (pre-fix it did, verified).
+    """
+    if out and out.strip():
+        return out
+    raw = url.rstrip("/").split("/")[-1].strip() if "/" in url else ""
+    raw = raw.replace("\\", "_").replace("/", "_")
+    if raw in ("", ".", ".."):
+        return "download.bin"
+    return raw
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="netmax",
@@ -446,6 +463,14 @@ def main(argv: list[str] | None = None) -> None:
     sp_bloat.add_argument("--eco", action="store_true", dest="eco",
                           help="small-probe estimate instead of full saturation")
 
+    # watch mode (v0.4 diagnostics; the dispatch branch at 'elif cmd == "watch"'
+    # existed without this parser — register it so the mode actually runs).
+    sp_watch = sub.add_parser("watch", help="continuous monitor (bloat+DNS per cycle)")
+    sp_watch.add_argument("--interval", type=int, default=30,
+                          help="seconds between cycles (default %(default)s)")
+    sp_watch.add_argument("--cycles", type=int, default=10**9,
+                          help="stop after N cycles (default: until Ctrl-C)")
+
     # W6-C2: load plugin modules (NETMAX_PLUGIN env) BEFORE parse so their
     # @plugin_mode decorators can add their own subparsers via
     # netmax.PLUGIN_MODES + this parser reference.
@@ -471,7 +496,7 @@ def main(argv: list[str] | None = None) -> None:
                 sys.exit(1)
         elif cmd == "fetch":
             import netmax_fetch
-            out_path = args.out or args.url.rstrip("/").split("/")[-1] or "download.bin"
+            out_path = _safe_fetch_out(args.out, args.url)
             started = time.monotonic()
 
             def _show(done: int, total: int) -> None:

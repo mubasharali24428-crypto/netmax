@@ -14,7 +14,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SWIFT_DIR="$REPO_ROOT/desktop/SwiftNetMax"
 BRIDGE_DIR="$REPO_ROOT/desktop/bridge"
 APP="$REPO_ROOT/desktop/build/NetMaxDesktop.app"
-PY="${NETMAX_PYTHON:-/Users/user/1/bin/python}"
+PY="${NETMAX_PYTHON:-python3}"
 WAIT_TOTAL_SECS=900   # 15 min
 WAIT_INTERVAL=45
 

@@ -69,7 +69,9 @@ def _acquire_lock(path: Path) -> bool:
     """
     for _attempt in range(3):
         try:
-            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            # 0o600 (audit F15): a world-readable lockfile in shared /tmp leaks
+            # the daemon's PID and lets any local user pre-create/inspect it.
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         except FileExistsError:
             pid = _read_pid(path)
             if pid == os.getpid():

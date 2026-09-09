@@ -21,6 +21,11 @@ struct NetMaxDesktopApp: App {
     init() {
         StatusPublisherHook.install()
         ScheduleRunner.shared.start()
+        // W13 dial fix: start the throughput sampler EAGERLY so the
+        // speedometer is live from launch on any surface — a Mode Lab run
+        // must show its traffic on the Dashboard dial even if the Dashboard
+        // tab was never opened (Swift static lets are lazy).
+        _ = ThroughputSampler.shared
         // W13B TEAM-UB / UB-5 (S-019): UNUserNotificationCenter delegate —
         // notification taps activate the app and open the relevant tab.
         NotificationsDelegate.install()

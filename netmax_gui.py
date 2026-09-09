@@ -62,16 +62,19 @@ SECONDS_MIN, SECONDS_MAX = 5, 30
 
 
 def _python_executable() -> str:
-    """Resolve engine interpreter: NETMAX_PYTHON env > known-good path > sys.
+    """Resolve engine interpreter: NETMAX_PYTHON env > system python3 > sys.
 
-    The chosen interpreter is logged by the app on every Run (see on_run).
+    Audit F12 fix: the old dev-machine default (/Users/user/1/bin/python)
+    shipped a personal absolute path in the bundled engine — on any other Mac
+    it silently changed resolution order. Machine-neutral order now: explicit
+    env override, then the OS interpreter, then whatever runs this GUI.
     """
     env = os.environ.get("NETMAX_PYTHON")
     if env and Path(env).exists():
         return env
-    preferred = "/Users/user/1/bin/python"
-    if Path(preferred).exists():
-        return preferred
+    system_python = "/usr/bin/python3"
+    if Path(system_python).exists():
+        return system_python
     return sys.executable
 
 

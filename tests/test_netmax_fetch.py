@@ -268,11 +268,22 @@ def test_progress_none_is_safe(tmp_path, fake_net):
 
 # ── error paths ──────────────────────────────────────────────────────────────
 
-def test_http_error_raises_netmaxerror(fake_net):
+def test_http_error_raises_netmaxerror(tmp_path, fake_net):
     _, install = fake_net
     install(lambda url, h: FakeResponse({}, b"", status=403))
+    # NOTE: this test deliberately uses a PRIVATE tmp dir. F10 hardening in
+    # netmax_fetch refuses downloads into world-writable shared roots
+    # (/tmp etc.) — verified by test_shared_dir_refused below.
     with pytest.raises(NetMaxError, match="403"):
-        netmax_fetch.download("http://x/f", "/tmp/netmax_err_test.bin")
+        netmax_fetch.download("http://x/f", str(tmp_path / "netmax_err_test.bin"))
+
+
+def test_shared_dir_refused(fake_net):
+    """F10: predictable part files must not be written to /tmp itself."""
+    _, install = fake_net
+    install(lambda url, h: FakeResponse({}, b""))
+    with pytest.raises(NetMaxError, match="shared directory"):
+        netmax_fetch.download("http://x/f", "/tmp/netmax_should_refuse.bin")
 
 
 def test_chunk_size_mismatch_raises(tmp_path, fake_net):

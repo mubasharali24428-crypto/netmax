@@ -58,6 +58,13 @@ for f in "${engine_modules[@]}" "$REPO_ROOT/netmetrics.py"; do
 done
 log "copied ${#engine_modules[@]} netmax*.py module(s) + netmetrics.py + engine_bridge.py -> Resources/engine/"
 
+# Seal hygiene (found live 2026-09-08): a child run against the bundled
+# engine once left a __pycache__/*.pyc inside Resources — codesign -v then
+# fails with "sealed resource added" and the DMG ships broken. Strip any
+# bytecode/finder artifacts before signing, and never copy them in.
+find "$APP/Contents/Resources" -name "__pycache__" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+find "$APP/Contents/Resources" -name "*.pyc" -delete 2>/dev/null || true
+
 # --- 3. Info.plist ---------------------------------------------------------
 # W12 T1-e: NetMaxBuildDate is stamped here so Settings → About can show the
 # honest build date next to "Check for Updates…".
@@ -100,6 +107,14 @@ plutil -lint "$APP/Contents/Info.plist" >/dev/null || die "generated Info.plist 
 # --- 4. Ad-hoc sign (deep) -------------------------------------------------
 log "codesign -s - --force --deep (AD-HOC: no Apple signing identities on this machine)"
 codesign -s - --force --deep "$APP"
+
+# Seal GATE (added 2026-09-08): a bundle whose seal does not verify must
+# never ship or be reported as DONE. This catches any file that appears
+# between the copy step and the signature — pycache, .DS_Store, anything.
+if ! codesign -v --deep "$APP" 2>&1; then
+  die "SEAL BROKEN after signing — see codesign output above; rebuild needed"
+fi
+log "seal verification: OK"
 
 # --- 5. Report --------------------------------------------------------------
 log "codesign verification:"

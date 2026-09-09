@@ -58,6 +58,11 @@ REPO_ROOT = _resolve_engine_root()
 ENGINE_SCRIPT = "netmax.py"
 ENGINE_PATH = REPO_ROOT / ENGINE_SCRIPT
 TIMEOUT_S = 180
+# Wall-clock headroom added on top of the requested measurement window: the
+# engine spends time on DNS ranking, pings, endpoint failover and payload
+# generation beyond the pure download window (measured ~2x on worst-case
+# bloat runs that interleave 3 ping rounds with a saturating download).
+TIMEOUT_MARGIN_S = 120
 STDERR_TAIL_CHARS = 400
 
 # mode -> flags the engine's argparse accepts for that mode (netmax.py
@@ -223,6 +228,19 @@ def parse_engine_stdout(stdout: str) -> Any:
 # ── engine invocation ────────────────────────────────────────────────────────
 
 
+def effective_timeout(seconds: int | None) -> int:
+    """Timeout that scales with the measurement window (W15 fix for F5).
+
+    TIMEOUT_S (180) stays the floor for quick runs; a --seconds value up to
+    the 6-h maximum gets 2x its window plus margin, so long surveillance runs
+    are never killed mid-measurement by the bridge's own watchdog.
+    """
+    window = int(seconds) if seconds is not None else 0
+    if window <= 0:
+        return TIMEOUT_S
+    return max(TIMEOUT_S, window * 2 + TIMEOUT_MARGIN_S)
+
+
 def run_engine(
     mode: str,
     streams: int | None,
@@ -233,12 +251,14 @@ def run_engine(
     runner=None,
     env: Mapping[str, str] | None = None,
     repo_root: Path | None = None,
-    timeout_s: float = TIMEOUT_S,
+    timeout_s: float | None = None,
 ) -> int:
     """Run one engine mode and write the envelope. Returns exit code."""
     root = REPO_ROOT if repo_root is None else Path(repo_root)
     # W7-4/F2: reject out-of-range values BEFORE spawning anything.
     range_error = validate_ranges(streams, seconds, count)
+    if timeout_s is None:
+        timeout_s = effective_timeout(seconds)
     if range_error:
         write_envelope(
             json_out,
@@ -258,14 +278,24 @@ def run_engine(
     child_env = dict(os.environ)
     if env is not None:
         child_env.update(env)
-    # Engine dir first on the child's PYTHONPATH so plugin modules placed
-    # beside netmax.py resolve regardless of launch context.
-    engine_dir = str(Path(__file__).resolve().parent.parent)
-    existing_pp = child_env.get("PYTHONPATH", "")
-    if engine_dir not in existing_pp.split(":"):
-        child_env["PYTHONPATH"] = (
-            f"{engine_dir}:{existing_pp}" if existing_pp else engine_dir
-        )
+    # Hardening (audit F8): the engine child gets a SCRUBBED python env so a
+    # user-controlled PYTHONPATH/PYTHONHOME can never shadow stdlib or engine
+    # modules. NETMAX_PLUGIN stays forwarded (dev feature, documented), and
+    # PYTHONPATH is REPLACED — not appended to — with the engine dir only.
+    engine_dir = str(REPO_ROOT if repo_root is None else Path(repo_root))
+    for poison in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP"):
+        child_env.pop(poison, None)
+    if env is not None:
+        for poison in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP"):
+            env_mapping = dict(env)
+            if poison not in env_mapping:
+                child_env.pop(poison, None)
+    child_env["PYTHONPATH"] = engine_dir
+    child_env["PYTHONNOUSERSITE"] = "1"
+    # Seal protection: the bundled engine lives INSIDE the app seal; a
+    # child writing __pycache__ there breaks codesign -v ("sealed resource
+    # added"). Belt-and-braces with the -B the caller passes us.
+    child_env["PYTHONDONTWRITEBYTECODE"] = "1"
     try:
         completed = (subprocess.run if runner is None else runner)(
             command,

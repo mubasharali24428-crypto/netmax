@@ -35,12 +35,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import signal
 import subprocess
 import sys
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 # --- Sibling dependency (E2's event store) ---------------------------------
@@ -122,10 +124,12 @@ def parse_snapshot(profiler_json: str) -> dict:
     chan = _first(fields, _CHANNEL_KEYS)
     sm = _SIGNAL_NOISE_RE.match(str(sig)) if sig is not None else None
     cm = _CHANNEL_RE.match(str(chan)) if chan is not None else None
+    # F7: SSID/BSSID are hashed immediately — raw values exist only in this
+    # function frame. Roam detection compares hashes (same inequality).
     return {
         "associated": True,
-        "ssid": ssid if isinstance(ssid, str) else None,
-        "bssid": fields.get(_BSSID_KEY),
+        "ssid": hash_identifier(ssid if isinstance(ssid, str) else None),
+        "bssid": hash_identifier(_as_str(fields.get(_BSSID_KEY))),
         "channel": cm.group(1) if cm else (str(chan) if chan is not None else None),
         "band": cm.group(2) if cm else None,
         "rssi_dbm": int(sm.group(1)) if sm else None,
@@ -153,6 +157,11 @@ def capture_snapshot() -> Optional[dict]:
         )
         return None
     return parse_snapshot(proc.stdout)
+
+
+def _as_str(value: Any) -> Optional[str]:
+    """Coerce profiler fields to str (None stays None) — F7 hashing input."""
+    return value if isinstance(value, str) and value else None
 
 
 def _event(kind: str, details: dict, ts: Optional[str] = None) -> dict:
@@ -197,10 +206,11 @@ def diff_snapshots(
             _event(
                 "roam",
                 {
-                    "from_ssid": psid,
-                    "to_ssid": csid,
-                    "from_bssid": pbssid,
-                    "to_bssid": cbssid,
+                    # F7: hashed identifiers only — never raw SSID/BSSID
+                    "from_ssid_hash": psid,
+                    "to_ssid_hash": csid,
+                    "from_bssid_hash": pbssid,
+                    "to_bssid_hash": cbssid,
                 },
                 ts=ts,
             )
@@ -251,7 +261,82 @@ def diff_snapshots(
 
 
 # --- Poller state ------------------------------------------------------------
-_last_snapshot: Optional[dict] = None
+# The desktop app invokes this detector once per scheduler tick (--once),
+# so the diff baseline must SURVIVE process exits (audit F3 follow-up: an
+# in-memory-only baseline meant every --once call saw a first snapshot and
+# no roam/channel/RSSI event could ever fire). Baseline lives in a 0600
+# file beside the event store; a missing/corrupt file degrades to "seed on
+# first poll" exactly like a fresh long-running process.
+STATE_FILENAME = "wifi_baseline.json"
+# F7: shared salt file for at-rest SSID/BSSID hashing. Same file the Swift
+# side reads (see HistoryStore.swift) so both lanes hash identically.
+SALT_FILENAME = "privacy.salt"
+_HASH_PREFIX = "nm1:"
+
+
+def _privacy_salt() -> bytes:
+    """Load-or-create the per-install salt (16 random bytes, 0600 file)."""
+    path = _state_path().parent / SALT_FILENAME
+    try:
+        raw = path.read_bytes()
+        if len(raw) >= 16:
+            return raw[:32]
+    except OSError:
+        pass
+    fresh = os.urandom(32)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(fresh)
+    except OSError:
+        return fresh  # unsalted session salt; still no raw IDs at rest
+    return fresh
+
+
+def hash_identifier(value: Optional[str]) -> Optional[str]:
+    """F7 minimization: salted SHA-256 of an SSID/BSSID, prefix nm1:.
+
+    Raw SSIDs/BSSIDs never persist anywhere (events, baseline). The UI only
+    ever consumes ts/kind/id, so hashing is lossless for every consumer.
+    """
+    if not value:
+        return None
+    import hashlib
+    digest = hashlib.sha256(_privacy_salt() + b"\x00" + value.encode("utf-8", "replace")).hexdigest()
+    return _HASH_PREFIX + digest
+
+
+def _state_path() -> Path:
+    try:
+        base = Path.home() / "Library" / "Application Support" / "NetMaxDesktop"
+    except RuntimeError:  # no home: temp fallback
+        import tempfile
+        base = Path(tempfile.gettempdir()) / "netmax-wifievents"
+    return base / STATE_FILENAME
+
+
+def _load_persisted_baseline() -> Optional[dict]:
+    try:
+        raw = _state_path().read_text(encoding="utf-8")
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _persist_baseline(snapshot: dict) -> None:
+    path = _state_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(snapshot, fh)
+    except OSError:
+        pass  # baseline persistence is best-effort; in-memory still works
+
+
+_last_snapshot: Optional[dict] = _load_persisted_baseline()
 _state_lock = threading.Lock()
 _stop = threading.Event()
 
@@ -285,6 +370,7 @@ def poll_once(snapshot: Optional[dict] = None) -> list[dict]:
     with _state_lock:
         events = diff_snapshots(_last_snapshot, snap)
         _last_snapshot = snap
+        _persist_baseline(snap)
     emit_events(events)
     return events
 

@@ -531,7 +531,7 @@ struct SettingsView: View {
                 .font(.callout)
                 .foregroundColor(.secondary)
                 .accessibilityLabel(Text("No telemetry, no analytics, no tracking calls"))
-            Text("Only outbound connections: the speed-test endpoints you choose to test against.")
+            Text("Only outbound connections: the speed-test and upload-test endpoints a run tests against (proof.ovh.net, speed.cloudflare.com for downloads; httpbin.org / postman-echo.com only when you run an upload probe).")
                 .font(.callout)
                 .foregroundColor(.secondary)
                 .accessibilityLabel(Text("Only outbound connections are the speed-test endpoints you choose to test against"))

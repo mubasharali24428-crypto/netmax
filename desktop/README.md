@@ -32,7 +32,7 @@ cd desktop/scripts
 open ../build/NetMaxDesktop.app   # menu-bar item appears (LSUIElement: no Dock icon)
 ```
 
-Requirements: macOS ≥ 13.0, Xcode/Swift toolchain (`swift build`), Python 3.13 at `/Users/user/1/bin/python`
+Requirements: macOS ≥ 13.0, Xcode/Swift toolchain (`swift build`), Python 3.10+
 (override with `NETMAX_PYTHON` — see [Python interpreter override](#python-interpreter-override-netmax_python)).
 
 The app runs as a menu-bar extra (`LSUIElement true`) — no Dock icon, no main window.
@@ -61,13 +61,13 @@ Any FAIL ⇒ nonzero exit. Run `./build_app.sh` first (steps e–g check its out
 
 ## Python interpreter override (`NETMAX_PYTHON`)
 
-All tooling defaults to `/Users/user/1/bin/python` but honors `NETMAX_PYTHON`:
+All tooling defaults to the system `python3` but honors `NETMAX_PYTHON`:
 
 - **Scripts** — `scripts/verify_phase0.sh` resolves
-  `PY="${NETMAX_PYTHON:-/Users/user/1/bin/python}"`; `build_app.sh` invokes no
+  `PY="${NETMAX_PYTHON:-python3}"`; `build_app.sh` invokes no
   Python directly.
 - **App runtime** — the Swift shell (`EngineClient.swift`) also reads
-  `NETMAX_PYTHON`, falling back to `/usr/bin/env python3`.
+  `NETMAX_PYTHON`, falling back to the system `python3`.
 - **Usage:** `NETMAX_PYTHON=/path/to/python ./scripts/verify_phase0.sh`
 
 ## Distribution
@@ -127,6 +127,13 @@ expected, not a bug. Their options, least-invasive first:
 Tell recipients plainly: "this is an unsigned hobby build; macOS will warn you;
 here is why that warning exists." Nobody should be told to disable Gatekeeper
 system-wide — that trades one convenience for all future protection.
+
+**The permanent fix is one command once the $99/yr account exists** — Tier 3
+below is fully scripted: `notarize.sh` re-signs with hardened runtime, submits
+to Apple, staples the ticket, and Gatekeeper-verifies; `build_dmg.sh` then
+re-signs the DMG with the same Developer ID. The instructions above exist ONLY
+until that account exists — after notarization they describe a state that no
+longer occurs and should be deleted.
 
 ### Tier 3 — Full public distribution (needs the $99/yr account)
 

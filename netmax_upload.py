@@ -37,11 +37,16 @@ def upload_probe(seconds: float) -> tuple[float, float]:
 
     # Payload sized for the time window: assume ~10 Mbps worst case floor so we
     # never run dry mid-window on slow links (extra bytes are harmless — curl's
-    # --max-time caps the window).
-    size_bytes = max(100_000, int(10e6 * seconds / 8))
+    # --max-time caps the window). CAPPED at 250 MB (audit F9): the old formula
+    # materialized 27 GB of os.urandom for a 6-h window — curl re-POSTs the
+    # same capped file within the window instead, same measurement quality.
+    size_bytes = min(max(100_000, int(10e6 * seconds / 8)), 250_000_000)
     with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
         f.write(os.urandom(size_bytes))
         payload = f.name
+    # curl's --max-time caps each POST at the window; a capped payload simply
+    # ends its last POST early on fast links — the Mbps math stays exact
+    # because it divides bytes sent by curl's own time_total.
 
     problems: list[str] = []
     try:
