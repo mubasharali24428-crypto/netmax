@@ -144,16 +144,16 @@
   <div class="wrap">
     <h2>Install in 10 seconds</h2>
     <div class="grid">
-      <div class="card"><h3>Local-first</h3><p>Everything runs on your machine. No cloud, no accounts, no telemetry. Your measurements never leave your Mac.</p></div>
-      <div class="card"><h3>Honest limits</h3><p>NetMax grades against your real ISP cap. It won't tell you "1 Gbps" on a 100 Mbps plan — ever.</p></div>
-      <div class="card"><h3>Agent-native</h3><p>Your AI agent calls the tools directly in your terminal workflow. The menu bar keeps watch between commands.</p></div>
-      <div class="card"><h3>Zero bloat</h3><p>32 KB Node.js server + 76 KB Python engine — pure stdlib, no dependencies, no Docker, no containers.</p></div>
-    </div>
-    <div class="grid" style="margin-top:18px">
-      <div class="card"><h3>Speed test</h3><p>Single-stream baseline + multi-stream turbo (up to 50 streams). Finds hidden headroom your ISP won't tell you about.</p></div>
-      <div class="card"><h3>Bufferbloat</h3><p>Grades A+ through F. Most home routers have it — NetMax tells you how bad yours is and how to fix it (fq_codel / CAKE).</p></div>
-      <div class="card"><h3>DNS ranking</h3><p>Tests Cloudflare, Google, Quad9 against your default. Shows the fastest with an actionable config tip.</p></div>
-    </div>
+      <div class="card">
+        <h3>MCP server (free — any harness)</h3>
+        <pre><span class="prompt">$</span> <span class="cmd">npx -y @netmax/mcp-server</span>
+<span class="out">NetMax MCP server v1.0.3
+  Engine root: .../engine
+  Python:      /usr/bin/python3
+  Tools:       14 registered
+NetMax MCP server running on stdio</span></pre>
+        <p class="note">Also: <code class="inline">claude mcp add netmax -- npx -y @netmax/mcp-server</code></p>
+      </div>
       <div class="card">
         <h3>Desktop app (macOS menu bar)</h3>
         <pre><span class="prompt">$</span> <span class="cmd">brew tap mubasharali24428-crypto/netmax</span>
@@ -161,6 +161,36 @@
 <span class="out">&#x1f4e5; NetMax Desktop 1.0.0 installed</span></pre>
         <p class="note">Or <a href="https://github.com/mubasharali24428-crypto/netmax/releases">download the DMG</a></p>
       </div>
+    </div>
+    <div style="text-align:center;margin-top:28px">
+      <p style="margin-bottom:12px;font-size:15px;font-weight:600;color:var(--ink)">Works in every major coding harness</p>
+      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:680px;margin:0 auto">
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+          <span>&#9673;</span> Claude Code <span>&#9673;</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+          <span>&#9673;</span> Codex CLI <span>&#9673;</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+          <span>&#9673;</span> Cursor <span>&#9673;</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+          <span>&#9673;</span> Gemini <span>&#9673;</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+          <span>&#9673;</span> LM Studio <span>&#9673;</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+          <span>&#9673;</span> DSH <span>&#9673;</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+          <span>&#9673;</span> Continue <span>&#9673;</span>
+        </span>
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+          <span>&#9673;</span> VS Code <span>&#9673;</span>
+        </span>
+      </div>
+      <p class="note" style="margin-top:10px">Any MCP-compatible coding tool — one npx command</p>
     </div>
   </div>
 </section>
