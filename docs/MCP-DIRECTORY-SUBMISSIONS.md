@@ -35,22 +35,29 @@
 > https://smithery.ai/new (or the **Publish** button on the homepage).
 
 ### 1. Smithery
-- Go to **https://smithery.ai/new** → **Sign in** (GitHub or Google) → complete the publish flow.
 - NetMax is a **local stdio** server, so Smithery's **"Local (MCPB Bundle)"** path applies
   (not the URL path, which is for hosted Streamable-HTTP servers).
-- **CLI (advanced):**
+- **The bundle is ready and smoke-tested.** Build it with:
   ```
-  smithery auth login
-  smithery mcp publish ./netmax.mcpb -n <your-namespace>/netmax
+  ./desktop/mcpb/build-mcpb.sh      # → desktop/netmax-<version>.mcpb (manifest in desktop/mcpb/)
   ```
+  Current artifact: `desktop/netmax-1.0.3.mcpb` (3.1 MB, manifest valid, `initialize` +
+  `tools/list` = 14 tools verified via MCPB unpack round-trip on 2026-09-11).
+- **CLI publish (verified syntax):**
+  ```
+  npx -y @smithery/cli auth login                              # interactive device flow
+  npx -y @smithery/cli namespace                               # check your namespace
+  npx -y @smithery/cli mcp publish ./desktop/netmax-1.0.3.mcpb -n <your-namespace>/netmax
+  ```
+- Web alternative: **https://smithery.ai/new** → Sign in → "Local (MCPB Bundle)" → upload the `.mcpb`.
 - After publishing: **Settings → Verification** for the official-vendor checklist.
+- Note: `smithery.ai/register-server` is **404** — do not use it.
 
-### 2. mcp.so
-- Go to **https://mcp.so/submit**.
-- Paste: **Repository URL** = `https://github.com/mubasharali24428-crypto/netmax`,
-  **Name** = `NetMax MCP Server`.
-- The free path is all that's needed. The **"$39 one-time"** is an optional upsell
-  (instant publish + verified badge) — **do not pay** unless you specifically want the badge.
+### 2. mcp.so — ✅ DONE (2026-09-11)
+- Submitted **free** via GitHub issue: https://github.com/chatmcp/mcpso/issues/4063
+  ("MCP server: NetMax MCP Server", title format: `Add MCP server: <name>`).
+- The `$39` panel on `mcp.so/submit` is only an upsell (instant publish + verified badge +
+  dofollow link). No payment was made — the GitHub issue is the official free path.
 
 ### 3. Glama
 - Go to **https://glama.ai/mcp/servers** and click **Add Server**.

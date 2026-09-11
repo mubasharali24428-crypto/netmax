@@ -1,0 +1,59 @@
+{
+  "manifest_version": "0.2",
+  "name": "netmax",
+  "display_name": "NetMax MCP Server",
+  "version": "1.0.3",
+  "description": "14 network-diagnostic tools for AI coding agents — speed test, DNS ranking, bufferbloat, WiFi, jitter, packet loss, multi-stream download.",
+  "long_description": "NetMax exposes a local-first network diagnostics engine to any MCP client (Claude Code, Codex, Cursor, Gemini, LM Studio, DSH). Tools cover speed testing, DNS resolver ranking, bufferbloat under load, packet loss, jitter, WiFi details, downloads, and session summaries. The engine is Python 3.10+ with curl; the server is a Node ESM stdio process.",
+  "author": {
+    "name": "Mubashar Ali",
+    "url": "https://github.com/mubasharali24428-crypto"
+  },
+  "homepage": "https://github.com/mubasharali24428-crypto/netmax",
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/mubasharali24428-crypto/netmax"
+  },
+  "documentation": "https://github.com/mubasharali24428-crypto/netmax/blob/main/desktop/MCP-README.md",
+  "license": "MIT",
+  "keywords": [
+    "network",
+    "diagnostics",
+    "speed-test",
+    "dns",
+    "bufferbloat",
+    "wifi",
+    "mcp"
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": {
+      "node": ">=18"
+    }
+  },
+  "server": {
+    "type": "node",
+    "entry_point": "netmax-mcp-server.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/netmax-mcp-server.mjs"],
+      "env": {}
+    }
+  },
+  "tools": [
+    { "name": "measure_speed", "description": "Run a network speed test (download, upload, latency)" },
+    { "name": "dns_ranking", "description": "Rank DNS resolvers by real query latency" },
+    { "name": "bufferbloat", "description": "Measure bufferbloat (latency under load)" },
+    { "name": "full_diagnostics", "description": "Run the complete network diagnostic suite" },
+    { "name": "boost", "description": "Check for bandwidth-allocation / saturation issues" },
+    { "name": "upload_speed", "description": "Measure upload throughput" },
+    { "name": "packet_loss", "description": "Measure packet loss" },
+    { "name": "jitter", "description": "Measure jitter" },
+    { "name": "wifi_info", "description": "Inspect the current WiFi connection (macOS)" },
+    { "name": "download_file", "description": "Benchmark download throughput for a URL" },
+    { "name": "eco_bloat", "description": "Run the eco (low-impact) bufferbloat variant" },
+    { "name": "diagnostic_summary", "description": "Summarize the latest diagnostic session" },
+    { "name": "parallel_diagnostics", "description": "Run multiple diagnostics in parallel" },
+    { "name": "session_info", "description": "Show session info and server status" }
+  ]
+}
