@@ -1,6 +1,6 @@
 {
   "name": "@netmax/mcp-server",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "MCP server for NetMax Desktop - network diagnostics (speed test, DNS ranking, bufferbloat, WiFi) as AI coding agent tools",
   "type": "module",
   "main": "netmax-mcp-server.mjs",
@@ -35,7 +35,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/netmax/netmax-app.git"
+    "url": "git+https://github.com/mubasharali24428-crypto/netmax.git"
   },
   "license": "MIT"
 }

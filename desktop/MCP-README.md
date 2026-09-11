@@ -9,7 +9,7 @@ The MCP server calls the **same Python engine scripts** that the Swift GUI uses
 via `engine_bridge.py`. Your app, its data, its running state, its daemons —
 **nothing is modified**.
 
-## 11 Tools exposed
+## 14 Tools exposed
 
 | Tool | What it does |
 |---|---|---|

@@ -1,4 +1,42 @@
-# NetMax Desktop (Phase 0)
+# NetMax — MCP Server & macOS Desktop App
+
+Two surfaces, one engine:
+
+- **`@netmax/mcp-server`** — a free MCP (Model Context Protocol) server exposing **14
+  network-diagnostic tools** to any AI coding harness. This is what the npm package ships.
+- **NetMaxDesktop** — a double-clickable macOS **menu-bar app** wrapping the same engine
+  (documented lower in this file).
+
+## MCP Server — 14 network-diagnostic tools for AI coding agents
+
+Wire NetMax into any MCP-compatible harness as a **free** stdio server. Runtime needs
+Node ≥ 18 **plus** Python 3.10+ and `curl` (the server shells out to the bundled NetMax
+engine — nothing is installed system-wide).
+
+**Install matrix**
+
+| Harness | One-liner / config |
+|---|---|
+| **Any npx-compatible harness** | `npx -y @netmax/mcp-server` |
+| **Claude Code** | `claude mcp add netmax -- npx -y @netmax/mcp-server` |
+| **Codex CLI** | `~/.codex/config.toml` → `[mcp_servers.netmax]` with `command = "npx"`, `args = ["-y", "@netmax/mcp-server"]` |
+| **Cursor** | `~/.cursor/mcp.json` → add `netmax` to `mcpServers` |
+| **Gemini / Antigravity** | `~/.gemini/config/mcp_config.json` → add `netmax` to `mcpServers` |
+| **LM Studio** | `~/.lmstudio/mcp.json` → add `netmax` to `mcpServers` |
+| **Claude Desktop** | `claude_desktop_config.json` → add `netmax` to `mcpServers` |
+| **DSH (DeepSeek)** | `cordis.patch.yml` → insert `mcp-netmax` client plugin |
+| **VS Code (Continue.dev)** | `~/.continue/config.json` → add `netmax` to `mcpServers` |
+
+Tools: `measure_speed`, `dns_ranking`, `bufferbloat`, `upload_speed`, `packet_loss`,
+`jitter`, `wifi_info`, `download_file`, `eco_bloat`, `full_diagnostics`,
+`diagnostic_summary`, `boost`, `parallel_diagnostics`, `session_info`. Full detail:
+[`MCP-README.md`](./MCP-README.md).
+
+Run standalone: `node netmax-mcp-server.mjs`
+
+---
+
+## NetMaxDesktop (macOS menu-bar app)
 
 A double-clickable macOS **menu-bar app** wrapping today's NetMax engine:
 Swift shell (`SwiftNetMax/`) → Python bridge (`bridge/engine_bridge.py`) → engine modules (`netmax*.py`, `netmetrics.py`).
@@ -196,23 +234,4 @@ and neither pretends otherwise.
 | `build_app.sh` | builds + ad-hoc signs the `.app` | same (notarize.sh re-signs later) |
 | `build_dmg.sh` | full DMG, ad-hoc-signed, clearly labeled | full DMG, Developer ID-signed (auto-detected) |
 | `notarize.sh` | prints setup checklist, **exit 2** (the gate) | hardened-runtime sign → notarytool submit → staple → spctl green |
-
-## Install Matrix
-
-Once published to npm (`@netmax/mcp-server`), install via your harness:
-
-| Harness | One-liner / Config |
-|---|---|
-| **Any npx-compatible harness** | `npx @netmax/mcp-server` |
-| **Claude Code** | `claude mcp add netmax -- npx -y @netmax/mcp-server` |
-| **Codex CLI** | `~/.codex/config.toml` \
-`[mcp_servers.netmax]` \
-`command = "npx"` \
-`args = ["-y", "@netmax/mcp-server"]` |
-| **Cursor** | `~/.cursor/mcp.json` → add netmax to mcpServers |
-| **Gemini / Antigravity** | `~/.gemini/config/mcp_config.json` → add netmax to mcpServers |
-| **LM Studio** | `~/.lmstudio/mcp.json` → add netmax to mcpServers |
-| **Claude Desktop** | `claude_desktop_config.json` → add netmax to mcpServers |
-| **DSH (DeepSeek)** | `cordis.patch.yml` → insert mcp-netmax client plugin |
-| **VS Code (Continue.dev)** | `~/.continue/config.json` → add netmax to mcpServers |
 
