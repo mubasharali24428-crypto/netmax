@@ -27,16 +27,32 @@ die() { printf '[build_app] ERROR: %s\n' "$*" >&2; exit 1; }
 [[ -f "$SWIFT_DIR/Package.swift" ]] || die "missing $SWIFT_DIR/Package.swift (B1 has not landed?)"
 [[ -d "$BRIDGE_DIR" ]] || die "missing $BRIDGE_DIR (B2 has not landed?)"
 
-# --- 1. Build the Swift shell ---------------------------------------------
-log "swift build -c release (in $SWIFT_DIR)"
-( cd "$SWIFT_DIR" && swift build -c release )
+# P2.5 (Strategic Revenue Plan): 1.0 signals a product a buyer can trust.
+APP_VERSION="1.0.0"
+APP_BUILD="$(date -u '+%Y%m%d')"
+log "version: $APP_VERSION (build $APP_BUILD)"
 
-BIN="$SWIFT_DIR/.build/release/netmax-desktop"
+# --- 1. Build the Swift shell ---------------------------------------------
+# P2.2 (Strategic Revenue Plan): UNIVERSAL build (arm64 + x86_64).
+# SwiftPM's multi-arch products land in .build/apple/Products/Release/ (the
+# single-arch location .build/release/ is kept as a fallback for older toolchains).
+log "swift build -c release --arch arm64 --arch x86_64 (universal) in $SWIFT_DIR"
+( cd "$SWIFT_DIR" && swift build -c release --arch arm64 --arch x86_64 )
+
+BIN="$SWIFT_DIR/.build/apple/Products/Release/netmax-desktop"
+if [[ ! -x "$BIN" ]]; then
+  log "universal product not found at .build/apple/Products/Release/ — falling back to .build/release/"
+  BIN="$SWIFT_DIR/.build/release/netmax-desktop"
+fi
 if [[ ! -x "$BIN" ]]; then
   log "expected binary not found: $BIN"
   log "available release products:"
-  ls -1 "$SWIFT_DIR/.build/release" 2>/dev/null | sed 's/^/    /' >&2 || true
+  ls -1 "$SWIFT_DIR/.build/apple/Products/Release" "$SWIFT_DIR/.build/release" 2>/dev/null | sed 's/^/    /' >&2 || true
   die "release binary netmax-desktop not found (check Package.swift product/executable name)"
+fi
+log "binary architectures: $(lipo -info "$BIN" 2>/dev/null | sed 's/^[^:]*://')"
+if lipo -info "$BIN" 2>/dev/null | grep -q 'Non-fat'; then
+  log "WARN: binary is NOT universal (single arch) — Intel Macs will not run this build"
 fi
 
 # --- 2. Assemble bundle skeleton ------------------------------------------
@@ -87,9 +103,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>${APP_VERSION}</string>
 	<key>CFBundleVersion</key>
-	<string>0</string>
+	<string>${APP_BUILD}</string>
 	<key>NetMaxBuildDate</key>
 	<string>${BUILD_DATE}</string>
 	<key>LSUIElement</key>
