@@ -123,20 +123,37 @@
   </div>
 </section>
 
+<section class="alt" style="padding:40px 0">
+  <div class="wrap">
+    <div class="card" style="max-width:600px;margin:0 auto;text-align:center">
+      <h3 style="margin-top:0">What NetMax found on my network</h3>
+<pre style="text-align:left;font-size:13px"><span style="color:#6a9955"># npx -y @netmax/mcp-server  →  claude: "run full_diagnostics"</span>
+
+<span style="color:#9cdcfe">Download (single-stream)</span>    20.6 Mbps
+<span style="color:#9cdcfe">Download (8-stream turbo)</span>   24.6 Mbps  <span style="color:#6a9955">+20% headroom</span>
+<span style="color:#9cdcfe">Upload</span>                       40.1 Mbps
+<span style="color:#9cdcfe">Jitter</span>                       32.4 ms
+<span style="color:#9cdcfe">Packet Loss</span>                   0.0% <span style="color:#4ec9b0">✅</span>
+<span style="color:#9cdcfe">Bufferbloat</span>                  <span style="color:#f44747">Grade D</span>  <span style="color:#6a9955">+291ms spike under load</span></pre>
+      <p class="note" style="margin-bottom:0">Found a problem I didn't know I had — 291ms of bufferbloat. My AI agent fixed something I'd been blaming on my ISP.</p>
+    </div>
+  </div>
+</section>
+
 <section class="alt" id="install">
   <div class="wrap">
     <h2>Install in 10 seconds</h2>
     <div class="grid">
-      <div class="card">
-        <h3>MCP server (free — any harness)</h3>
-        <pre><span class="prompt">$</span> <span class="cmd">npx -y @netmax/mcp-server</span>
-<span class="out">NetMax MCP server v1.0.3
-  Engine root: .../engine
-  Python:      /usr/bin/python3
-  Tools:       14 registered
-NetMax MCP server running on stdio</span></pre>
-        <p class="note">Also: <code class="inline">claude mcp add netmax -- npx -y @netmax/mcp-server</code></p>
-      </div>
+      <div class="card"><h3>Local-first</h3><p>Everything runs on your machine. No cloud, no accounts, no telemetry. Your measurements never leave your Mac.</p></div>
+      <div class="card"><h3>Honest limits</h3><p>NetMax grades against your real ISP cap. It won't tell you "1 Gbps" on a 100 Mbps plan — ever.</p></div>
+      <div class="card"><h3>Agent-native</h3><p>Your AI agent calls the tools directly in your terminal workflow. The menu bar keeps watch between commands.</p></div>
+      <div class="card"><h3>Zero bloat</h3><p>32 KB Node.js server + 76 KB Python engine — pure stdlib, no dependencies, no Docker, no containers.</p></div>
+    </div>
+    <div class="grid" style="margin-top:18px">
+      <div class="card"><h3>Speed test</h3><p>Single-stream baseline + multi-stream turbo (up to 50 streams). Finds hidden headroom your ISP won't tell you about.</p></div>
+      <div class="card"><h3>Bufferbloat</h3><p>Grades A+ through F. Most home routers have it — NetMax tells you how bad yours is and how to fix it (fq_codel / CAKE).</p></div>
+      <div class="card"><h3>DNS ranking</h3><p>Tests Cloudflare, Google, Quad9 against your default. Shows the fastest with an actionable config tip.</p></div>
+    </div>
       <div class="card">
         <h3>Desktop app (macOS menu bar)</h3>
         <pre><span class="prompt">$</span> <span class="cmd">brew tap mubasharali24428-crypto/netmax</span>
