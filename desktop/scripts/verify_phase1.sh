@@ -296,6 +296,35 @@ SWIFT
   rm -rf "$ART_DIR"; rm -f "$PROBE_E"
 fi
 
+# --- f) LicenseGate offline gate (P2.9, Strategic Revenue Plan) ----------------
+LG_FILE="$(find_source 'LicenseGate.swift')"
+step_header f "LicenseGate offline checks (trial/pro/free tiering)"
+if [[ -z "$LG_FILE" ]]; then
+  report SKIP f "LicenseGate.swift not present yet (sibling lane hasn't landed)"
+else
+  PROBE_F="$(mktemp "${TMPDIR:-/tmp}/netmax_phase1_f.XXXXXX.swift")"
+  cat > "$PROBE_F" <<'SWIFT'
+import Foundation
+let n = LicenseGateTests.runAll()
+if n == 0 {
+    print("LICENSE_GATE_OK")
+    exit(0)
+}
+print("LICENSE_GATE_FAILS")
+exit(1)
+SWIFT
+  set +e
+  OUT="$(probe_sources "$PROBE_F")"; RC=$?
+  set -e
+  [[ -n "$OUT" ]] && printf '%s\n' "$OUT" | sed 's/^/    /'
+  rm -f "$PROBE_F"
+  if [[ $RC -eq 0 ]] && grep -q '^LICENSE_GATE_OK' <<<"$OUT"; then
+    report PASS f "LicenseGate checks exit 0 ($(head -1 <<<"$OUT"))"
+  else
+    report FAIL f "LicenseGate probe exited $RC or printed no success marker (see output above)"
+  fi
+fi
+
 # --- Summary -------------------------------------------------------------------
 printf '\n===== PHASE 1 GATE (L4): '
 if [[ $FAIL -eq 0 ]]; then
