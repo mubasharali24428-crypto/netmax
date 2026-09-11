@@ -1,7 +1,19 @@
 # NetMax
 
 > Network diagnostics for AI coding agents. Local-first, honest limits.
-> **Website:** https://mubasharali24428-crypto.github.io/netmax/
+
+[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@netmax/mcp-server)](https://www.npmjs.com/package/@netmax/mcp-server)
+[![GitHub stars](https://img.shields.io/github/stars/mubasharali24428-crypto/netmax?style=social)](https://github.com/mubasharali24428-crypto/netmax)
+[![Landing page](https://img.shields.io/badge/🌐-landing%20page-2f6f4f)](https://mubasharali24428-crypto.github.io/netmax/)
+[![Buy $29](https://img.shields.io/badge/💳-Founding%20License%20%2429-c0392b)](https://mubasharali03.gumroad.com/l/yzkuez)
+
+**Website:** https://mubasharali24428-crypto.github.io/netmax/  
+**npm (MCP server):** `npx -y @netmax/mcp-server`  
+**macOS app:** `brew tap mubasharali24428-crypto/netmax && brew install --cask netmax`
+
+**14 network-diagnostic tools for AI coding agents.** Run speed tests, DNS ranking, bufferbloat
+grading, jitter, packet loss, WiFi diagnostics — all from inside your AI coding agent.
 
 **Honest bandwidth maximizer for macOS.** NetMax squeezes every bit your plan
 actually pays for: it measures true single-stream throughput, claims a larger
@@ -20,7 +32,35 @@ grades your connection's bufferbloat on the Waveform A+–F rubric.
 - Zero-throughput windows on shared WiFi are real (airtime starvation). NetMax
   reports them as dropouts rather than inventing a flattering percentage.
 
-## Install & run
+## MCP Server — use from any AI coding agent (free, MIT)
+
+Install in 10 seconds — works in Claude Code, Cursor, Codex CLI, Gemini, LM Studio, and more:
+
+```bash
+npx -y @netmax/mcp-server
+```
+
+Then ask your agent to run `full_diagnostics` — it will measure your real network speed, DNS
+latency, bufferbloat grade, jitter, packet loss, and WiFi quality in a single call.
+
+**14 tools:** `measure_speed` · `dns_ranking` · `bufferbloat` · `upload_speed` ·
+`packet_loss` · `jitter` · `wifi_info` · `download_file` · `eco_bloat` ·
+`full_diagnostics` · `diagnostic_summary` · `boost` · `parallel_diagnostics` ·
+`session_info`
+
+### Desktop app (macOS)
+
+```bash
+brew tap mubasharali24428-crypto/netmax
+brew install --cask netmax
+```
+
+Or visit the [landing page](https://mubasharali24428-crypto.github.io/netmax/) for the $29
+Founding License: menu-bar app with history, scheduled tests, and anomaly detection.
+
+---
+
+## Install & run (Python engine — for developers)
 
 No package install needed — it's plain Python + curl. Any Python 3.10+
 works; point `NETMAX_PYTHON` at a specific interpreter if the default

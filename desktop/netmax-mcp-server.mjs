@@ -205,7 +205,7 @@ function extractValue(text, pattern) {
 
 const server = new McpServer({
   name: "netmax-mcp-server",
-  version: "1.0.0",
+  version: "1.0.3",
   description: "NetMax Desktop network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
 });
 
@@ -769,7 +769,7 @@ server.tool(
 // ── Start ───────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.error(`NetMax MCP server v1.0.0`);
+  console.error(`NetMax MCP server v1.0.3`);
   console.error(`  Engine root: ${ENGINE_ROOT}`);
   console.error(`  Python:      ${PYTHON}`);
   console.error(`  Bridge:      ${HAS_BRIDGE ? BRIDGE : "none (direct mode)"}`);

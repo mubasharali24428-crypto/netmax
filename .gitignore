@@ -1,6 +1,16 @@
+# Python
 __pycache__/
 *.pyc
-results/
 .pytest_cache/
+
+# Build artifacts
+results/
 *.mcpb
 desktop/mcpb-src/
+
+# macOS
+.DS_Store
+
+# Sensitive session documents (contain credentials)
+SESSION-HANDOFF.md
+docs/HN-REPLY-TEMPLATES.md
