@@ -27,6 +27,15 @@ engine — nothing is installed system-wide).
 | **DSH (DeepSeek)** | `cordis.patch.yml` → insert `mcp-netmax` client plugin |
 | **VS Code (Continue.dev)** | `~/.continue/config.json` → add `netmax` to `mcpServers` |
 
+**Desktop app (macOS, universal build):**
+
+```sh
+brew tap mubasharali24428-crypto/netmax
+brew install --cask netmax        # Homebrew 6+: brew trust mubasharali24428-crypto/netmax/netmax first if refused
+```
+
+Or download the DMG from the [v1.0.0 release](https://github.com/mubasharali24428-crypto/netmax/releases/tag/v1.0.0).
+
 Tools: `measure_speed`, `dns_ranking`, `bufferbloat`, `upload_speed`, `packet_loss`,
 `jitter`, `wifi_info`, `download_file`, `eco_bloat`, `full_diagnostics`,
 `diagnostic_summary`, `boost`, `parallel_diagnostics`, `session_info`. Full detail:

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetMax — Network diagnostics for AI coding agents</title>
+<meta name="description" content="NetMax gives AI coding agents real network measurements: speed test, DNS ranking, bufferbloat, WiFi, jitter, packet loss. Local-first, honest limits.">
+<style>
+  :root { --ink:#16202a; --muted:#5b6b7d; --bg:#fbfaf7; --card:#ffffff;
+    --accent:#2f6f4f; --accent2:#c0392b; --border:#e3e0d8; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font: 17px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
+  header.top { border-bottom:1px solid var(--border); padding: 20px 0; }
+  header.top .wrap { display:flex; align-items:center; gap:12px; }
+  header.top .logo { font-weight:800; font-size:20px; letter-spacing:-.3px; }
+  header.top .logo span { color:var(--accent); }
+  header.top nav a { color:var(--muted); text-decoration:none; margin-left:18px; }
+  section { padding: 70px 0; }
+  h1 { font-size: 44px; line-height:1.15; letter-spacing:-.8px; margin: 0 0 14px; }
+  .hero p.sub { font-size: 19px; color: var(--muted); max-width: 640px; }
+  .cta-row { display:flex; gap:12px; flex-wrap:wrap; margin: 26px 0 8px; }
+  .btn { display:inline-block; padding: 13px 22px; border-radius:9px; font-weight:700;
+    background:var(--accent); color:#fff; text-decoration:none; border:none; cursor:pointer; }
+  .btn.ghost { background:transparent; color:var(--ink); border:1.5px solid var(--border); }
+  .note { font-size:14px; color:var(--muted); }
+  code.inline { background:#f0efe9; border:1px solid var(--border); border-radius:5px;
+    padding: 1.5px 7px; font-size:.88em; }
+  pre { background:#f6f4ee; border:1px solid var(--border); border-radius:9px;
+    padding: 14px 18px; overflow-x:auto; font-size:13.5px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:18px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px 20px; }
+  .card h3 { margin-top:0; font-size:18px; }
+  .toolchip { display:inline-block; background:#eef1ec; color:#2c3c33; border-radius:20px;
+    padding:4px 12px; margin:3px; font-size:13.5px; font-family: ui-monospace, monospace; }
+  .price { font-size:40px; font-weight:800; letter-spacing:-1px; }
+  .price small { color:var(--muted); font-size:16px; }
+  ul.check { list-style:none; padding-left:0; }
+  ul.check li::before { content:"✓ "; color:var(--accent); font-weight:800; }
+  .warn { border-left:4px solid var(--accent2); background:#fdf6f4; border:1px solid #f0dcd8;
+    border-radius:10px; padding:16px 18px; }
+  .warn b { color:var(--accent2); }
+  footer { border-top:1px solid var(--border); padding: 34px 0; font-size:14px; color:var(--muted); }
+  @media (max-width: 640px) { h1 { font-size:32px; } .btn { width:100%; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="logo">Net<span>Max</span></div>
+    <nav style="margin-left:auto">
+      <a href="#install">Install</a>
+      <a href="#tools">Tools</a>
+      <a href="#buy">Founding License</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <h1>Network diagnostics for <br>AI coding agents.</h1>
+    <p class="sub">NetMax gives your agents real network measurements — speed, DNS ranking, bufferbloat,
+    jitter, packet loss, WiFi — <b>local-first, honest limits</b>. No cloud, no accounts,
+    no promises bigger than your ISP cap.</p>
+    <div class="cta-row">
+      <a class="btn" href="#buy">Get the desktop app — $29</a>
+      <a class="btn ghost" href="#install">Try the MCP server (free)</a>
+    </div>
+    <p class="note">14 tools · macOS 13+ (Apple Silicon &amp; Intel) · Node ≥18 + Python 3.10</p>
+  </div>
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <h3>Desktop app (macOS menu bar)</h3>
+    <pre>brew tap mubasharali24428-crypto/netmax
+brew install --cask netmax</pre>
+    <p class="note">Homebrew 6+ may ask: <code class="inline">brew trust mubasharali24428-crypto/netmax/netmax</code>
+    &nbsp;·&nbsp; Or download the
+    <a href="https://github.com/mubasharali24428-crypto/netmax/releases/tag/v1.0.0">v1.0.0 DMG</a>
+    &nbsp;·&nbsp; See <a href="https://github.com/mubasharali24428-crypto/netmax">GitHub</a></p>
+    <h3>MCP server (free, for any coding agent)</h3>
+    <pre>npx -y @netmax/mcp-server        # any npx-compatible harness
+claude mcp add netmax -- npx -y @netmax/mcp-server   # Claude Code</pre>
+    <p class="note">Works in Claude Code, Codex, Cursor, Gemini, LM Studio, DSH, Continue &amp; more.
+    Full matrix: <a href="https://github.com/mubasharali24428-crypto/netmax/blob/main/desktop/README.md">README</a></p>
+  </div>
+</section>
+
+<section id="tools">
+  <div class="wrap">
+    <h2>What your agents can measure</h2>
+    <div>
+      <span class="toolchip">measure_speed</span><span class="toolchip">dns_ranking</span>
+      <span class="toolchip">bufferbloat</span><span class="toolchip">upload_speed</span>
+      <span class="toolchip">packet_loss</span><span class="toolchip">jitter</span>
+      <span class="toolchip">wifi_info</span><span class="toolchip">download_file</span>
+      <span class="toolchip">eco_bloat</span><span class="toolchip">full_diagnostics</span>
+      <span class="toolchip">diagnostic_summary</span><span class="toolchip">boost</span>
+      <span class="toolchip">parallel_diagnostics</span><span class="toolchip">session_info</span>
+    </div>
+    <div class="grid" style="margin-top:28px">
+      <div class="card"><h3>Local-first</h3><p>Everything runs on your machine. Your history and
+      measurements never leave it — nothing to sign up for, nothing to sync.</p></div>
+      <div class="card"><h3>Honest limits</h3><p>NetMax grades against your real ISP cap and says so.
+      It will never tell you "1 Gbps" on a 100 Mbps plan.</p></div>
+      <div class="card"><h3>Agent-native</h3><p>Agents call the tools directly in your terminal
+      workflow — and the menu bar keeps watch between commands.</p></div>
+    </div>
+  </div>
+</section>
+</section>
+<section id="buy">
+  <div class="wrap">
+    <h2>The Founding License — $29</h2>
+    <p class="sub">One-time, for life. We're pre-revenue: this is how we fund the
+    Apple Developer account that notarizes the build (<b>read the honest box below</b>).</p>
+    <div class="grid">
+      <div class="card">
+        <p class="price">$29 <small>one-time</small></p>
+        <ul class="check">
+          <li>Serial-monitoring &amp; watch alerts (Pro tier)</li>
+          <li>Scheduled reports &amp; PDF/ISP report card</li>
+          <li>History &amp; exports</li>
+          <li>Free updates — 1.x included</li>
+        </ul>
+        <p><a class="btn" href="__LEMONSQUEEZY_BUY_URL__" rel="nofollow">Buy Founding License</a></p>
+      </div>
+      <div class="card">
+        <p class="price" style="font-size:30px">Free <small>forever</small></p>
+        <ul class="check">
+          <li>The MCP server — all 14 tools</li>
+          <li>On-demand tests &amp; grade</li>
+          <li>Open source engine (MIT)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="warn">
+      <b>Honest, up front:</b> the current build is <b>ad-hoc signed, not notarized</b>. Notarization
+      requires the Apple Developer Program ($99/yr), which we are funding entirely from Founding License
+      sales — it's the whole point of this offer. Until it's funded:
+      (1) your Mac shows a one-time "unidentified developer" confirmation (Homebrew installs are
+      unaffected beyond that), and (2) the Founding License is <b>fully refundable at any time</b>
+      until the notarized build ships — no questions, no expiry. Refund = email
+      <code class="inline">netmax&#64;proton.me</code> (fill in your address) with your order number.
+    </div>
+  </div>
+</section>
+<section id="faq">
+  <div class="wrap">
+    <h2>FAQ</h2>
+    <div class="grid">
+      <div class="card"><h3>Is this a scam / vaporware?</h3>
+      <p>The product is real and shippable today: 14 tools, 190+ passing tests, MIT-licensed engine,
+      published npm package (<code class="inline">@netmax/mcp-server</code>). The only thing pending is
+      Apple's $99 notarization, which is what the Founding License funds — with a refund guarantee
+      until it ships.</p></div>
+      <div class="card"><h3>Why $29, not $8/mo?</h3>
+      <p>We started with subscriptions in the docs, but one-time for a utility is what the market
+      actually pays. Monthly plans may come later — existing licenses keep 1.x updates free.</p></div>
+      <div class="card"><h3>Windows / Linux / CI?</h3>
+      <p>The MCP server (Node) and engine (Python + curl) run anywhere. The desktop GUI is macOS-only
+      and will stay that way until sales prove demand. We are not porting SwiftUI in 2026.</p></div>
+      <div class="card"><h3>Mobile app?</h3>
+      <p>Not a product. A phone companion might happen only if Pro adoption justifies it — and only as
+      a companion, never a standalone pivot.</p></div>
+      <div class="card"><h3>What's your privacy story?</h3>
+      <p>Local-first. No telemetry, no accounts, no cloud. The app cannot upload your network data —
+      there is no server component.</p></div>
+      <div class="card"><h3>License keys?</h3>
+      <p>Lemon Squeezy issues a key on purchase; the desktop app validates it offline. Piracy is
+      possible and expected — we'd rather lose keys to pirates than lose trust by overclaiming.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    © 2026 NetMax · MIT-licensed engine ·
+    <a href="https://github.com/mubasharali24428-crypto/netmax">GitHub</a> ·
+    <a href="https://www.npmjs.com/package/@netmax/mcp-server">npm</a> ·
+    <a href="https://github.com/mubasharali24428-crypto/netmax/blob/main/LICENSE">LICENSE</a> ·
+    Refunds: email <code class="inline">netmax&#64;proton.me</code> anytime until notarized v1.0 ships.
+  </div>
+</footer>
+
+</body>
+</html>
