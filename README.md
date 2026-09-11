@@ -1,5 +1,8 @@
 # NetMax
 
+> Network diagnostics for AI coding agents. Local-first, honest limits.
+> **Website:** https://mubasharali24428-crypto.github.io/netmax/
+
 **Honest bandwidth maximizer for macOS.** NetMax squeezes every bit your plan
 actually pays for: it measures true single-stream throughput, claims a larger
 per-flow share of a *contended* WiFi pipe using N parallel TCP streams
