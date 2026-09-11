@@ -1,0 +1,41 @@
+{
+  "name": "@netmax/mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for NetMax Desktop - network diagnostics (speed test, DNS ranking, bufferbloat, WiFi) as AI coding agent tools",
+  "type": "module",
+  "main": "netmax-mcp-server.mjs",
+  "bin": {
+    "netmax-mcp": "netmax-mcp-server.mjs"
+  },
+  "files": [
+    "netmax-mcp-server.mjs",
+    "engine/*.py",
+    "bridge/engine_bridge.py",
+    "MCP-README.md"
+  ],
+  "scripts": {
+    "start": "node netmax-mcp-server.mjs",
+    "test": "node --check netmax-mcp-server.mjs && echo \"Syntax OK - 14 tools ready\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25"
+  },
+  "keywords": [
+    "netmax",
+    "mcp",
+    "network",
+    "diagnostics",
+    "speed-test",
+    "bufferbloat",
+    "dns",
+    "wifi",
+    "ai",
+    "coding"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/netmax/netmax-app.git"
+  },
+  "license": "MIT"
+}

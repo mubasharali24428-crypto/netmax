@@ -196,3 +196,23 @@ and neither pretends otherwise.
 | `build_app.sh` | builds + ad-hoc signs the `.app` | same (notarize.sh re-signs later) |
 | `build_dmg.sh` | full DMG, ad-hoc-signed, clearly labeled | full DMG, Developer ID-signed (auto-detected) |
 | `notarize.sh` | prints setup checklist, **exit 2** (the gate) | hardened-runtime sign → notarytool submit → staple → spctl green |
+
+## Install Matrix
+
+Once published to npm (`@netmax/mcp-server`), install via your harness:
+
+| Harness | One-liner / Config |
+|---|---|
+| **Any npx-compatible harness** | `npx @netmax/mcp-server` |
+| **Claude Code** | `claude mcp add netmax -- npx -y @netmax/mcp-server` |
+| **Codex CLI** | `~/.codex/config.toml` \
+`[mcp_servers.netmax]` \
+`command = "npx"` \
+`args = ["-y", "@netmax/mcp-server"]` |
+| **Cursor** | `~/.cursor/mcp.json` → add netmax to mcpServers |
+| **Gemini / Antigravity** | `~/.gemini/config/mcp_config.json` → add netmax to mcpServers |
+| **LM Studio** | `~/.lmstudio/mcp.json` → add netmax to mcpServers |
+| **Claude Desktop** | `claude_desktop_config.json` → add netmax to mcpServers |
+| **DSH (DeepSeek)** | `cordis.patch.yml` → insert mcp-netmax client plugin |
+| **VS Code (Continue.dev)** | `~/.continue/config.json` → add netmax to mcpServers |
+
