@@ -3,46 +3,92 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NetMax — Network diagnostics for AI coding agents</title>
-<meta name="description" content="NetMax gives AI coding agents real network measurements: speed test, DNS ranking, bufferbloat, WiFi, jitter, packet loss. Local-first, honest limits.">
+<title>NetMax — 14 network diagnostic tools for AI coding agents</title>
+<meta name="description" content="Free, open-source MCP server giving AI agents real network diagnostics: speed test, DNS ranking, bufferbloat, WiFi, jitter, packet loss. Local-first, honest limits, zero bloat.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="NetMax — Network diagnostics for AI coding agents">
+<meta name="twitter:description" content="14 tools your AI agent can call: speed test, DNS ranking, bufferbloat, WiFi, jitter. Free, open-source, npx install.">
 <style>
-  :root { --ink:#16202a; --muted:#5b6b7d; --bg:#fbfaf7; --card:#ffffff;
-    --accent:#2f6f4f; --accent2:#c0392b; --border:#e3e0d8; }
+  :root {
+    --ink:#16202a; --muted:#5b6b7d; --bg:#fbfaf7; --card:#ffffff;
+    --accent:#2f6f4f; --accent2:#c0392b; --border:#e3e0d8;
+  }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
-    font: 17px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif; }
+    font: 17px/1.6 -apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing: antialiased; }
   .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
-  header.top { border-bottom:1px solid var(--border); padding: 20px 0; }
+
+  /* Header */
+  header.top { border-bottom:1px solid var(--border); padding: 16px 0;
+    position: sticky; top:0; background:var(--bg); z-index:10; }
   header.top .wrap { display:flex; align-items:center; gap:12px; }
   header.top .logo { font-weight:800; font-size:20px; letter-spacing:-.3px; }
   header.top .logo span { color:var(--accent); }
-  header.top nav a { color:var(--muted); text-decoration:none; margin-left:18px; }
-  section { padding: 70px 0; }
+  header.top nav a { color:var(--muted); text-decoration:none; margin-left:18px;
+    font-size:14.5px; }
+  header.top nav a:hover { color:var(--ink); }
+  .gh-badge { display:inline-flex; align-items:center; gap:5px;
+    background:var(--card); border:1px solid var(--border); border-radius:20px;
+    padding:4px 12px; font-size:13px; color:var(--muted); text-decoration:none;
+    margin-left:auto; white-space:nowrap; }
+
+  /* Sections */
+  section { padding: 64px 0; }
+  section.alt { background:var(--card); border-top:1px solid var(--border);
+    border-bottom:1px solid var(--border); }
+
+  /* Hero */
   h1 { font-size: 44px; line-height:1.15; letter-spacing:-.8px; margin: 0 0 14px; }
-  .hero p.sub { font-size: 19px; color: var(--muted); max-width: 640px; }
-  .cta-row { display:flex; gap:12px; flex-wrap:wrap; margin: 26px 0 8px; }
-  .btn { display:inline-block; padding: 13px 22px; border-radius:9px; font-weight:700;
-    background:var(--accent); color:#fff; text-decoration:none; border:none; cursor:pointer; }
+  .hero p.sub { font-size: 19px; color: var(--muted); max-width: 680px; margin-bottom:28px; }
+  .cta-row { display:flex; gap:12px; flex-wrap:wrap; margin: 0 0 8px; }
+  .btn { display:inline-block; padding: 14px 24px; border-radius:9px; font-weight:700;
+    font-size:16px; background:var(--accent); color:#fff; text-decoration:none;
+    border:none; cursor:pointer; transition:opacity .15s; }
+  .btn:hover { opacity:.88; }
   .btn.ghost { background:transparent; color:var(--ink); border:1.5px solid var(--border); }
-  .note { font-size:14px; color:var(--muted); }
+  .btn.small { padding:8px 16px; font-size:14px; }
+  .note { font-size:14px; color:var(--muted); margin:6px 0; }
+
+  /* Code */
   code.inline { background:#f0efe9; border:1px solid var(--border); border-radius:5px;
     padding: 1.5px 7px; font-size:.88em; }
-  pre { background:#f6f4ee; border:1px solid var(--border); border-radius:9px;
-    padding: 14px 18px; overflow-x:auto; font-size:13.5px; }
+  pre { background:#1e1e1e; color:#d4d4d4; border-radius:9px;
+    padding: 16px 20px; overflow-x:auto; font-size:13.5px; line-height:1.5; }
+  pre .prompt { color:#6a9955; user-select:none; }
+  pre .cmd { color:#c0c0c0; }
+  pre .out { color:#9cdcfe; }
+
+  /* Layout */
   .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:18px; }
   .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px 20px; }
   .card h3 { margin-top:0; font-size:18px; }
+  .card p:last-child { margin-bottom:0; }
+
   .toolchip { display:inline-block; background:#eef1ec; color:#2c3c33; border-radius:20px;
-    padding:4px 12px; margin:3px; font-size:13.5px; font-family: ui-monospace, monospace; }
-  .price { font-size:40px; font-weight:800; letter-spacing:-1px; }
-  .price small { color:var(--muted); font-size:16px; }
-  ul.check { list-style:none; padding-left:0; }
+    padding:4px 12px; margin:3px; font-size:13px; font-family: ui-monospace,monospace; }
+
+  .price { font-size:40px; font-weight:800; letter-spacing:-1px; margin:0 0 6px; }
+  .price small { color:var(--muted); font-size:16px; font-weight:400; }
+  ul.check { list-style:none; padding-left:0; margin:0; }
+  ul.check li { padding:3px 0; }
   ul.check li::before { content:"✓ "; color:var(--accent); font-weight:800; }
-  .warn { border-left:4px solid var(--accent2); background:#fdf6f4; border:1px solid #f0dcd8;
-    border-radius:10px; padding:16px 18px; }
+
+  .warn { border-left:4px solid var(--accent2); background:#fdf6f4;
+    border:1px solid #f0dcd8; border-radius:10px; padding:16px 20px; }
   .warn b { color:var(--accent2); }
+
   footer { border-top:1px solid var(--border); padding: 34px 0; font-size:14px; color:var(--muted); }
-  @media (max-width: 640px) { h1 { font-size:32px; } .btn { width:100%; } }
+  footer a { color:var(--muted); }
+
+  @media (max-width: 640px) {
+    h1 { font-size:30px; }
+    .hero p.sub { font-size:17px; }
+    .btn { width:100%; text-align:center; }
+    header.top .wrap { flex-wrap:wrap; }
+    .gh-badge { margin-left:0; }
+    section { padding:40px 0; }
+  }
 </style>
 </head>
 <body>
@@ -50,10 +96,14 @@
 <header class="top">
   <div class="wrap">
     <div class="logo">Net<span>Max</span></div>
-    <nav style="margin-left:auto">
+    <a class="gh-badge" href="https://github.com/mubasharali24428-crypto/netmax" target="_blank">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+    <nav>
       <a href="#install">Install</a>
       <a href="#tools">Tools</a>
-      <a href="#buy">Founding License</a>
+      <a href="#buy">Buy $29</a>
       <a href="#faq">FAQ</a>
     </nav>
   </div>
@@ -61,133 +111,139 @@
 
 <section class="hero">
   <div class="wrap">
-    <h1>Network diagnostics for <br>AI coding agents.</h1>
-    <p class="sub">NetMax gives your agents real network measurements — speed, DNS ranking, bufferbloat,
-    jitter, packet loss, WiFi — <b>local-first, honest limits</b>. No cloud, no accounts,
-    no promises bigger than your ISP cap.</p>
+    <h1>Network diagnostics for<br>AI coding agents.</h1>
+    <p class="sub">14 tools your AI agent can call directly — speed test, DNS ranking, bufferbloat,
+      WiFi, jitter, packet loss. <b>Local-first, honest limits, open source.</b> One install.</p>
     <div class="cta-row">
       <a class="btn" href="#buy">Get the desktop app — $29</a>
       <a class="btn ghost" href="#install">Try the MCP server (free)</a>
     </div>
-    <p class="note">14 tools · macOS 13+ (Apple Silicon &amp; Intel) · Node ≥18 + Python 3.10</p>
+    <p class="note"><code class="inline">npx @netmax/mcp-server</code> &nbsp;·&nbsp; Works in Claude Code, Cursor, Codex, Gemini &amp; more
+    &nbsp;·&nbsp; macOS 13+, Apple Silicon &amp; Intel</p>
   </div>
-<section id="install">
+</section>
+
+<section class="alt" id="install">
   <div class="wrap">
-    <h2>Install</h2>
-    <h3>Desktop app (macOS menu bar)</h3>
-    <pre>brew tap mubasharali24428-crypto/netmax
-brew install --cask netmax</pre>
-    <p class="note">Homebrew 6+ may ask: <code class="inline">brew trust mubasharali24428-crypto/netmax/netmax</code>
-    &nbsp;·&nbsp; Or download the
-    <a href="https://github.com/mubasharali24428-crypto/netmax/releases/tag/v1.0.0">v1.0.0 DMG</a>
-    &nbsp;·&nbsp; See <a href="https://github.com/mubasharali24428-crypto/netmax">GitHub</a></p>
-    <h3>MCP server (free, for any coding agent)</h3>
-    <pre>npx -y @netmax/mcp-server        # any npx-compatible harness
-claude mcp add netmax -- npx -y @netmax/mcp-server   # Claude Code</pre>
-    <p class="note">Works in Claude Code, Codex, Cursor, Gemini, LM Studio, DSH, Continue &amp; more.
-    Full matrix: <a href="https://github.com/mubasharali24428-crypto/netmax/blob/main/desktop/README.md">README</a></p>
+    <h2>Install in 10 seconds</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>MCP server (free — any harness)</h3>
+        <pre><span class="prompt">$</span> <span class="cmd">npx -y @netmax/mcp-server</span>
+<span class="out">NetMax MCP server v1.0.3
+  Engine root: .../engine
+  Python:      /usr/bin/python3
+  Tools:       14 registered
+NetMax MCP server running on stdio</span></pre>
+        <p class="note">Also: <code class="inline">claude mcp add netmax -- npx -y @netmax/mcp-server</code></p>
+      </div>
+      <div class="card">
+        <h3>Desktop app (macOS menu bar)</h3>
+        <pre><span class="prompt">$</span> <span class="cmd">brew tap mubasharali24428-crypto/netmax</span>
+<span class="prompt">$</span> <span class="cmd">brew install --cask netmax</span>
+<span class="out">&#x1f4e5; NetMax Desktop 1.0.0 installed</span></pre>
+        <p class="note">Or <a href="https://github.com/mubasharali24428-crypto/netmax/releases">download the DMG</a></p>
+      </div>
+    </div>
   </div>
 </section>
 
 <section id="tools">
   <div class="wrap">
     <h2>What your agents can measure</h2>
-    <div>
-      <span class="toolchip">measure_speed</span><span class="toolchip">dns_ranking</span>
-      <span class="toolchip">bufferbloat</span><span class="toolchip">upload_speed</span>
-      <span class="toolchip">packet_loss</span><span class="toolchip">jitter</span>
-      <span class="toolchip">wifi_info</span><span class="toolchip">download_file</span>
-      <span class="toolchip">eco_bloat</span><span class="toolchip">full_diagnostics</span>
-      <span class="toolchip">diagnostic_summary</span><span class="toolchip">boost</span>
-      <span class="toolchip">parallel_diagnostics</span><span class="toolchip">session_info</span>
+    <p class="sub" style="margin-bottom:20px">All 14 tools available through any MCP harness — no setup, no accounts.</p>
+    <div style="margin-bottom:24px">
+      <span class="toolchip">measure_speed</span>
+      <span class="toolchip">dns_ranking</span>
+      <span class="toolchip">bufferbloat</span>
+      <span class="toolchip">upload_speed</span>
+      <span class="toolchip">packet_loss</span>
+      <span class="toolchip">jitter</span>
+      <span class="toolchip">wifi_info</span>
+      <span class="toolchip">download_file</span>
+      <span class="toolchip">eco_bloat</span>
+      <span class="toolchip">full_diagnostics</span>
+      <span class="toolchip">diagnostic_summary</span>
+      <span class="toolchip">boost</span>
+      <span class="toolchip">parallel_diagnostics</span>
+      <span class="toolchip">session_info</span>
     </div>
-    <div class="grid" style="margin-top:28px">
-      <div class="card"><h3>Local-first</h3><p>Everything runs on your machine. Your history and
-      measurements never leave it — nothing to sign up for, nothing to sync.</p></div>
-      <div class="card"><h3>Honest limits</h3><p>NetMax grades against your real ISP cap and says so.
-      It will never tell you "1 Gbps" on a 100 Mbps plan.</p></div>
-      <div class="card"><h3>Agent-native</h3><p>Agents call the tools directly in your terminal
-      workflow — and the menu bar keeps watch between commands.</p></div>
+    <div class="grid">
+      <div class="card"><h3>Local-first</h3><p>Everything runs on your machine. No cloud, no accounts, no telemetry. Your measurements never leave your Mac.</p></div>
+      <div class="card"><h3>Honest limits</h3><p>NetMax grades against your real ISP cap. It won't tell you "1 Gbps" on a 100 Mbps plan — ever.</p></div>
+      <div class="card"><h3>Agent-native</h3><p>Your AI agent calls the tools directly in your terminal workflow. The menu bar keeps watch between commands.</p></div>
+      <div class="card"><h3>Zero bloat</h3><p>32 KB Node.js server + 76 KB Python engine — pure stdlib, no dependencies, no Docker, no containers.</p></div>
     </div>
   </div>
 </section>
-</section>
-<section id="buy">
+
+<section class="alt" id="buy">
   <div class="wrap">
     <h2>The Founding License — $29</h2>
-    <p class="sub">One-time, for life. We're pre-revenue: this is how we fund the
-    Apple Developer account that notarizes the build (<b>read the honest box below</b>).</p>
+    <p class="sub">One-time payment. Pro tier access. Funds the Apple Developer account that notarizes the build (<a href="#honest">read how</a>).</p>
     <div class="grid">
       <div class="card">
         <p class="price">$29 <small>one-time</small></p>
         <ul class="check">
-          <li>Serial-monitoring &amp; watch alerts (Pro tier)</li>
-          <li>Scheduled reports &amp; PDF/ISP report card</li>
-          <li>History &amp; exports</li>
-          <li>Free updates — 1.x included</li>
+          <li>Serial monitoring &amp; watch alerts (Pro tier)</li>
+          <li>Scheduled reports &amp; PDF report card</li>
+          <li>Full history &amp; CSV/JSON exports</li>
+          <li>All 1.x updates included</li>
         </ul>
-        <p><a class="btn" href="https://mubasharali03.gumroad.com/l/yzkuez" rel="nofollow">Buy Founding License</a></p>
+        <p style="margin-top:16px"><a class="btn" href="https://mubasharali03.gumroad.com/l/yzkuez" rel="nofollow">Buy Founding License</a></p>
+        <p class="note">14-day free trial. 30-day refund.</p>
       </div>
       <div class="card">
         <p class="price" style="font-size:30px">Free <small>forever</small></p>
         <ul class="check">
-          <li>The MCP server — all 14 tools</li>
-          <li>On-demand tests &amp; grade</li>
+          <li>MCP server — all 14 tools</li>
+          <li>On-demand speed tests &amp; diagnostics</li>
           <li>Open source engine (MIT)</li>
         </ul>
+        <p style="margin-top:16px"><a class="btn ghost small" href="#install">Get started</a></p>
       </div>
     </div>
   </div>
 </section>
 
-<section>
+<section id="honest">
   <div class="wrap">
     <div class="warn">
       <b>Honest, up front:</b> the current build is <b>ad-hoc signed, not notarized</b>. Notarization
       requires the Apple Developer Program ($99/yr), which we are funding entirely from Founding License
       sales — it's the whole point of this offer. Until it's funded:
       (1) your Mac shows a one-time "unidentified developer" confirmation (Homebrew installs are
-      unaffected beyond that), and (2) the Founding License is <b>fully refundable at any time</b>
+      unaffected), and (2) the Founding License is <b>fully refundable at any time</b>
       until the notarized build ships — no questions, no expiry. Refund = email
       <code class="inline">mubasharalikhowaja&#64;gmail.com</code> with your order number.
     </div>
   </div>
 </section>
+
 <section id="faq">
   <div class="wrap">
     <h2>FAQ</h2>
     <div class="grid">
-      <div class="card"><h3>Is this a scam / vaporware?</h3>
-      <p>The product is real and shippable today: 14 tools, 190+ passing tests, MIT-licensed engine,
-      published npm package (<code class="inline">@netmax/mcp-server</code>). The only thing pending is
-      Apple's $99 notarization, which is what the Founding License funds — with a refund guarantee
-      until it ships.</p></div>
-      <div class="card"><h3>Why $29, not $8/mo?</h3>
-      <p>We started with subscriptions in the docs, but one-time for a utility is what the market
-      actually pays. Monthly plans may come later — existing licenses keep 1.x updates free.</p></div>
+      <div class="card"><h3>Is this a scam?</h3>
+      <p>No. 14 tools, 192 passing tests, MIT-licensed engine, published npm package. The only thing pending is Apple's $99 notarization — which the Founding License funds with a full refund guarantee.</p></div>
+      <div class="card"><h3>Why $29 instead of $8/mo?</h3>
+      <p>One-time for a utility is what the market pays. Subscriptions may come later — existing licenses keep 1.x updates free.</p></div>
       <div class="card"><h3>Windows / Linux / CI?</h3>
-      <p>The MCP server (Node) and engine (Python + curl) run anywhere. The desktop GUI is macOS-only
-      and will stay that way until sales prove demand. We are not porting SwiftUI in 2026.</p></div>
-      <div class="card"><h3>Mobile app?</h3>
-      <p>Not a product. A phone companion might happen only if Pro adoption justifies it — and only as
-      a companion, never a standalone pivot.</p></div>
-      <div class="card"><h3>What's your privacy story?</h3>
-      <p>Local-first. No telemetry, no accounts, no cloud. The app cannot upload your network data —
-      there is no server component.</p></div>
-      <div class="card"><h3>License keys?</h3>
-      <p>Lemon Squeezy issues a key on purchase; the desktop app validates it offline. Piracy is
-      possible and expected — we'd rather lose keys to pirates than lose trust by overclaiming.</p></div>
+      <p>The MCP server (Node) and engine (Python + curl) run anywhere. The desktop GUI is macOS-only and will stay that way until sales prove demand.</p></div>
+      <div class="card"><h3>License keys &amp; piracy?</h3>
+      <p>Gumroad issues a key on purchase; the app validates it offline. Piracy is trivially easy and we accept it — we'd rather lose keys to pirates than lose trust by overclaiming.</p></div>
     </div>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
-    © 2026 NetMax · MIT-licensed engine ·
-    <a href="https://github.com/mubasharali24428-crypto/netmax">GitHub</a> ·
-    <a href="https://www.npmjs.com/package/@netmax/mcp-server">npm</a> ·
-    <a href="https://github.com/mubasharali24428-crypto/netmax/blob/main/LICENSE">LICENSE</a> ·
-    Refunds: email <code class="inline">mubasharalikhowaja&#64;gmail.com</code> anytime until notarized v1.0 ships.
+    &copy; 2026 NetMax &middot;
+    <a href="https://github.com/mubasharali24428-crypto/netmax">GitHub</a> &middot;
+    <a href="https://www.npmjs.com/package/@netmax/mcp-server">npm</a> &middot;
+    <a href="https://github.com/mubasharali24428-crypto/netmax/blob/main/LICENSE">MIT License</a><br>
+    Refunds: <code class="inline">mubasharalikhowaja&#64;gmail.com</code> &middot;
+    Built by a solo dev in Pakistan &#x1f1f5;&#x1f1f0;
   </div>
 </footer>
 
