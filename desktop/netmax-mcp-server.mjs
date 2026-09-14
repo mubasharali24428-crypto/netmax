@@ -277,7 +277,7 @@ async function runTool(mode, fn) {
 function buildServer() {
   const server = new McpServer({
     name: "netmax-mcp-server",
-    version: "1.0.4",
+    version: "1.0.5",
     description: "NetMax Desktop network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
   });
 
@@ -667,7 +667,7 @@ async function main() {
   const httpMode = process.argv.includes("--http") || /^(1|true|yes)$/i.test(process.env.NETMAX_HTTP || "");
 
   if (!httpMode) {
-    console.error(`NetMax MCP server v1.0.4 (stdio)`);
+    console.error(`NetMax MCP server v1.0.5 (stdio)`);
     console.error(`  Engine root: ${ENGINE_ROOT}`);
     console.error(`  Python:      ${PYTHON}`);
     console.error(`  Bridge:      ${HAS_BRIDGE ? BRIDGE : "none (direct mode)"}`);
@@ -717,7 +717,7 @@ async function main() {
   });
 
   httpServer.listen(port, host, () => {
-    console.error(`NetMax MCP server v1.0.4 (web) — Streamable HTTP`);
+    console.error(`NetMax MCP server v1.0.5 (web) — Streamable HTTP`);
     console.error(`  Endpoint:     http://${host === "127.0.0.1" ? "localhost" : host}:${port}/mcp`);
     console.error(`  Engine root:  ${ENGINE_ROOT}`);
     console.error(`  Auth:         ${token ? "bearer token (NETMAX_TOKEN)" : "none (localhost only)"}`);
