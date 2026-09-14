@@ -33,13 +33,46 @@ class TestPull:
 
         def fake_run(argv, **kwargs):
             calls.append(argv)
-            return FakeProc("123456", "", 28)  # curl timeout code is fine — bytes count
+            # New write-out: "http_code size_download"; exit 28 = our time cap.
+            return FakeProc("200 123456", "", 28)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
         assert netmax._pull(5) == 123456
         assert len(calls) == 1
         assert calls[0][0] == "curl"
         assert "--max-time" in calls[0]
+        # UX-FIX: status validation is wired into the curl invocation itself
+        assert any("%{http_code}" in a for a in calls[0])
+
+    def test_falls_back_to_second_endpoint_on_rate_limit(self, monkeypatch):
+        """UX-FIX acceptance: a 429 with a non-empty body must NOT count as data.
+
+        Pre-fix this exact shape (exit 0, size_download=162) was returned as
+        bytes and fabricated negative headroom in the default boost run.
+        """
+        seen = []
+
+        def fake_run(argv, **kwargs):
+            seen.append(argv[-1])
+            if "ovh.net" in argv[-1]:
+                # curl exit 0, 2-field write-out, HTTP 429 + 162B error body
+                return FakeProc("429 162", "", 0)
+            return FakeProc("200 999", "", 0)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert netmax._pull(5) == 999
+        assert len(seen) == len(netmax.ENDPOINTS)
+
+    def test_429_on_every_endpoint_raises_instead_of_returning_bytes(
+        self, monkeypatch
+    ):
+        """UX-FIX acceptance: all-429 must fail loudly with the HTTP code visible."""
+        monkeypatch.setattr(
+            subprocess, "run",
+            lambda argv, **kw: FakeProc("429 162", "", 0),
+        )
+        with pytest.raises(netmax.NetMaxError, match=r"HTTP 429"):
+            netmax._pull(5)
 
     def test_falls_back_to_second_endpoint_on_empty_body(self, monkeypatch):
         seen = []
@@ -47,8 +80,9 @@ class TestPull:
         def fake_run(argv, **kwargs):
             seen.append(argv[-1])
             if "ovh.net" in argv[-1]:
-                return FakeProc("0", "403 Forbidden", 0)  # CF-style block on OVH slot
-            return FakeProc("999", "", 0)
+                # 200 but zero bytes delivered
+                return FakeProc("200 0", "403 Forbidden", 0)
+            return FakeProc("200 999", "", 0)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
         assert netmax._pull(5) == 999
@@ -68,6 +102,19 @@ class TestPull:
             lambda argv, **kw: FakeProc("not-a-number", "", 0),
         )
         # first endpoint gives garbage → falls through → all fail
+        with pytest.raises(netmax.NetMaxError):
+            netmax._pull(5)
+
+    def test_old_single_field_writeout_is_rejected(self, monkeypatch):
+        """Guard against resurrecting the pre-fix curl write-out.
+
+        The write-out MUST request http_code first — a bare %{size_download}
+        is exactly how rate-limit bodies counted as throughput.
+        """
+        monkeypatch.setattr(
+            subprocess, "run",
+            lambda argv, **kw: FakeProc("5000000", "", 28),  # old format: no code
+        )
         with pytest.raises(netmax.NetMaxError):
             netmax._pull(5)
 
@@ -289,10 +336,25 @@ class TestCli:
 class TestReporting:
     def test_boost_prints_dropout_notice_on_dead_link(self, capsys, monkeypatch):
         monkeypatch.setattr(netmax, "throughput", lambda streams, seconds: (0.0, 0.0))
-        netmax.run_boost(8, 10)
+        # UX-FIX: dropout is now a NetMaxError (exit 1 via main), not a silent
+        # success — the bridge envelope must carry success=false for MCP.
+        with pytest.raises(netmax.NetMaxError, match="measurement unreliable"):
+            netmax.run_boost(8, 10)
         out = capsys.readouterr().out
         assert "connection dropped mid-measurement" in out
         assert "%" not in out.split("Result")[1]
+
+    def test_boost_dead_link_seen_as_failure_by_cli(self, capsys, monkeypatch):
+        """UX-FIX acceptance: netmax boost on a dead link exits non-zero.
+
+        Pre-fix: exit 0 + prose meant MCP reported a successful 0.0 Mbps run.
+        """
+        monkeypatch.setattr(
+            netmax, "throughput", lambda streams, seconds: (0.0, 0.0)
+        )
+        with pytest.raises(SystemExit) as excinfo:
+            netmax.main(["boost", "--streams", "8", "--seconds", "10"])
+        assert excinfo.value.code == 1
 
     def test_boost_prints_gain_when_link_alive(self, capsys, monkeypatch):
         speeds = iter([(50.0, 60.0), (75.0, 90.0)])
@@ -347,7 +409,7 @@ class TestEndpointsFallbackOrder:
         urls = []
         monkeypatch.setattr(subprocess, "run",
                             lambda argv, **kw: (urls.append(argv[-1]),
-                                                FakeProc("5", "", 0))[1])
+                                                FakeProc("200 5", "", 0))[1])
         monkeypatch.setattr(netmax.random, "getrandbits", lambda n: 42)
         netmax._pull(5)
         assert "{cb}" not in urls[0]  # OVH template has no placeholder
@@ -355,7 +417,8 @@ class TestEndpointsFallbackOrder:
 
     def test_cloudflare_template_receives_cache_buster(self, monkeypatch):
         urls = []
-        replies = iter([FakeProc("0", "", 0), FakeProc("7", "", 0)])  # OVH fails, CF works
+        # OVH fails (HTTP 403 body), CF works — new 2-field write-out format
+        replies = iter([FakeProc("403 0", "", 0), FakeProc("200 7", "", 0)])
 
         def fake_run(argv, **kw):
             urls.append(argv[-1])

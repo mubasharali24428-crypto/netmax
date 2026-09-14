@@ -201,6 +201,75 @@ function extractValue(text, pattern) {
   return match ? parseFloat(match[1]) : null;
 }
 
+// ── UX-FIX response shaping (P0) ─────────────────────────────────────────────
+//
+// Contract for every tool result, success or failure:
+//   1. First text line is always STATUS: OK or STATUS: FAILED — agents can
+//      branch on line one without regex-ing prose.
+//   2. structuredContent carries machine-readable fields (status, mode,
+//      durationMs, data) so harnesses that read it skip parsing text.
+//   3. A failed run ALWAYS sets isError:true — clients ignore prose, but
+//      isError is surfaced as a tool error by every major harness.
+
+/** True when an engine success envelope actually contains a dead reading. */
+function looksLikeDeadMeasurement(text) {
+  return /connection dropped mid-measurement|measurement unreliable/i.test(text);
+}
+
+/**
+ * Shape a successful tool result: STATUS header, human text, structured copy.
+ * mode names the measurement; data is the machine-readable payload.
+ */
+function okResult(mode, text, data = {}) {
+  return {
+    content: [{ type: "text", text: `STATUS: OK\n${text}` }],
+    structuredContent: {
+      status: "OK",
+      mode,
+      durationMs: data?._callDurationMs ?? null,
+      timestamp: data?._callTimestamp ?? new Date().toISOString(),
+      data,
+    },
+  };
+}
+
+/** Shape a failed tool result with isError set (see contract above). */
+function failResult(mode, reason) {
+  return {
+    content: [{ type: "text", text: `STATUS: FAILED\n${reason}` }],
+    structuredContent: {
+      status: "FAILED",
+      mode,
+      durationMs: null,
+      timestamp: new Date().toISOString(),
+      error: String(reason).slice(0, 600),
+    },
+    isError: true,
+  };
+}
+
+/**
+ * Wrap a bridge/direct engine call into the shaped contract.
+ * Handles: envelope failure, engine-error text, dead-measurement prose.
+ */
+async function runTool(mode, fn) {
+  let envelope;
+  try {
+    envelope = await fn();
+  } catch (err) {
+    return failResult(mode, `engine invocation failed: ${err.message}`);
+  }
+  if (!envelope || envelope.success === false) {
+    return failResult(mode, envelope?.error || "engine reported failure");
+  }
+  const raw = envelope?.data?.raw ?? envelope?.data ?? envelope?.raw ?? "";
+  const text = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
+  if (looksLikeDeadMeasurement(text)) {
+    return failResult(mode, text);
+  }
+  return okResult(mode, text, envelope.data ?? raw);
+}
+
 // ── Server ──────────────────────────────────────────────────────────────────
 
 const server = new McpServer({
@@ -224,28 +293,7 @@ server.tool(
     if (mode !== "baseline") args.push("--streams", String(streams));
     if (mode !== "dns") args.push("--seconds", String(seconds));
 
-    const envelope = await runViaBridge(mode, args);
-
-    if (!envelope.success) {
-      return {
-        content: [{ type: "text", text: `Speed test failed: ${envelope.error || "Unknown error"}` }],
-        isError: true,
-      };
-    }
-
-    // Format the data nicely
-    const data = envelope.data || {};
-    const rawText = data.raw || data;
-    return {
-      content: [
-        {
-          type: "text",
-          text: typeof rawText === "string"
-            ? rawText
-            : JSON.stringify(rawText, null, 2),
-        },
-      ],
-    };
+    return runTool(`measure_speed (${mode})`, () => runViaBridge(mode, args));
   }
 );
 
@@ -255,23 +303,7 @@ server.tool(
   "dns_ranking",
   "Rank public DNS resolvers (Cloudflare 1.1.1.1, Google 8.8.8.8, Quad9 9.9.9.9) by median latency — finds the fastest resolver for your location.",
   {},
-  async () => {
-    const envelope = await runViaBridge("dns");
-    if (!envelope.success) {
-      return {
-        content: [{ type: "text", text: `DNS ranking failed: ${envelope.error || "Unknown error"}` }],
-        isError: true,
-      };
-    }
-    const data = envelope.data || {};
-    const rawText = data.raw || data;
-    return {
-      content: [{
-        type: "text",
-        text: typeof rawText === "string" ? rawText : JSON.stringify(rawText, null, 2),
-      }],
-    };
-  }
+  async () => runTool("dns_ranking", () => runViaBridge("dns"))
 );
 
 // ── Tool: bufferbloat ───────────────────────────────────────────────────────
@@ -283,23 +315,9 @@ server.tool(
     streams: z.number().int().min(1).max(50).default(8).describe("Parallel download streams to load the connection"),
     seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration in seconds"),
   },
-  async ({ streams, seconds }) => {
-    const envelope = await runViaBridge("bloat", ["--streams", String(streams), "--seconds", String(seconds)]);
-    if (!envelope.success) {
-      return {
-        content: [{ type: "text", text: `Bufferbloat test failed: ${envelope.error || "Unknown error"}` }],
-        isError: true,
-      };
-    }
-    const data = envelope.data || {};
-    const rawText = data.raw || data;
-    return {
-      content: [{
-        type: "text",
-        text: typeof rawText === "string" ? rawText : JSON.stringify(rawText, null, 2),
-      }],
-    };
-  }
+  async ({ streams, seconds }) =>
+    runTool("bufferbloat", () =>
+      runViaBridge("bloat", ["--streams", String(streams), "--seconds", String(seconds)]))
 );
 
 // ── Tool: full_diagnostics ──────────────────────────────────────────────────
@@ -311,23 +329,9 @@ server.tool(
     streams: z.number().int().min(1).max(50).default(8).describe("Parallel streams for turbo/boost"),
     seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration per phase"),
   },
-  async ({ streams, seconds }) => {
-    const envelope = await runViaBridge("full", ["--streams", String(streams), "--seconds", String(seconds)]);
-    if (!envelope.success) {
-      return {
-        content: [{ type: "text", text: `Full diagnostics failed: ${envelope.error || "Unknown error"}` }],
-        isError: true,
-      };
-    }
-    const data = envelope.data || {};
-    const rawText = data.raw || data;
-    return {
-      content: [{
-        type: "text",
-        text: typeof rawText === "string" ? rawText : JSON.stringify(rawText, null, 2),
-      }],
-    };
-  }
+  async ({ streams, seconds }) =>
+    runTool("full_diagnostics", () =>
+      runViaBridge("full", ["--streams", String(streams), "--seconds", String(seconds)]))
 );
 
 // ── Tool: boost ──────────────────────────────────────────────────────────────
@@ -339,34 +343,9 @@ server.tool(
     streams: z.number().int().min(1).max(50).default(8).describe("Number of parallel TCP streams for the turbo phase"),
     seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration per phase in seconds"),
   },
-  async ({ streams, seconds }) => {
-    const envelope = await runViaBridge("boost", ["--streams", String(streams), "--seconds", String(seconds)]);
-
-    if (!envelope.success) {
-      return {
-        content: [{ type: "text", text: `Boost test failed: ${envelope.error || "Unknown error"}` }],
-        isError: true,
-      };
-    }
-
-    const data = envelope.data || {};
-    const rawText = data.raw || data;
-
-    // If it's raw text, return it directly (it already has the formatted output)
-    if (typeof rawText === "string") {
-      return {
-        content: [{ type: "text", text: rawText }],
-      };
-    }
-
-    // Otherwise format structured data
-    return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(rawText, null, 2),
-      }],
-    };
-  }
+  async ({ streams, seconds }) =>
+    runTool("boost", () =>
+      runViaBridge("boost", ["--streams", String(streams), "--seconds", String(seconds)]))
 );
 
 // ── Tool: upload_speed ──────────────────────────────────────────────────────
@@ -377,23 +356,8 @@ server.tool(
   {
     seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration in seconds"),
   },
-  async ({ seconds }) => {
-    const envelope = await runViaBridge("upload", ["--seconds", String(seconds)]);
-    if (!envelope.success) {
-      return {
-        content: [{ type: "text", text: `Upload test failed: ${envelope.error || "Unknown error"}` }],
-        isError: true,
-      };
-    }
-    const data = envelope.data || {};
-    const rawText = data.raw || data;
-    return {
-      content: [{
-        type: "text",
-        text: typeof rawText === "string" ? rawText : JSON.stringify(rawText, null, 2),
-      }],
-    };
-  }
+  async ({ seconds }) =>
+    runTool("upload_speed", () => runViaBridge("upload", ["--seconds", String(seconds)]))
 );
 
 // ── Tool: packet_loss ───────────────────────────────────────────────────────
@@ -404,23 +368,8 @@ server.tool(
   {
     count: z.number().int().min(1).max(100).default(10).describe("Number of ping probes"),
   },
-  async ({ count }) => {
-    const envelope = await runViaBridge("loss", ["--count", String(count)]);
-    if (!envelope.success) {
-      return {
-        content: [{ type: "text", text: `Packet loss test failed: ${envelope.error || "Unknown error"}` }],
-        isError: true,
-      };
-    }
-    const data = envelope.data || {};
-    const rawText = data.raw || data;
-    return {
-      content: [{
-        type: "text",
-        text: typeof rawText === "string" ? rawText : JSON.stringify(rawText, null, 2),
-      }],
-    };
-  }
+  async ({ count }) =>
+    runTool("packet_loss", () => runViaBridge("loss", ["--count", String(count)]))
 );
 
 // ── Tool: jitter ────────────────────────────────────────────────────────────
@@ -431,23 +380,8 @@ server.tool(
   {
     count: z.number().int().min(1).max(100).default(10).describe("Number of ping samples"),
   },
-  async ({ count }) => {
-    const envelope = await runViaBridge("jitter", ["--count", String(count)]);
-    if (!envelope.success) {
-      return {
-        content: [{ type: "text", text: `Jitter test failed: ${envelope.error || "Unknown error"}` }],
-        isError: true,
-      };
-    }
-    const data = envelope.data || {};
-    const rawText = data.raw || data;
-    return {
-      content: [{
-        type: "text",
-        text: typeof rawText === "string" ? rawText : JSON.stringify(rawText, null, 2),
-      }],
-    };
-  }
+  async ({ count }) =>
+    runTool("jitter", () => runViaBridge("jitter", ["--count", String(count)]))
 );
 
 // ── Tool: wifi_info ─────────────────────────────────────────────────────────
@@ -456,23 +390,7 @@ server.tool(
   "wifi_info",
   "Get current WiFi diagnostics: signal strength (RSSI), noise level, channel, and other wireless interface data from system profiler.",
   {},
-  async () => {
-    const envelope = await runViaBridge("wifi");
-    if (!envelope.success) {
-      return {
-        content: [{ type: "text", text: `WiFi info failed: ${envelope.error || "Unknown error"}` }],
-        isError: true,
-      };
-    }
-    const data = envelope.data || {};
-    const rawText = data.raw || data;
-    return {
-      content: [{
-        type: "text",
-        text: typeof rawText === "string" ? rawText : JSON.stringify(rawText, null, 2),
-      }],
-    };
-  }
+  async () => runTool("wifi_info", () => runViaBridge("wifi"))
 );
 
 // ── Tool: download_file (multi-stream accelerator) ─────────────────────────
@@ -490,19 +408,7 @@ server.tool(
     if (output) args.push(output);
     args.push("--streams", String(streams));
 
-    const result = await runEngineDirect(["fetch", ...args]);
-    if (!result.success) {
-      return {
-        content: [{ type: "text", text: `Download failed: ${result.error}` }],
-        isError: true,
-      };
-    }
-    return {
-      content: [{
-        type: "text",
-        text: result.data || "Download completed.",
-      }],
-    };
+    return runTool("download_file", () => runEngineDirect(["fetch", ...args]));
   }
 );
 
@@ -512,21 +418,7 @@ server.tool(
   "eco_bloat",
   "Quick eco-friendly bufferbloat estimate using only ~100 KB of data. Less accurate than the full test but uses negligible bandwidth.",
   {},
-  async () => {
-    const result = await runEngineDirect(["bloat-eco"]);
-    if (!result.success) {
-      return {
-        content: [{ type: "text", text: `Eco bloat estimate failed: ${result.error}` }],
-        isError: true,
-      };
-    }
-    return {
-      content: [{
-        type: "text",
-        text: result.data,
-      }],
-    };
-  }
+  async () => runTool("eco_bloat", () => runEngineDirect(["bloat-eco"]))
 );
 
 // ── Tool: diagnostic_summary ───────────────────────────────────────────────

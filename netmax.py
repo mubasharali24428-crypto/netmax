@@ -51,34 +51,45 @@ def _pull(seconds: float) -> int:
     Tries each endpoint in order until one delivers data; raises NetMaxError
     with per-endpoint diagnostics if none do. Exit code 28 (curl timeout) is
     expected here — every file is far larger than the window by design.
+
+    UX-FIX (P0): the write-out now carries %{http_code} and the sample is
+    accepted only when the server answered 2xx. Before this, a rate-limited
+    429 with a tiny error body (curl exit 0, size_download=162) counted as
+    "downloaded data" and fabricated throughput — a default 8-stream boost
+    reported a bogus -56% headroom on a link with zero real headroom.
     """
     problems: list[str] = []
     for name, template in ENDPOINTS:
         url = template.format(cb=random.getrandbits(64))
         proc = subprocess.run(
-            ["curl", "-sS", "-o", "/dev/null", "-w", "%{size_download}",
+            ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code} %{size_download}",
              "--max-time", str(seconds), url],
             capture_output=True, text=True,
         )
-        try:
-            received = int(proc.stdout.strip())
-        except ValueError:
-            received = 0
-            body_hint = proc.stdout.strip()[:120]
+        fields = proc.stdout.strip().split()
+        if len(fields) == 2 and fields[0].isdigit() and fields[1].isdigit():
+            http_code, received = int(fields[0]), int(fields[1])
         else:
-            body_hint = None
+            http_code, received = None, 0
         # curl exit 28 = our own time cap (expected); 0 = clean finish.
         # Anything else (TLS reset, HTTP error, DNS fail) invalidates even a
         # partial byte count — counting it would fabricate throughput.
-        if received > 0 and proc.returncode in (0, 28):
+        if proc.returncode not in (0, 28):
+            problems.append(
+                f"{name}: {proc.stderr.strip() or f'curl exit {proc.returncode} after {received}B'}"
+            )
+            continue
+        # HTTP status must be 2xx — a 4xx/5xx body (rate-limit page, block
+        # page, error JSON) is never throughput, whatever its size.
+        if http_code is None or not 200 <= http_code < 300:
+            problems.append(
+                f"{name}: HTTP {http_code if http_code is not None else 'unparseable'} "
+                f"({received}B body — not counted as data)"
+            )
+            continue
+        if received > 0:
             return received
-        detail = proc.stderr.strip() or (
-            f"curl exit {proc.returncode} after {received}B"
-            if proc.returncode not in (0, 28)
-            else f"unparseable body: {body_hint!r}" if body_hint
-            else f"http body {received}B"
-        )
-        problems.append(f"{name}: {detail}")
+        problems.append(f"{name}: 2xx but empty body ({proc.stdout.strip()[:60]!r})")
     raise NetMaxError("all speed endpoints failed — " + "; ".join(problems))
 
 
@@ -279,8 +290,14 @@ def run_boost(streams: int, seconds: int) -> None:
     turbo = run_turbo(streams, seconds)
     _hr("Result")
     if base <= 0.5 or turbo <= 0.5:
+        # UX-FIX (P0): a near-zero reading is a FAILED measurement, not a
+        # "0.0 Mbps success". Exit 1 so the bridge envelope carries
+        # success=false and MCP clients see isError instead of prose.
         print("connection dropped mid-measurement — rerun once the link is stable.")
-        return
+        raise NetMaxError(
+            f"measurement unreliable (baseline {base:.2f} / turbo {turbo:.2f} Mbps) "
+            "— link dropped mid-measurement; rerun once stable"
+        )
     gain = (turbo / base - 1) * 100
     print(f"headroom unlocked: {gain:+.0f}%  ({base:.1f} → {turbo:.1f} Mbps)")
     if gain < 10:
