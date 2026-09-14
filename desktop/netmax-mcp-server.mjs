@@ -639,25 +639,23 @@ function buildServer() {
       else if (minutes > 0) uptimeStr = `${minutes}m ${seconds % 60}s`;
       else uptimeStr = `${seconds}s`;
 
-      return {
-        content: [{
-          type: "text",
-          text: [
-            "=== MCP Server Session Info ===",
-            "",
-            `Server started:  ${SERVER_START.toISOString()}`,
-            `Uptime:          ${uptimeStr}`,
-            `Tool calls:      ${toolCallCount}`,
-            `Server process:  PID ${process.pid}`,
-            `Node version:    ${process.version}`,
-            `Platform:        ${process.platform} ${process.arch}`,
-            "",
-            "Note: The MCP server lives for the duration of the DSH session.",
-            "When DSH exits, the server is terminated. When DSH restarts,",
-            "a fresh server starts with a clean session counter.",
-          ].join("\n"),
-        }],
-      };
+      return okResult("session_info", [
+        "=== MCP Server Session Info ===",
+        "",
+        `Server started:  ${SERVER_START.toISOString()}`,
+        `Uptime:          ${uptimeStr}`,
+        `Tool calls:      ${toolCallCount}`,
+        `Server process:  PID ${process.pid}`,
+        `Node version:    ${process.version}`,
+        `Platform:        ${process.platform} ${process.arch}`,
+      ].join("\n"), {
+        serverStarted: SERVER_START.toISOString(),
+        uptimeSeconds: seconds,
+        toolCalls: toolCallCount,
+        pid: process.pid,
+        node: process.version,
+        platform: `${process.platform} ${process.arch}`,
+      });
     }
   );
   return server;
