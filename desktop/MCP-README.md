@@ -36,6 +36,28 @@ node netmax-mcp-server.mjs
 
 Then connect any MCP client (Claude Code, Cursor, etc.) via stdio or HTTP.
 
+## Web MCP (Streamable HTTP) — new in 1.0.4
+
+Same server, web transport — no stdio wiring needed. Point any MCP client
+that supports remote servers (Claude, Cursor, DSH, inspectors) at a URL:
+
+```bash
+npx -y @netmax/mcp-server@latest --http          # http://127.0.0.1:8808/mcp
+NETMAX_PORT=9000 npx -y @netmax/mcp-server --http # custom port
+```
+
+Client config (Claude / Cursor / DSH remote MCP):
+
+```json
+{ "url": "http://127.0.0.1:8808/mcp" }
+```
+
+- Default bind is **loopback** — the engine measures *this machine's* network,
+  so hosting it remotely would measure the datacenter's pipe, not yours.
+- `NETMAX_HOST=0.0.0.0` opens it to the LAN (pair with the token).
+- `NETMAX_TOKEN=<secret>` requires `Authorization: Bearer <secret>` on every
+  request (401 otherwise). Use it whenever the bind is not loopback.
+
 ## Wire into DSH
 
 Already done! The web profile at `~/.dsh/profiles/web/cordis.patch.yml` has
@@ -52,7 +74,7 @@ npx @modelcontextprotocol/inspector node /Users/user/netmax-app/desktop/netmax-m
 
 ```
 AI Agent (DSH)  →  MCP Client Plugin  →  netmax-mcp-server.mjs  →  Python engine
-                                (stdio transport)         (same netmax.py GUI uses)
+                     (stdio, or Streamable HTTP with --http)   (same netmax.py GUI uses)
 ```
 
 The MCP server is a thin bridge — it translates MCP tool calls into

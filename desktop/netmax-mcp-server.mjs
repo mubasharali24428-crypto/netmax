@@ -272,406 +272,462 @@ async function runTool(mode, fn) {
 
 // ── Server ──────────────────────────────────────────────────────────────────
 
-const server = new McpServer({
-  name: "netmax-mcp-server",
-  version: "1.0.3",
-  description: "NetMax Desktop network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
-});
+// ── Server factory (one instance per transport lifetime) ─────────────────
 
-// ── Tool: measure_speed ─────────────────────────────────────────────────────
+function buildServer() {
+  const server = new McpServer({
+    name: "netmax-mcp-server",
+    version: "1.0.4",
+    description: "NetMax Desktop network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
+  });
 
-server.tool(
-  "measure_speed",
-  "Run a network speed test — measures download throughput with 1 or more parallel streams. Use 'boost' mode to see baseline vs multi-stream gain.",
-  {
-    mode: z.enum(["baseline", "turbo", "boost"]).default("boost").describe("baseline=1 stream, turbo=N streams, boost=both+gain%"),
-    streams: z.number().int().min(1).max(50).default(8).describe("Number of parallel TCP streams (turbo/boost only)"),
-    seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration in seconds"),
-  },
-  async ({ mode, streams, seconds }) => {
-    const args = [];
-    if (mode !== "baseline") args.push("--streams", String(streams));
-    if (mode !== "dns") args.push("--seconds", String(seconds));
+  // ── Tool: measure_speed ─────────────────────────────────────────────────────
 
-    return runTool(`measure_speed (${mode})`, () => runViaBridge(mode, args));
-  }
-);
+  server.tool(
+    "measure_speed",
+    "Run a network speed test — measures download throughput with 1 or more parallel streams. Use 'boost' mode to see baseline vs multi-stream gain.",
+    {
+      mode: z.enum(["baseline", "turbo", "boost"]).default("boost").describe("baseline=1 stream, turbo=N streams, boost=both+gain%"),
+      streams: z.number().int().min(1).max(50).default(8).describe("Number of parallel TCP streams (turbo/boost only)"),
+      seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration in seconds"),
+    },
+    async ({ mode, streams, seconds }) => {
+      const args = [];
+      if (mode !== "baseline") args.push("--streams", String(streams));
+      if (mode !== "dns") args.push("--seconds", String(seconds));
 
-// ── Tool: dns_ranking ───────────────────────────────────────────────────────
+      return runTool(`measure_speed (${mode})`, () => runViaBridge(mode, args));
+    }
+  );
 
-server.tool(
-  "dns_ranking",
-  "Rank public DNS resolvers (Cloudflare 1.1.1.1, Google 8.8.8.8, Quad9 9.9.9.9) by median latency — finds the fastest resolver for your location.",
-  {},
-  async () => runTool("dns_ranking", () => runViaBridge("dns"))
-);
+  // ── Tool: dns_ranking ───────────────────────────────────────────────────────
 
-// ── Tool: bufferbloat ───────────────────────────────────────────────────────
+  server.tool(
+    "dns_ranking",
+    "Rank public DNS resolvers (Cloudflare 1.1.1.1, Google 8.8.8.8, Quad9 9.9.9.9) by median latency — finds the fastest resolver for your location.",
+    {},
+    async () => runTool("dns_ranking", () => runViaBridge("dns"))
+  );
 
-server.tool(
-  "bufferbloat",
-  "Measure bufferbloat — how much your latency increases under network load. Grades A+ (excellent) to F (severe). High bufferbloat means web pages lag and video calls stutter when you're downloading.",
-  {
-    streams: z.number().int().min(1).max(50).default(8).describe("Parallel download streams to load the connection"),
-    seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration in seconds"),
-  },
-  async ({ streams, seconds }) =>
-    runTool("bufferbloat", () =>
-      runViaBridge("bloat", ["--streams", String(streams), "--seconds", String(seconds)]))
-);
+  // ── Tool: bufferbloat ───────────────────────────────────────────────────────
 
-// ── Tool: full_diagnostics ──────────────────────────────────────────────────
+  server.tool(
+    "bufferbloat",
+    "Measure bufferbloat — how much your latency increases under network load. Grades A+ (excellent) to F (severe). High bufferbloat means web pages lag and video calls stutter when you're downloading.",
+    {
+      streams: z.number().int().min(1).max(50).default(8).describe("Parallel download streams to load the connection"),
+      seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration in seconds"),
+    },
+    async ({ streams, seconds }) =>
+      runTool("bufferbloat", () =>
+        runViaBridge("bloat", ["--streams", String(streams), "--seconds", String(seconds)]))
+  );
 
-server.tool(
-  "full_diagnostics",
-  "Run the full NetMax diagnostic suite: speed test (baseline+boost), DNS ranking, bufferbloat grade, and TCP tuning notes in one shot.",
-  {
-    streams: z.number().int().min(1).max(50).default(8).describe("Parallel streams for turbo/boost"),
-    seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration per phase"),
-  },
-  async ({ streams, seconds }) =>
-    runTool("full_diagnostics", () =>
-      runViaBridge("full", ["--streams", String(streams), "--seconds", String(seconds)]))
-);
+  // ── Tool: full_diagnostics ──────────────────────────────────────────────────
 
-// ── Tool: boost ──────────────────────────────────────────────────────────────
+  server.tool(
+    "full_diagnostics",
+    "Run the full NetMax diagnostic suite: speed test (baseline+boost), DNS ranking, bufferbloat grade, and TCP tuning notes in one shot.",
+    {
+      streams: z.number().int().min(1).max(50).default(8).describe("Parallel streams for turbo/boost"),
+      seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration per phase"),
+    },
+    async ({ streams, seconds }) =>
+      runTool("full_diagnostics", () =>
+        runViaBridge("full", ["--streams", String(streams), "--seconds", String(seconds)]))
+  );
 
-server.tool(
-  "boost",
-  "Run baseline + turbo parallel-stream speed test and compute the gain percentage — shows how much headroom your connection has under contention. Higher gain = more room to improve with multi-stream downloads.",
-  {
-    streams: z.number().int().min(1).max(50).default(8).describe("Number of parallel TCP streams for the turbo phase"),
-    seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration per phase in seconds"),
-  },
-  async ({ streams, seconds }) =>
-    runTool("boost", () =>
-      runViaBridge("boost", ["--streams", String(streams), "--seconds", String(seconds)]))
-);
+  // ── Tool: boost ──────────────────────────────────────────────────────────────
 
-// ── Tool: upload_speed ──────────────────────────────────────────────────────
+  server.tool(
+    "boost",
+    "Run baseline + turbo parallel-stream speed test and compute the gain percentage — shows how much headroom your connection has under contention. Higher gain = more room to improve with multi-stream downloads.",
+    {
+      streams: z.number().int().min(1).max(50).default(8).describe("Number of parallel TCP streams for the turbo phase"),
+      seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration per phase in seconds"),
+    },
+    async ({ streams, seconds }) =>
+      runTool("boost", () =>
+        runViaBridge("boost", ["--streams", String(streams), "--seconds", String(seconds)]))
+  );
 
-server.tool(
-  "upload_speed",
-  "Measure upload speed to a remote server in Mbps. Useful for checking if your ISP delivers the advertised upload rate.",
-  {
-    seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration in seconds"),
-  },
-  async ({ seconds }) =>
-    runTool("upload_speed", () => runViaBridge("upload", ["--seconds", String(seconds)]))
-);
+  // ── Tool: upload_speed ──────────────────────────────────────────────────────
 
-// ── Tool: packet_loss ───────────────────────────────────────────────────────
+  server.tool(
+    "upload_speed",
+    "Measure upload speed to a remote server in Mbps. Useful for checking if your ISP delivers the advertised upload rate.",
+    {
+      seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration in seconds"),
+    },
+    async ({ seconds }) =>
+      runTool("upload_speed", () => runViaBridge("upload", ["--seconds", String(seconds)]))
+  );
 
-server.tool(
-  "packet_loss",
-  "Measure packet loss percentage. High packet loss causes retransmissions that slow down every connection — checked by pinging a remote server.",
-  {
-    count: z.number().int().min(1).max(100).default(10).describe("Number of ping probes"),
-  },
-  async ({ count }) =>
-    runTool("packet_loss", () => runViaBridge("loss", ["--count", String(count)]))
-);
+  // ── Tool: packet_loss ───────────────────────────────────────────────────────
 
-// ── Tool: jitter ────────────────────────────────────────────────────────────
+  server.tool(
+    "packet_loss",
+    "Measure packet loss percentage. High packet loss causes retransmissions that slow down every connection — checked by pinging a remote server.",
+    {
+      count: z.number().int().min(1).max(100).default(10).describe("Number of ping probes"),
+    },
+    async ({ count }) =>
+      runTool("packet_loss", () => runViaBridge("loss", ["--count", String(count)]))
+  );
 
-server.tool(
-  "jitter",
-  "Measure network jitter — the variance in packet arrival times. High jitter causes stuttering in video calls and online games.",
-  {
-    count: z.number().int().min(1).max(100).default(10).describe("Number of ping samples"),
-  },
-  async ({ count }) =>
-    runTool("jitter", () => runViaBridge("jitter", ["--count", String(count)]))
-);
+  // ── Tool: jitter ────────────────────────────────────────────────────────────
 
-// ── Tool: wifi_info ─────────────────────────────────────────────────────────
+  server.tool(
+    "jitter",
+    "Measure network jitter — the variance in packet arrival times. High jitter causes stuttering in video calls and online games.",
+    {
+      count: z.number().int().min(1).max(100).default(10).describe("Number of ping samples"),
+    },
+    async ({ count }) =>
+      runTool("jitter", () => runViaBridge("jitter", ["--count", String(count)]))
+  );
 
-server.tool(
-  "wifi_info",
-  "Get current WiFi diagnostics: signal strength (RSSI), noise level, channel, and other wireless interface data from system profiler.",
-  {},
-  async () => runTool("wifi_info", () => runViaBridge("wifi"))
-);
+  // ── Tool: wifi_info ─────────────────────────────────────────────────────────
 
-// ── Tool: download_file (multi-stream accelerator) ─────────────────────────
+  server.tool(
+    "wifi_info",
+    "Get current WiFi diagnostics: signal strength (RSSI), noise level, channel, and other wireless interface data from system profiler.",
+    {},
+    async () => runTool("wifi_info", () => runViaBridge("wifi"))
+  );
 
-server.tool(
-  "download_file",
-  "Accelerated file download using multi-stream chunking — splits a ranged HTTP resource into N parallel byte-range chunks for faster transfers.",
-  {
-    url: z.string().url().describe("URL of the file to download"),
-    streams: z.number().int().min(1).max(50).default(8).describe("Number of parallel download streams"),
-    output: z.string().optional().describe("Output filename (default: derived from URL)"),
-  },
-  async ({ url, streams, output }) => {
-    const args = [url];
-    if (output) args.push(output);
-    args.push("--streams", String(streams));
+  // ── Tool: download_file (multi-stream accelerator) ─────────────────────────
 
-    return runTool("download_file", () => runEngineDirect(["fetch", ...args]));
-  }
-);
+  server.tool(
+    "download_file",
+    "Accelerated file download using multi-stream chunking — splits a ranged HTTP resource into N parallel byte-range chunks for faster transfers.",
+    {
+      url: z.string().url().describe("URL of the file to download"),
+      streams: z.number().int().min(1).max(50).default(8).describe("Number of parallel download streams"),
+      output: z.string().optional().describe("Output filename (default: derived from URL)"),
+    },
+    async ({ url, streams, output }) => {
+      const args = [url];
+      if (output) args.push(output);
+      args.push("--streams", String(streams));
 
-// ── Tool: eco_bloat ─────────────────────────────────────────────────────────
+      return runTool("download_file", () => runEngineDirect(["fetch", ...args]));
+    }
+  );
 
-server.tool(
-  "eco_bloat",
-  "Quick eco-friendly bufferbloat estimate using only ~100 KB of data. Less accurate than the full test but uses negligible bandwidth.",
-  {},
-  async () => runTool("eco_bloat", () => runEngineDirect(["bloat-eco"]))
-);
+  // ── Tool: eco_bloat ─────────────────────────────────────────────────────────
 
-// ── Tool: diagnostic_summary ───────────────────────────────────────────────
+  server.tool(
+    "eco_bloat",
+    "Quick eco-friendly bufferbloat estimate using only ~100 KB of data. Less accurate than the full test but uses negligible bandwidth.",
+    {},
+    async () => runTool("eco_bloat", () => runEngineDirect(["bloat-eco"]))
+  );
 
-server.tool(
-  "diagnostic_summary",
-  "Quick network health overview — runs a baseline speed test, DNS ranking, and eco-bufferbloat estimate together. A minimal all-in-one check.",
-  {},
-  async () => {
-    // Run baseline (lightweight — single stream)
-    const speedEnv = await runViaBridge("baseline", ["--seconds", "8"]);
-    const dnsEnv = await runViaBridge("dns");
-    const bloatResult = await runEngineDirect(["bloat-eco"]);
+  // ── Tool: diagnostic_summary ───────────────────────────────────────────────
 
-    const lines = [];
-    lines.push("=== NetMax Quick Diagnostic Summary ===");
-    lines.push("");
+  server.tool(
+    "diagnostic_summary",
+    "Quick network health overview — runs a baseline speed test, DNS ranking, and eco-bufferbloat estimate together. A minimal all-in-one check.",
+    {},
+    async () => {
+      // Run baseline (lightweight — single stream)
+      const speedEnv = await runViaBridge("baseline", ["--seconds", "8"]);
+      const dnsEnv = await runViaBridge("dns");
+      const bloatResult = await runEngineDirect(["bloat-eco"]);
 
-    if (speedEnv.success) {
-      const raw = (speedEnv.data?.raw || speedEnv.data || "");
-      const mbps = extractValue(raw, /([\d.]+)\s*Mbps/);
-      if (mbps !== null) {
-        lines.push(`Throughput:  ${mbps.toFixed(1)} Mbps (single-stream)`);
+      const lines = [];
+      lines.push("=== NetMax Quick Diagnostic Summary ===");
+      lines.push("");
+
+      if (speedEnv.success) {
+        const raw = (speedEnv.data?.raw || speedEnv.data || "");
+        const mbps = extractValue(raw, /([\d.]+)\s*Mbps/);
+        if (mbps !== null) {
+          lines.push(`Throughput:  ${mbps.toFixed(1)} Mbps (single-stream)`);
+        } else {
+          lines.push("Throughput:  " + raw.split("\n").filter(Boolean)[0] || "see below");
+          lines.push(raw);
+        }
       } else {
-        lines.push("Throughput:  " + raw.split("\n").filter(Boolean)[0] || "see below");
-        lines.push(raw);
+        lines.push("Throughput:  Failed — " + (speedEnv.error || "unknown"));
       }
-    } else {
-      lines.push("Throughput:  Failed — " + (speedEnv.error || "unknown"));
+      lines.push("");
+
+      if (dnsEnv.success) {
+        const raw = (dnsEnv.data?.raw || dnsEnv.data || "");
+        lines.push("DNS Ranking:");
+        const dnsLines = typeof raw === "string" ? raw.split("\n").filter(l => l.match(/\d\.|fastest|switching/i)) : [];
+        lines.push(...(dnsLines.length ? dnsLines : [raw]));
+      } else {
+        lines.push("DNS Ranking: Failed");
+      }
+      lines.push("");
+
+      if (bloatResult.success) {
+        lines.push("Bufferbloat:");
+        lines.push(bloatResult.data);
+      } else {
+        lines.push("Bufferbloat: Failed — " + (bloatResult.error || "unknown"));
+      }
+      lines.push("");
+
+      return {
+        content: [{
+          type: "text",
+          text: lines.join("\n"),
+        }],
+      };
     }
-    lines.push("");
+  );
 
-    if (dnsEnv.success) {
-      const raw = (dnsEnv.data?.raw || dnsEnv.data || "");
-      lines.push("DNS Ranking:");
-      const dnsLines = typeof raw === "string" ? raw.split("\n").filter(l => l.match(/\d\.|fastest|switching/i)) : [];
-      lines.push(...(dnsLines.length ? dnsLines : [raw]));
-    } else {
-      lines.push("DNS Ranking: Failed");
-    }
-    lines.push("");
+  // ── Tool: parallel_diagnostics ─────────────────────────────────────────────
 
-    if (bloatResult.success) {
-      lines.push("Bufferbloat:");
-      lines.push(bloatResult.data);
-    } else {
-      lines.push("Bufferbloat: Failed — " + (bloatResult.error || "unknown"));
-    }
-    lines.push("");
+  server.tool(
+    "parallel_diagnostics",
+    "Run multiple independent network tests (speed, DNS, bloat, WiFi) CONCURRENTLY in a single tool call. Faster than running them one by one. Returns results from all tests.",
+    {
+      speedSeconds: z.number().int().min(5).max(21600).default(10).describe("Duration for the speed test phase"),
+      speedStreams: z.number().int().min(1).max(50).default(8).describe("Streams for turbo/boost speed test"),
+      includeWifi: z.boolean().default(false).describe("Also fetch WiFi info (RSSI/noise/channel)"),
+      includeEcoBloat: z.boolean().default(true).describe("Include lightweight eco-bufferbloat estimate"),
+    },
+    async ({ speedSeconds, speedStreams, includeWifi, includeEcoBloat }) => {
+      const started = Date.now();
 
-    return {
-      content: [{
-        type: "text",
-        text: lines.join("\n"),
-      }],
-    };
-  }
-);
+      // ── Run independent tests CONCURRENTLY ──────────────────────────────────
+      // Speed test (boost), DNS ranking, and optionally WiFi + eco-bloat all
+      // execute in parallel since they're independent network measurements.
 
-// ── Tool: parallel_diagnostics ─────────────────────────────────────────────
+      const tasks = [];
 
-server.tool(
-  "parallel_diagnostics",
-  "Run multiple independent network tests (speed, DNS, bloat, WiFi) CONCURRENTLY in a single tool call. Faster than running them one by one. Returns results from all tests.",
-  {
-    speedSeconds: z.number().int().min(5).max(21600).default(10).describe("Duration for the speed test phase"),
-    speedStreams: z.number().int().min(1).max(50).default(8).describe("Streams for turbo/boost speed test"),
-    includeWifi: z.boolean().default(false).describe("Also fetch WiFi info (RSSI/noise/channel)"),
-    includeEcoBloat: z.boolean().default(true).describe("Include lightweight eco-bufferbloat estimate"),
-  },
-  async ({ speedSeconds, speedStreams, includeWifi, includeEcoBloat }) => {
-    const started = Date.now();
-
-    // ── Run independent tests CONCURRENTLY ──────────────────────────────────
-    // Speed test (boost), DNS ranking, and optionally WiFi + eco-bloat all
-    // execute in parallel since they're independent network measurements.
-
-    const tasks = [];
-
-    // Task 1: Speed test (boost mode)
-    tasks.push(
-      runViaBridge("boost", ["--streams", String(speedStreams), "--seconds", String(speedSeconds)])
-        .then(e => ({ name: "speed", envelope: e }))
-        .catch(err => ({ name: "speed", error: err.message }))
-    );
-
-    // Task 2: DNS ranking
-    tasks.push(
-      runViaBridge("dns", [])
-        .then(e => ({ name: "dns", envelope: e }))
-        .catch(err => ({ name: "dns", error: err.message }))
-    );
-
-    // Task 3: WiFi info (optional)
-    if (includeWifi) {
+      // Task 1: Speed test (boost mode)
       tasks.push(
-        runViaBridge("wifi", [])
-          .then(e => ({ name: "wifi", envelope: e }))
-          .catch(err => ({ name: "wifi", error: err.message }))
+        runViaBridge("boost", ["--streams", String(speedStreams), "--seconds", String(speedSeconds)])
+          .then(e => ({ name: "speed", envelope: e }))
+          .catch(err => ({ name: "speed", error: err.message }))
       );
-    }
 
-    // Task 4: Eco bufferbloat (optional, lightweight ~100KB)
-    if (includeEcoBloat) {
+      // Task 2: DNS ranking
       tasks.push(
-        runEngineDirect(["bloat-eco"])
-          .then(r => ({ name: "bloat", result: r }))
-          .catch(err => ({ name: "bloat", error: err.message }))
+        runViaBridge("dns", [])
+          .then(e => ({ name: "dns", envelope: e }))
+          .catch(err => ({ name: "dns", error: err.message }))
       );
+
+      // Task 3: WiFi info (optional)
+      if (includeWifi) {
+        tasks.push(
+          runViaBridge("wifi", [])
+            .then(e => ({ name: "wifi", envelope: e }))
+            .catch(err => ({ name: "wifi", error: err.message }))
+        );
+      }
+
+      // Task 4: Eco bufferbloat (optional, lightweight ~100KB)
+      if (includeEcoBloat) {
+        tasks.push(
+          runEngineDirect(["bloat-eco"])
+            .then(r => ({ name: "bloat", result: r }))
+            .catch(err => ({ name: "bloat", error: err.message }))
+        );
+      }
+
+      // Wait for ALL tests to finish concurrently
+      const results = await Promise.all(tasks);
+
+      const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+      const lines = [];
+      lines.push("=== Parallel Diagnostics ===");
+      lines.push(`Completed ${results.length} tests in ${elapsed}s`);
+      lines.push("");
+
+      for (const result of results) {
+        if (result.error) {
+          lines.push(`[FAIL] ${result.name}: ${result.error}`);
+          lines.push("");
+          continue;
+        }
+
+        if (result.name === "speed") {
+          const raw = result.envelope.data?.raw || result.envelope.data || "";
+          if (result.envelope.success && typeof raw === "string") {
+            lines.push("── Speed Test ──────────────");
+            // Extract the key lines from the engine output
+            const speedLines = raw.split("\n").filter(l =>
+              l.includes("Mbps") || l.includes("single-stream") ||
+              l.includes("multi-stream") || l.includes("headroom") ||
+              l.includes("already reach")
+            );
+            lines.push(...(speedLines.length ? speedLines : [raw]));
+          } else {
+            lines.push("── Speed Test ──────────────");
+            lines.push("Failed or no data");
+          }
+          lines.push("");
+        }
+
+        if (result.name === "dns") {
+          const raw = result.envelope.data?.raw || result.envelope.data || "";
+          if (result.envelope.success && typeof raw === "string") {
+            lines.push("── DNS Ranking ─────────────");
+            const dnsLines = raw.split("\n").filter(l =>
+              l.match(/\d+\.\s/) || l.includes("fastest") || l.includes("switching")
+            );
+            lines.push(...(dnsLines.length ? dnsLines : [raw]));
+          } else {
+            lines.push("── DNS Ranking ─────────────");
+            lines.push("Failed or no data");
+          }
+          lines.push("");
+        }
+
+        if (result.name === "wifi") {
+          const raw = result.envelope.data?.raw || result.envelope.data || "";
+          if (result.envelope.success && typeof raw === "string") {
+            lines.push("── WiFi Info ───────────────");
+            const wifiLines = raw.split("\n").filter(l => l.includes(":"));
+            lines.push(...(wifiLines.length ? wifiLines : [raw]));
+          } else {
+            lines.push("── WiFi Info ───────────────");
+            lines.push("Failed or no data");
+          }
+          lines.push("");
+        }
+
+        if (result.name === "bloat") {
+          if (result.result?.success) {
+            lines.push("── Bufferbloat ─────────────");
+            lines.push(result.result.data);
+          } else {
+            lines.push("── Bufferbloat ─────────────");
+            lines.push(result.result?.error || "Failed");
+          }
+          lines.push("");
+        }
+      }
+
+      lines.push(`Total time: ${elapsed}s (tests ran in parallel where possible)`);
+      if (results.length >= 2) {
+        lines.push("Note: Speed and DNS ran concurrently since they are independent.");
+        if (includeWifi) lines.push("WiFi info was gathered in parallel with network tests.");
+      }
+
+      return {
+        content: [{
+          type: "text",
+          text: lines.join("\n"),
+        }],
+      };
     }
+  );
 
-    // Wait for ALL tests to finish concurrently
-    const results = await Promise.all(tasks);
+  // ── Tool: session_info ──────────────────────────────────────────────────────
 
-    const elapsed = ((Date.now() - started) / 1000).toFixed(1);
-    const lines = [];
-    lines.push("=== Parallel Diagnostics ===");
-    lines.push(`Completed ${results.length} tests in ${elapsed}s`);
-    lines.push("");
+  server.tool(
+    "session_info",
+    "Show how long the MCP server has been running and how many tools have been called this session. Server lifetime equals the DSH session lifetime.",
+    {},
+    async () => {
+      const uptime = Date.now() - SERVER_START.getTime();
+      const seconds = Math.floor(uptime / 1000);
+      const minutes = Math.floor(seconds / 60);
+      const hours = Math.floor(minutes / 60);
 
-    for (const result of results) {
-      if (result.error) {
-        lines.push(`[FAIL] ${result.name}: ${result.error}`);
-        lines.push("");
-        continue;
-      }
+      let uptimeStr;
+      if (hours > 0) uptimeStr = `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+      else if (minutes > 0) uptimeStr = `${minutes}m ${seconds % 60}s`;
+      else uptimeStr = `${seconds}s`;
 
-      if (result.name === "speed") {
-        const raw = result.envelope.data?.raw || result.envelope.data || "";
-        if (result.envelope.success && typeof raw === "string") {
-          lines.push("── Speed Test ──────────────");
-          // Extract the key lines from the engine output
-          const speedLines = raw.split("\n").filter(l =>
-            l.includes("Mbps") || l.includes("single-stream") ||
-            l.includes("multi-stream") || l.includes("headroom") ||
-            l.includes("already reach")
-          );
-          lines.push(...(speedLines.length ? speedLines : [raw]));
-        } else {
-          lines.push("── Speed Test ──────────────");
-          lines.push("Failed or no data");
-        }
-        lines.push("");
-      }
-
-      if (result.name === "dns") {
-        const raw = result.envelope.data?.raw || result.envelope.data || "";
-        if (result.envelope.success && typeof raw === "string") {
-          lines.push("── DNS Ranking ─────────────");
-          const dnsLines = raw.split("\n").filter(l =>
-            l.match(/\d+\.\s/) || l.includes("fastest") || l.includes("switching")
-          );
-          lines.push(...(dnsLines.length ? dnsLines : [raw]));
-        } else {
-          lines.push("── DNS Ranking ─────────────");
-          lines.push("Failed or no data");
-        }
-        lines.push("");
-      }
-
-      if (result.name === "wifi") {
-        const raw = result.envelope.data?.raw || result.envelope.data || "";
-        if (result.envelope.success && typeof raw === "string") {
-          lines.push("── WiFi Info ───────────────");
-          const wifiLines = raw.split("\n").filter(l => l.includes(":"));
-          lines.push(...(wifiLines.length ? wifiLines : [raw]));
-        } else {
-          lines.push("── WiFi Info ───────────────");
-          lines.push("Failed or no data");
-        }
-        lines.push("");
-      }
-
-      if (result.name === "bloat") {
-        if (result.result?.success) {
-          lines.push("── Bufferbloat ─────────────");
-          lines.push(result.result.data);
-        } else {
-          lines.push("── Bufferbloat ─────────────");
-          lines.push(result.result?.error || "Failed");
-        }
-        lines.push("");
-      }
+      return {
+        content: [{
+          type: "text",
+          text: [
+            "=== MCP Server Session Info ===",
+            "",
+            `Server started:  ${SERVER_START.toISOString()}`,
+            `Uptime:          ${uptimeStr}`,
+            `Tool calls:      ${toolCallCount}`,
+            `Server process:  PID ${process.pid}`,
+            `Node version:    ${process.version}`,
+            `Platform:        ${process.platform} ${process.arch}`,
+            "",
+            "Note: The MCP server lives for the duration of the DSH session.",
+            "When DSH exits, the server is terminated. When DSH restarts,",
+            "a fresh server starts with a clean session counter.",
+          ].join("\n"),
+        }],
+      };
     }
-
-    lines.push(`Total time: ${elapsed}s (tests ran in parallel where possible)`);
-    if (results.length >= 2) {
-      lines.push("Note: Speed and DNS ran concurrently since they are independent.");
-      if (includeWifi) lines.push("WiFi info was gathered in parallel with network tests.");
-    }
-
-    return {
-      content: [{
-        type: "text",
-        text: lines.join("\n"),
-      }],
-    };
-  }
-);
-
-// ── Tool: session_info ──────────────────────────────────────────────────────
-
-server.tool(
-  "session_info",
-  "Show how long the MCP server has been running and how many tools have been called this session. Server lifetime equals the DSH session lifetime.",
-  {},
-  async () => {
-    const uptime = Date.now() - SERVER_START.getTime();
-    const seconds = Math.floor(uptime / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-
-    let uptimeStr;
-    if (hours > 0) uptimeStr = `${hours}h ${minutes % 60}m ${seconds % 60}s`;
-    else if (minutes > 0) uptimeStr = `${minutes}m ${seconds % 60}s`;
-    else uptimeStr = `${seconds}s`;
-
-    return {
-      content: [{
-        type: "text",
-        text: [
-          "=== MCP Server Session Info ===",
-          "",
-          `Server started:  ${SERVER_START.toISOString()}`,
-          `Uptime:          ${uptimeStr}`,
-          `Tool calls:      ${toolCallCount}`,
-          `Server process:  PID ${process.pid}`,
-          `Node version:    ${process.version}`,
-          `Platform:        ${process.platform} ${process.arch}`,
-          "",
-          "Note: The MCP server lives for the duration of the DSH session.",
-          "When DSH exits, the server is terminated. When DSH restarts,",
-          "a fresh server starts with a clean session counter.",
-        ].join("\n"),
-      }],
-    };
-  }
-);
+  );
+  return server;
+}
 
 // ── Start ───────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.error(`NetMax MCP server v1.0.3`);
-  console.error(`  Engine root: ${ENGINE_ROOT}`);
-  console.error(`  Python:      ${PYTHON}`);
-  console.error(`  Bridge:      ${HAS_BRIDGE ? BRIDGE : "none (direct mode)"}`);
-  console.error(`  Tools:       14 registered`);
-  console.error(`  Config:      NETMAX_ROOT / NETMAX_PYTHON / NETMAX_BRIDGE env vars`);
-  console.error("");
+  const httpMode = process.argv.includes("--http") || /^(1|true|yes)$/i.test(process.env.NETMAX_HTTP || "");
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("NetMax MCP server running on stdio");
+  if (!httpMode) {
+    console.error(`NetMax MCP server v1.0.4 (stdio)`);
+    console.error(`  Engine root: ${ENGINE_ROOT}`);
+    console.error(`  Python:      ${PYTHON}`);
+    console.error(`  Bridge:      ${HAS_BRIDGE ? BRIDGE : "none (direct mode)"}`);
+    console.error(`  Tools:       14 registered`);
+    console.error(`  Config:      NETMAX_ROOT / NETMAX_PYTHON / NETMAX_BRIDGE env vars`);
+    console.error("");
+    const transport = new StdioServerTransport();
+    await buildServer().connect(transport);
+    console.error("NetMax MCP server running on stdio");
+    return;
+  }
+
+  // ── Web MCP: Streamable HTTP (localhost-only by default) ──────────────────
+  // The engine measures THIS machine's network; a remotely-hosted instance
+  // would measure the datacenter's pipe, not the user's. Loopback bind unless
+  // NETMAX_HOST is set (LAN pairing); bearer token when NETMAX_TOKEN is set.
+  const { createServer } = await import("node:http");
+  const { StreamableHTTPServerTransport } = await import("@modelcontextprotocol/sdk/server/streamableHttp.js");
+
+  const host = process.env.NETMAX_HOST || "127.0.0.1";
+  const port = Number(process.env.NETMAX_PORT || 8808);
+  const token = process.env.NETMAX_TOKEN;
+
+  const httpServer = createServer(async (req, res) => {
+    // Trust boundary: bearer gate before anything parses.
+    if (token) {
+      const provided = String(req.headers["authorization"] || "").replace(/^Bearer /, "");
+      if (provided !== token) {
+        res.writeHead(401, { "content-type": "text/plain" });
+        res.end("unauthorized");
+        return;
+      }
+    }
+    try {
+      // Stateless: fresh transport per request (official SDK pattern).
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      transport.onerror = (e) => console.error("[http] transport error:", e.message);
+      const srv = buildServer();
+      await srv.connect(transport);
+      res.on("close", () => { transport.close(); });
+      await transport.handleRequest(req, res);
+    } catch (e) {
+      console.error("[http] request error:", e.message);
+      if (!res.headersSent) res.writeHead(500);
+      res.end("internal error");
+    }
+  });
+
+  httpServer.listen(port, host, () => {
+    console.error(`NetMax MCP server v1.0.4 (web) — Streamable HTTP`);
+    console.error(`  Endpoint:     http://${host === "127.0.0.1" ? "localhost" : host}:${port}/mcp`);
+    console.error(`  Engine root:  ${ENGINE_ROOT}`);
+    console.error(`  Auth:         ${token ? "bearer token (NETMAX_TOKEN)" : "none (localhost only)"}`);
+    console.error(`  Tools:        14 registered`);
+    console.error("");
+    console.error("Web MCP ready — add to Claude/Cursor/DSH as a remote MCP server:");
+    console.error(`  url: http://${host}:${port}/mcp` + (token ? "  headers: Authorization: Bearer <NETMAX_TOKEN>" : ""));
+  });
 }
 
 main().catch((err) => {
