@@ -74,12 +74,11 @@ remains the one item still pending its result.
 
 ## Session handoff — 2026-09-23 audit pass
 
-- CRITICAL+HIGH committed as `995063a` (engine hardening, GUI marshalling, CI gates).
-- MEDIUM + IMPROVEMENTS + post-HIGH scan fixes staged for the next commit:
-  Swift M1–M10/H3–H7, Python upload/fetch/watch/bridge hardening, F1 GUI worker reuse
-  (`netmax_gui.py`), F2 resume-mbps (`netmax_fetch.py` counts only `counter.net`).
+- CRITICAL+HIGH committed as `995063a`; MEDIUM + IMPROVEMENTS + F1/F2 as `5303904`.
+- Fixes: Swift M1–M10/H3–H7, Python upload/fetch/watch/bridge hardening, F1 GUI worker
+  reuse (`netmax_gui.py`), F2 resume-mbps (`netmax_fetch.py` counts only `counter.net`).
 - Verification green: pytest **412**, ruff clean, Swift selftests 20/20, bridge selftest 4/4,
   engine-sync clean (root == `desktop/engine/`).
 - Open / deferred: H8 license trial (product), M9 drop-in views (product), L1 SIGTERM-then-SIGKILL,
   L3 adaptive `perStreamEstimate`, M3 range SSOT (comment-only), M6 quiet-hours persistence.
-- Remote: `github/main` still at `995063a` — push after this commit if desired.
+- Remote: `github/main` at `1992edd`; local `main` ahead by 2 — not pushed.
