@@ -71,9 +71,9 @@ def test_split_uneven():
 
 
 def test_split_more_streams_than_bytes():
+    # streams clamped to size: never emit zero/negative-span chunks
     chunks = netmax_fetch.split_chunks(2, 8)
-    assert len(chunks) == 8
-    assert sorted(s for s, _ in chunks)[0] == 0
+    assert chunks == [(0, 0), (1, 1)]
     assert sum(e - s + 1 for s, e in chunks) == 2
 
 
@@ -105,7 +105,7 @@ def test_multi_stream_download_assembles_in_order(tmp_path, fake_net):
 
 
 def test_head_request_sent_first(fake_net):
-    calls, install = fake_net
+    _calls, install = fake_net
     seen = []
 
     def serve(url, h):
@@ -117,8 +117,8 @@ def test_head_request_sent_first(fake_net):
         return FakeResponse({}, make_body(10)[start:end + 1])
 
     install(serve)
-    import tempfile
     import pathlib
+    import tempfile
 
     with tempfile.TemporaryDirectory() as d:
         out = pathlib.Path(d) / "f.bin"
@@ -147,7 +147,8 @@ def test_single_stream_fallback_no_ranges(tmp_path, fake_net):
 def test_single_stream_fallback_unknown_length(tmp_path, fake_net):
     body = make_body(50)
     # HEAD returns no Content-Length at all → must fall back even with ranges
-    install_hdrs = lambda url, h: FakeResponse({"Accept-Ranges": "bytes"}, body)
+    def install_hdrs(url, h):
+        return FakeResponse({"Accept-Ranges": "bytes"}, body)
     _, install = fake_net
     install(install_hdrs)
 
@@ -264,6 +265,29 @@ def test_progress_none_is_safe(tmp_path, fake_net):
     out = tmp_path / "f.bin"
     stats = netmax_fetch.download("http://x/f", out, streams=1, on_progress=None)
     assert stats["bytes"] == 5
+
+
+def test_streams_one_with_ranges_keeps_output(tmp_path, fake_net):
+    """C2: streams=1 against a range-capable server must not assemble/unlink."""
+    _, install = fake_net
+    body = make_body(100)
+
+    def serve(url, h):
+        if "range" not in h:
+            return FakeResponse(
+                {"Content-Length": "100", "Accept-Ranges": "bytes"}, body)
+        start, end = (int(x) for x in h["range"].split("=")[1].split("-"))
+        return FakeResponse({}, body[start:end + 1])
+
+    install(serve)
+    out = tmp_path / "f.bin"
+    stats = netmax_fetch.download("http://x/f", out, streams=1)
+
+    assert out.exists(), "single-stream download was unlinked by assemble"
+    assert out.read_bytes() == body
+    assert stats["bytes"] == 100
+    assert stats["streams_used"] == 1
+    assert list(tmp_path.glob("*.netmax-*")) == []
 
 
 # ── error paths ──────────────────────────────────────────────────────────────

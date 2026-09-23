@@ -61,11 +61,18 @@ def _pull(seconds: float) -> int:
     problems: list[str] = []
     for name, template in ENDPOINTS:
         url = template.format(cb=random.getrandbits(64))
-        proc = subprocess.run(
-            ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code} %{size_download}",
-             "--max-time", str(seconds), url],
-            capture_output=True, text=True,
-        )
+        try:
+            proc = subprocess.run(
+                ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code} %{size_download}",
+                 "--max-time", str(seconds), url],
+                capture_output=True, text=True,
+                timeout=seconds + 15,
+            )
+        except FileNotFoundError:
+            raise NetMaxError("curl not found on PATH — install curl to measure") from None
+        except subprocess.TimeoutExpired:
+            problems.append(f"{name}: curl hung past subprocess timeout")
+            continue
         fields = proc.stdout.strip().split()
         if len(fields) == 2 and fields[0].isdigit() and fields[1].isdigit():
             http_code, received = int(fields[0]), int(fields[1])
@@ -153,7 +160,7 @@ def _udp_query(server: str, name: str, timeout: float = 2.0) -> float:
                         f"resolver {server} returned {DNS_RCODE_NAMES.get(rcode, rcode)}"
                     )
                 return time.perf_counter() - sent_at             # normal A answer
-    except socket.timeout as exc:
+    except TimeoutError as exc:
         raise NetMaxError(f"resolver {server} timed out") from exc
     finally:
         sock.close()
@@ -336,10 +343,21 @@ BLOAT_GRADES = [  # (max latency increase ms, grade) — Waveform/DSLReports rub
 
 
 def _ping_median_ms(host: str = "1.1.1.1", count: int = 10) -> float:
-    """Median RTT via system ping; raises NetMaxError if ping fails."""
-    proc = subprocess.run(
-        ["ping", "-c", str(count), host], capture_output=True, text=True
-    )
+    """Median RTT via system ping; raises NetMaxError if ping fails.
+
+    Always passes a Python-level timeout: BSD/macOS `ping -c N` can block
+    indefinitely when ICMP is silently dropped (VPN/corporate Wi-Fi), unlike
+    relying on ping's own interval math alone.
+    """
+    # count * 1s interval + 2s reply slack, floor 5s for tiny counts
+    timeout = max(5.0, count * 1.0 + 2.0)
+    try:
+        proc = subprocess.run(
+            ["ping", "-c", str(count), host], capture_output=True, text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise NetMaxError(f"ping to {host} timed out after {timeout:.0f}s") from exc
     times = re.findall(r"time[=<]([\d.]+) ms", proc.stdout)
     if not times:
         raise NetMaxError(f"ping to {host} failed: {proc.stderr.strip()[:120]}")
@@ -465,7 +483,7 @@ def main(argv: list[str] | None = None) -> None:
     sp_loss.add_argument("--count", type=int, default=10)
     sp_jit = sub.add_parser("jitter", help="jitter (mean consecutive RTT delta)")
     sp_jit.add_argument("--count", type=int, default=10)
-    sp_wifi = sub.add_parser("wifi", help="WiFi RSSI/noise/channel")
+    sub.add_parser("wifi", help="WiFi RSSI/noise/channel")
     sp_exp = sub.add_parser("export", help="export newest run as CSV or JSON")
     sp_exp.add_argument("--fmt", choices=["csv", "json"], default="csv")
     sp_exp.add_argument("--out", required=True)
@@ -625,7 +643,6 @@ def summarize_watch_history(history: list[dict]) -> dict:
     deltas = [h["delta_ms"] for h in history]
     dns_values = sorted(h["dns_ms"] for h in history if h.get("dns_ms") is not None)
     worst_idx = max(range(len(history)), key=lambda i: GRADE_ORDER.index(history[i]["grade"]))
-    n = len(dns_values)
     median_dns = (
         statistics.median(dns_values) if dns_values else None
     )

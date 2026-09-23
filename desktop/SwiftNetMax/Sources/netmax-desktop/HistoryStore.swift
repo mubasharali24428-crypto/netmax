@@ -150,6 +150,8 @@ final class HistoryStore {
     /// Append one completed run to the history file.
     ///
     /// Creates the containing directory and file on first write. Thread-safe.
+    /// Returns the record that was written so callers can hand it straight
+    /// to `RunPostProcessor.process(_:)` (call AFTER append contract).
     /// - Parameters:
     ///   - mode: engine mode name (e.g. "baseline", "turbo").
     ///   - params: run parameters as passed to the engine (e.g. ["streams": 8]).
@@ -159,7 +161,8 @@ final class HistoryStore {
     /// F7: the stored `network` value is the hash, never the raw SSID —
     /// equality comparisons (baseline scoping, change banner) are
     /// unaffected; the raw name stops persisting in history.
-    func append(mode: String, params: [String: Int], raw: String, network: String? = nil) {
+    @discardableResult
+    func append(mode: String, params: [String: Int], raw: String, network: String? = nil) -> HistoryRecord {
         let storedNetwork = Self.hashNetworkTag(network)
         let record = HistoryRecord(ts: Date(), mode: mode, params: params,
                                    resultRaw: raw, network: storedNetwork)
@@ -185,6 +188,7 @@ final class HistoryStore {
             print("[HistoryStore] append failed: \(error.localizedDescription)")
             #endif
         }
+        return record
     }
 
     /// Load every readable record, oldest-first (file order).

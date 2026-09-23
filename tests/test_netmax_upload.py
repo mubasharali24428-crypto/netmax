@@ -15,8 +15,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import netmax  # noqa: E402
-import netmax_upload  # noqa: E402
+import netmax
+import netmax_upload
 
 
 def _tripwire(seam):
@@ -87,7 +87,7 @@ def test_falls_through_on_non_200(monkeypatch):
         return ok(cmd, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", flaky_first)
-    mbps, mb = netmax_upload.upload_probe(seconds=3.0)
+    mbps, _mb = netmax_upload.upload_probe(seconds=3.0)
     assert mbps > 0
     assert mbps == pytest.approx(800000 * 8 / 1.0 / 1e6)
 
@@ -121,7 +121,6 @@ def test_invalid_seconds_raises_valueerror():
 
 def test_payload_tempfile_cleaned_up(monkeypatch, tmp_path):
     created = []
-    real_named = netmax_upload.tempfile.NamedTemporaryFile
 
     class FakeTF:
         def __init__(self, **kw):
@@ -142,3 +141,31 @@ def test_payload_tempfile_cleaned_up(monkeypatch, tmp_path):
     monkeypatch.setattr(subprocess, "run", _fake_run("200 100000 1.0"))
     netmax_upload.upload_probe(seconds=1.0)
     assert created and not __import__("os").path.exists(created[0])
+
+
+def test_payload_cleaned_up_when_write_fails(monkeypatch, tmp_path):
+    """C3: a failed payload write (disk full) must still unlink the temp file."""
+    import os
+
+    created = []
+
+    class FakeTF:
+        def __init__(self, **kw):
+            self.name = str(tmp_path / "payload.bin")
+            open(self.name, "wb").close()  # file exists on disk
+            created.append(self.name)
+
+        def write(self, data):
+            raise OSError("disk full")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(netmax_upload.tempfile, "NamedTemporaryFile", FakeTF)
+    monkeypatch.setattr(netmax_upload.os, "urandom", lambda n: b"\x00" * n)
+    with pytest.raises(OSError, match="disk full"):
+        netmax_upload.upload_probe(seconds=1.0)
+    assert created and not os.path.exists(created[0])

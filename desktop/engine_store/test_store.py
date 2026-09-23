@@ -13,7 +13,7 @@ Every database lives under tmp_path — no real user data, no network, no
 subprocess, fully offline. Until sibling lane B1-01 lands its Store adapter,
 the whole module skips honestly instead of failing.
 
-Run: /Users/user/1/bin/python -m pytest desktop/engine_store/test_store.py -q
+Run: python -m pytest desktop/engine_store/test_store.py -q
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ if str(STORE_DIR) not in sys.path:
     sys.path.insert(0, str(STORE_DIR))
 
 try:
-    import store as st  # noqa: E402  (sibling lane B1-01)
+    import store as st
     HAVE_STORE = True
 except ImportError:  # store.py hasn't landed yet
     st = None
@@ -248,7 +248,7 @@ class TestRoundTrip:
         assert n == 0, "rejected records must leave no partial rows"
 
     def test_data_survives_close_and_reopen(self, tmp_path):
-        s, db_path = _open(tmp_path)
+        s, _db_path = _open(tmp_path)
         # numeric params leaf "k" also lands as a kind-less sample row
         # (B1-01 contract: numeric leaves depth<=3 -> samples)
         rid = s.insert_run(started_at=TS_A, mode="durable", params={"k": 1})
@@ -445,7 +445,7 @@ class TestSchemaAndIndexes:
 
     def test_schema_creation_is_idempotent_on_reopen(self, tmp_path):
         _, db_path = _open(tmp_path)
-        s2, _ = _open(tmp_path, name="db.sqlite3")  # second init on same file
+        _s2, _ = _open(tmp_path, name="db.sqlite3")  # second init on same file
         assert TABLES <= _table_names(db_path)
 
 
@@ -470,7 +470,8 @@ class TestForeignKeyCascade:
 
 # ── pure parsing helpers (unit level; skipped if B1-01 renames them) ─────────
 
-_requires = lambda name: pytest.mark.skipif(  # noqa: E731
+def _requires(name):
+    return pytest.mark.skipif(
     not (HAVE_STORE and hasattr(st, name)), reason=f"store.{name} absent"
 )
 

@@ -10,7 +10,6 @@ import json
 
 import netmax_wifievents
 
-
 # ── F7: SSID/BSSID minimization at rest ──────────────────────────────────────
 
 def _profiler_json(ssid: str, bssid: str, rssi: str = "-55 dBm / -96 dBm",

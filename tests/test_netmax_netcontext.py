@@ -9,10 +9,8 @@ import subprocess
 
 import pytest
 
-from netmax import NetMaxError
-
 import netmax_netcontext as nc
-
+from netmax import NetMaxError
 
 LO = """\
 lo0: flags=8049<UP,LOOPBACK,RUNNING> mtu 16384

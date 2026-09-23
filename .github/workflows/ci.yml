@@ -15,6 +15,7 @@ jobs:
   python-tests:
     name: Python engine + bridge tests
     runs-on: macos-14
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -22,11 +23,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: Install test deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-ci.txt
+
+      - name: Lint (ruff)
+        run: ruff check . --exclude .venv --exclude desktop/SwiftNetMax/.build --exclude desktop/node_modules --exclude desktop/build
 
       - name: Prime matplotlib font cache (avoids subprocess in offline tests)
         run: python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot"
@@ -45,6 +50,7 @@ jobs:
   swift-build:
     name: Swift app release build
     runs-on: macos-14
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -59,9 +65,14 @@ jobs:
       - name: Verify binary exists
         run: test -x "$BIN_PATH/netmax-desktop" && echo "binary OK"
 
+      - name: Swift offline selftests
+        working-directory: desktop
+        run: bash scripts/run_swift_selftests.sh
+
   bundle-package:
     name: App bundle + codesign
     runs-on: macos-14
+    timeout-minutes: 30
     needs: [swift-build]
     steps:
       - uses: actions/checkout@v4

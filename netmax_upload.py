@@ -41,25 +41,31 @@ def upload_probe(seconds: float) -> tuple[float, float]:
     # materialized 27 GB of os.urandom for a 6-h window — curl re-POSTs the
     # same capped file within the window instead, same measurement quality.
     size_bytes = min(max(100_000, int(10e6 * seconds / 8)), 250_000_000)
-    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
-        f.write(os.urandom(size_bytes))
-        payload = f.name
-    # curl's --max-time caps each POST at the window; a capped payload simply
-    # ends its last POST early on fast links — the Mbps math stays exact
-    # because it divides bytes sent by curl's own time_total.
-
+    payload_path: str | None = None
     problems: list[str] = []
     try:
+        # Create inside the try so a failed write (disk full) still unlinks.
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+            payload_path = f.name
+            f.write(os.urandom(size_bytes))
+        # curl's --max-time caps each POST at the window; a capped payload
+        # simply ends its last POST early on fast links — the Mbps math stays
+        # exact because it divides bytes sent by curl's own time_total.
         for endpoint in ENDPOINTS_VERIFIED:
             started = time.monotonic()
-            proc = subprocess.run(
-                ["curl", "-s", "-o", "/dev/null", "-w", _WRITE_OUT_FMT,
-                 "-X", "POST", "--data-binary", "@" + payload,
-                 "--max-time", str(max(1.0, round(seconds, 3))),
-                 endpoint],
-                capture_output=True, text=True,
-                timeout=seconds + 15,          # stall guard past curl's own cap
-            )
+            try:
+                proc = subprocess.run(
+                    ["curl", "-s", "-o", "/dev/null", "-w", _WRITE_OUT_FMT,
+                     "-X", "POST", "--data-binary", "@" + payload_path,
+                     "--max-time", str(max(1.0, round(seconds, 3))),
+                     endpoint],
+                    capture_output=True, text=True,
+                    timeout=seconds + 15,          # stall guard past curl's own cap
+                )
+            except FileNotFoundError:
+                raise netmax.NetMaxError(
+                    "curl not found on PATH — install curl to measure upload"
+                ) from None
             wall = time.monotonic() - started
             parts = proc.stdout.split()
             if len(parts) != 3:
@@ -84,10 +90,11 @@ def upload_probe(seconds: float) -> tuple[float, float]:
     except subprocess.TimeoutExpired:
         problems.append("curl hung past subprocess timeout — aborted")
     finally:
-        try:
-            os.unlink(payload)
-        except OSError:
-            pass
+        if payload_path is not None:
+            try:
+                os.unlink(payload_path)
+            except OSError:
+                pass
 
     raise netmax.NetMaxError(
         "upload probe failed on all endpoints: " + "; ".join(problems)

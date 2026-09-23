@@ -10,13 +10,13 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import netmax  # noqa: E402
+import netmax
 
 try:
-    import matplotlib  # noqa: E402
+    import matplotlib
 
     matplotlib.use("Agg")
-    import matplotlib.pyplot as plt  # noqa: E402
+    import matplotlib.pyplot as plt
     HAVE_MPL = True
 except ImportError:  # optional chart extra (pyproject [project.optional-dependencies] charts)
     plt = None
@@ -28,11 +28,21 @@ RESULTS_DIR = Path(__file__).resolve().parent / "results"
 HISTORY_FILE = RESULTS_DIR / "history.json"
 
 
+def _quarantine_corrupt(path: Path) -> None:
+    """Preserve a corrupt history file beside itself before starting fresh."""
+    backup = path.with_name(path.name + ".corrupt")
+    try:
+        path.replace(backup)
+    except OSError:
+        pass
+
+
 def append_history(mode: str, summary: dict, *, timestamp: str | None = None,
                    history_file: Path = HISTORY_FILE) -> dict:
     """Append one run's {timestamp, mode, results} entry to history.json.
 
     Creates the file (and its parent dir) if missing; prior entries are kept.
+    A corrupt file is moved to ``<name>.corrupt`` — never silently wiped.
     """
     if timestamp is None:
         timestamp = datetime.now().isoformat(timespec="seconds")
@@ -41,13 +51,20 @@ def append_history(mode: str, summary: dict, *, timestamp: str | None = None,
     try:
         with open(history_file, encoding="utf-8") as fh:
             history = json.load(fh)
-        if not isinstance(history, list):
-            history = []
-    except (FileNotFoundError, json.JSONDecodeError):
+    except FileNotFoundError:
         history = []
+    except json.JSONDecodeError:
+        _quarantine_corrupt(history_file)
+        history = []
+    else:
+        if not isinstance(history, list):
+            _quarantine_corrupt(history_file)
+            history = []
     history.append(entry)
-    with open(history_file, "w", encoding="utf-8") as fh:
+    tmp = history_file.with_name(history_file.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(history, fh, indent=2)
+    tmp.replace(history_file)
     return entry
 
 
@@ -61,14 +78,18 @@ def main() -> None:
         # alternate order each round so link drift cancels out (proper A/B)
         if i % 2 == 0:
             mbps, mb = netmax.throughput(1, SECONDS)
-            base_samples.append(mbps); base_mb_total += mb
+            base_samples.append(mbps)
+            base_mb_total += mb
             mbps, mb = netmax.throughput(8, SECONDS)
-            turbo_samples.append(mbps); turbo_mb_total += mb
+            turbo_samples.append(mbps)
+            turbo_mb_total += mb
         else:
             mbps, mb = netmax.throughput(8, SECONDS)
-            turbo_samples.append(mbps); turbo_mb_total += mb
+            turbo_samples.append(mbps)
+            turbo_mb_total += mb
             mbps, mb = netmax.throughput(1, SECONDS)
-            base_samples.append(mbps); base_mb_total += mb
+            base_samples.append(mbps)
+            base_mb_total += mb
 
     base_mbps = statistics.median(base_samples)
     turbo_mbps = statistics.median(turbo_samples)

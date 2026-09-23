@@ -18,7 +18,6 @@ eco_dns():
 from __future__ import annotations
 
 import subprocess
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 import netmax

@@ -16,7 +16,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-import netmax_gui  # noqa: E402  (must import cleanly with NO display present)
+import netmax_gui
 
 
 class ThemeConstantsTest(unittest.TestCase):
@@ -72,12 +72,12 @@ class BuildCommandTest(unittest.TestCase):
             netmax_gui.build_command("warp", 8, 10)
 
     def test_streams_out_of_range_rejected(self):
-        for bad in (0, -1, 33, 100):
+        for bad in (0, -1, 51, 100):
             with self.assertRaises(ValueError):
                 netmax_gui.build_command("turbo", bad, 10)
 
     def test_streams_boundaries_accepted(self):
-        for ok in (1, 32):
+        for ok in (1, 50):
             cmd = netmax_gui.build_command("turbo", ok, 10)  # must not raise
             self.assertIn(str(ok), cmd)
 
@@ -149,7 +149,7 @@ class RunnerPlumbingTest(unittest.TestCase):
             self._cleanup(runner)
 
     def test_nonzero_exit_code_reported(self):
-        runner, out, err, done, finished = self._make_runner()
+        runner, _out, _err, done, finished = self._make_runner()
         try:
             runner.start_command([self.PY, "-c", "import sys; sys.exit(3)"])
             self.assertTrue(finished.wait(20), "on_done was not called")
@@ -158,7 +158,7 @@ class RunnerPlumbingTest(unittest.TestCase):
             self._cleanup(runner)
 
     def test_on_done_called_exactly_once_on_success(self):
-        runner, out, err, done, finished = self._make_runner()
+        runner, _out, _err, done, finished = self._make_runner()
         try:
             runner.start_command([self.PY, "-c", "print('x')"])
             self.assertTrue(finished.wait(20))
@@ -168,7 +168,7 @@ class RunnerPlumbingTest(unittest.TestCase):
             self._cleanup(runner)
 
     def test_second_start_while_alive_rejected(self):
-        runner, out, err, done, finished = self._make_runner()
+        runner, _out, _err, _done, _finished = self._make_runner()
         try:
             runner.start_command(
                 [self.PY, "-c", "import time; time.sleep(30)"]
@@ -180,7 +180,7 @@ class RunnerPlumbingTest(unittest.TestCase):
 
     def test_restart_after_stop_works(self):
         """The HIGH review finding: after stop(), a new command must run."""
-        runner, out, err, done, finished = self._make_runner()
+        runner, out, _err, done, finished = self._make_runner()
         runner.start_command([self.PY, "-c", "import time; time.sleep(60)"])
         deadline = time.time() + 5
         while not out and time.time() < deadline:
@@ -199,7 +199,7 @@ class RunnerPlumbingTest(unittest.TestCase):
             self._cleanup(runner)
 
     def test_stop_terminates_running_child_quickly(self):
-        runner, out, err, done, finished = self._make_runner()
+        runner, out, _err, done, finished = self._make_runner()
         try:
             runner.start_command(
                 [self.PY, "-c", "print('started', flush=True); import time; time.sleep(60)"]
@@ -220,7 +220,7 @@ class RunnerPlumbingTest(unittest.TestCase):
 
 
 class PythonExecutableTest(unittest.TestCase):
-    """_python_executable: NETMAX_PYTHON env > known-good path > sys.executable."""
+    """_python_executable: NETMAX_PYTHON env > /usr/bin/python3 > sys.executable."""
 
     def setUp(self):
         self._saved = os.environ.pop("NETMAX_PYTHON", None)
@@ -238,18 +238,18 @@ class PythonExecutableTest(unittest.TestCase):
 
     def test_env_ignored_when_path_missing(self):
         os.environ["NETMAX_PYTHON"] = "/nonexistent/python-nowhere"
-        # falls through to preferred (if present) or sys.executable
+        # falls through to /usr/bin/python3 when present, else sys.executable
         result = netmax_gui._python_executable()
-        if Path("/Users/user/1/bin/python").exists():
-            self.assertEqual(result, "/Users/user/1/bin/python")
+        if Path("/usr/bin/python3").exists():
+            self.assertEqual(result, "/usr/bin/python3")
         else:
             self.assertEqual(result, sys.executable)
 
     def test_no_env_preferred_path(self):
         os.environ.pop("NETMAX_PYTHON", None)
         result = netmax_gui._python_executable()
-        if Path("/Users/user/1/bin/python").exists():
-            self.assertEqual(result, "/Users/user/1/bin/python")
+        if Path("/usr/bin/python3").exists():
+            self.assertEqual(result, "/usr/bin/python3")
         else:
             self.assertEqual(result, sys.executable)
 
@@ -367,7 +367,7 @@ class RunnerHandoffOfflineTest(unittest.TestCase):
         runner = netmax_gui.NetMaxRunner(
             lambda l: None, lambda l: None, lambda c: calls.append(c)
         )
-        stale_proc, new_proc = object(), object()
+        stale_proc, _new_proc = object(), object()
         # hand-off scenario: _active moved to a replacement, old proc still set
         replacement = netmax_gui.NetMaxRunner(lambda l: None, lambda l: None, lambda c: None)
         runner._active = replacement

@@ -201,7 +201,14 @@ final class NotificationCoordinator {
     /// - Returns: the alerts actually posted (authorization granted + not suppressed).
     @discardableResult
     func process(records: [HistoryRecord], now: Date = Date()) async -> [DegradationAlert] {
-        let alerts = evaluateDegradation(records)
+        await process(alerts: evaluateDegradation(records), now: now)
+    }
+
+    /// Post pre-computed alerts (pair-scoped / preference-filtered upstream).
+    /// Callers MUST NOT pass full-history `evaluateDegradation` output — that
+    /// re-posts every historical drop. Use RunPostProcessor's pair scoping.
+    @discardableResult
+    func process(alerts: [DegradationAlert], now: Date = Date()) async -> [DegradationAlert] {
         guard !alerts.isEmpty else { return [] }
         guard await requestAuthorizationIfNeeded() else { return [] }
 

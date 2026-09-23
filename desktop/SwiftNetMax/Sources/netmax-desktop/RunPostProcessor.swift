@@ -133,10 +133,10 @@ enum RunPostProcessor {
         let pending = deliverableAlerts(alerts(triggeredBy: record, in: records),
                                         prefs: prefs)
         guard !pending.isEmpty else { return }
-        // Re-evaluating the same final pair inside the coordinator is
-        // intentional: it applies ITS authorization/quiet-hours policy to
-        // exactly the alert we selected, without duplicating that logic.
-        _ = await NotificationCoordinator.shared.process(records: records)
+        // Hand the already-selected alerts to the coordinator — NOT the full
+        // history. Re-evaluating every historical pair re-posts old drops
+        // (C5) and bypasses the preference filter applied above.
+        _ = await NotificationCoordinator.shared.process(alerts: pending)
     }
 }
 

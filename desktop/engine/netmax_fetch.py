@@ -14,7 +14,6 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -105,7 +104,14 @@ def _head(url: str) -> tuple[int | None, bool]:
 
 
 def split_chunks(size: int, streams: int) -> list[tuple[int, int]]:
-    """Split [0, size) into `streams` contiguous (start, end_inclusive) chunks."""
+    """Split [0, size) into `streams` contiguous (start, end_inclusive) chunks.
+
+    `streams` is clamped to `size` so a tiny file never produces zero-span
+    chunks (end < start) that would break assembly.
+    """
+    if size <= 0:
+        return []
+    streams = max(1, min(streams, size))
     base, rem = divmod(size, streams)
     chunks: list[tuple[int, int]] = []
     start = 0
@@ -257,9 +263,20 @@ def download(
                     and isinstance(meta.get("chunks"), list)
                 )
                 if ok:
-                    chunks = [tuple(c) for c in meta["chunks"]]
-                    resumed = True
-            except (ValueError, KeyError, OSError):
+                    # Validate each chunk is a 2-int [start, end] pair —
+                    # hand-edited / corrupt meta must not raise TypeError
+                    # or unpack garbage into the multi-stream path.
+                    parsed: list[tuple[int, int]] = []
+                    for c in meta["chunks"]:
+                        if not (isinstance(c, (list, tuple)) and len(c) == 2
+                                and all(isinstance(v, int) for v in c)):
+                            parsed = []
+                            break
+                        parsed.append((c[0], c[1]))
+                    if len(parsed) == len(meta["chunks"]) and parsed:
+                        chunks = parsed
+                        resumed = True
+            except (ValueError, KeyError, OSError, TypeError):
                 pass
         if chunks is None:
             chunks = split_chunks(length, streams)
@@ -286,6 +303,16 @@ def download(
                     "url": url, "size": length,
                     "chunks": [[s, e] for s, e in chunks],
                 }, mfh)
+
+    # A single chunk means the single-stream path writes out_path directly —
+    # part-file assembly never applies and must not unlink the finished file.
+    if chunks is not None and len(chunks) < 2:
+        chunks = None
+        resumed = False
+        try:
+            os.remove(_meta_path(out_path))
+        except FileNotFoundError:
+            pass
 
     if chunks is not None and len(chunks) > 1:
         counter = _Counter(length, on_progress)
@@ -341,9 +368,13 @@ def download(
             resp.close()
         streams_used = 1
 
-    total_bytes = _assemble(out_path, chunks) if chunks else out_path.stat().st_size
-    counter.flush()
-    _cleanup(out_path, len(chunks)) if chunks else None
+    if chunks:
+        total_bytes = _assemble(out_path, chunks)
+        counter.flush()
+        _cleanup(out_path, len(chunks))
+    else:
+        total_bytes = out_path.stat().st_size
+        counter.flush()
 
     elapsed = max(time.monotonic() - started, 1e-9)
     return {

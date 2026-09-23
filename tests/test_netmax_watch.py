@@ -39,8 +39,9 @@ def test_happy_path(mock_net, capsys):
     hist = netmax_watch.watch_loop(5, 3)
     assert len(hist) == 3
     assert mock_net["bloat"] == 3 and mock_net["dns"] == 3
-    # sleeps happen between cycles only: cycles-1
-    assert mock_net["sleeps"] == [5, 5]
+    # interruptible sleep polls every 0.5s; total between cycles still = 2×interval
+    assert len(mock_net["sleeps"]) > 0
+    assert abs(sum(mock_net["sleeps"]) - 10.0) < 0.01
     assert all(set(h) == {"delta_ms", "grade", "dns_ms"} for h in hist)
     out = capsys.readouterr().out
     lines = out.strip().splitlines()

@@ -9,11 +9,9 @@ from __future__ import annotations
 
 import json
 import socket
-import statistics
-import struct
 import string
+import struct
 import subprocess
-import time
 import types
 from collections import namedtuple
 
@@ -143,7 +141,8 @@ class TestThroughput:
         monkeypatch.setattr(netmax, "_pull", lambda seconds: 2_000_000)
         mbps, mb = netmax.throughput(1, 2)
         assert mb == pytest.approx(2.0)
-        assert mbps == pytest.approx(16_000_000 * 8 / 2 / 1e6 if False else mbps)  # sanity only
+        # 2 MB over 2 s = 8 Mbps
+        assert mbps == pytest.approx(2_000_000 * 8 / 2 / 1e6)
 
 
 # ── DNS ──────────────────────────────────────────────────────────────────────
@@ -192,7 +191,7 @@ class TestUdpQuery:
         monkeypatch.setattr(socket, "socket", fake_socket)
         rtt = netmax._udp_query("1.1.1.1", "foo.example.com")
         assert rtt >= 0
-        data, addr = made[0].sent[0]
+        _data, addr = made[0].sent[0]
         assert addr == ("1.1.1.1", 53)
 
     def test_skips_mismatched_txid_replies(self, monkeypatch):
@@ -210,9 +209,7 @@ class TestUdpQuery:
 
 class TestMedianRtt:
     def test_fast_gaierror_counts_as_valid_sample(self, monkeypatch):
-        import time as time_mod
-
-        real_perf = time_mod.perf_counter
+        import time as time_mod  # noqa: F401 — documents timing context
 
         def fast_getaddrinfo(name, port):
             raise socket.gaierror(-2, "Name or service not known")
@@ -482,7 +479,7 @@ class TestUdpTimeout:
     def test_socket_timeout_raises_netmaxerror(self, monkeypatch):
         class TimeoutSock(FakeSock):
             def recvfrom(self, bufsize):
-                raise socket.timeout("timed out")
+                raise TimeoutError("timed out")
 
         monkeypatch.setattr(socket, "socket", lambda af, st: TimeoutSock(_dns_reply))
         with pytest.raises(netmax.NetMaxError, match="resolver 1.1.1.1 timed out"):
@@ -530,14 +527,14 @@ class TestBloatGrade:
     def test_a_plus_when_latency_stable_under_load(self, monkeypatch):
         monkeypatch.setattr(netmax, "_ping_median_ms", self._pinger(40.0, 40.0))
         monkeypatch.setattr(netmax, "_pull", lambda seconds: 1)
-        idle, delta, grade = netmax.bloat_grade(2, 6)
+        _idle, delta, grade = netmax.bloat_grade(2, 6)
         assert delta == pytest.approx(0.0)
         assert grade == "A+"
 
     def test_f_when_latency_explodes(self, monkeypatch):
         monkeypatch.setattr(netmax, "_ping_median_ms", self._pinger(40.0, 500.0, 800.0))
         monkeypatch.setattr(netmax, "_pull", lambda seconds: 1)
-        idle, delta, grade = netmax.bloat_grade(2, 6)
+        _idle, _delta, grade = netmax.bloat_grade(2, 6)
         assert grade == "F"
 
     def test_ping_failure_raises_netmaxerror(self, monkeypatch):
@@ -675,7 +672,7 @@ class TestBloatGradeBoundaries:
 
             monkeypatch.setattr(netmax, "_ping_median_ms", fake_ping)
             monkeypatch.setattr(netmax, "_pull", lambda seconds: 1000)
-            got_idle, got_delta, grade = netmax.bloat_grade(2, 6)
+            _got_idle, got_delta, grade = netmax.bloat_grade(2, 6)
             assert grade == expected, f"delta={delta}: got {grade}, want {expected}"
             assert got_delta == pytest.approx(delta)
 
@@ -740,15 +737,28 @@ class TestAppendHistory:
         assert loaded[0] == {"timestamp": "old", "mode": "baseline"}
         assert loaded[1]["mode"] == "full"
 
-    def test_corrupt_history_file_starts_fresh(self, tmp_path):
+    def test_corrupt_history_file_is_quarantined_not_wiped(self, tmp_path):
         import measure
 
         hist = tmp_path / "history.json"
         hist.write_text("{not json")
         measure.append_history("dns", {"fastest": "Cloudflare"},
                                history_file=hist)
+        # Original bytes preserved beside the fresh file — never destroyed.
+        backup = tmp_path / "history.json.corrupt"
+        assert backup.read_text() == "{not json"
         loaded = json.loads(hist.read_text())
         assert len(loaded) == 1 and loaded[0]["mode"] == "dns"
+
+    def test_non_list_json_is_quarantined_not_wiped(self, tmp_path):
+        import measure
+
+        hist = tmp_path / "history.json"
+        hist.write_text('{"not": "a list"}')
+        measure.append_history("full", {"x": 1}, history_file=hist)
+        assert (tmp_path / "history.json.corrupt").exists()
+        loaded = json.loads(hist.read_text())
+        assert isinstance(loaded, list) and len(loaded) == 1
 
 
 # ── watch mode helpers ────────────────────────────────────────────────────────
@@ -758,7 +768,7 @@ class TestAppendHistory:
 # helpers now live in netmax.py (merged by ATLAS) — tests re-pointed below.
 
 
-from netmax import format_watch_status, summarize_watch_history  # noqa: E402
+from netmax import format_watch_status, summarize_watch_history
 
 
 class TestWatchHelpers:

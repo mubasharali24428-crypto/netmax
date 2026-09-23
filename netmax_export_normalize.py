@@ -243,4 +243,4 @@ def _cell(value):
 
 def _fmt_float(value):
     text = str(value)
-    return text[:-2] if text.endswith(".0") else text
+    return text.removesuffix(".0")

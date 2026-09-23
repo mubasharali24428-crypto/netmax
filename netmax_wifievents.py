@@ -41,9 +41,10 @@ import signal
 import subprocess
 import sys
 import threading
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 # --- Sibling dependency (E2's event store) ---------------------------------
 # E2 owns netmax_eventstore.py and lands it separately; until it appears in
@@ -137,7 +138,7 @@ def parse_snapshot(profiler_json: str) -> dict:
     }
 
 
-def capture_snapshot() -> Optional[dict]:
+def capture_snapshot() -> dict | None:
     """Run system_profiler once and parse it. Returns None on tool failure."""
     try:
         proc = subprocess.run(
@@ -159,12 +160,12 @@ def capture_snapshot() -> Optional[dict]:
     return parse_snapshot(proc.stdout)
 
 
-def _as_str(value: Any) -> Optional[str]:
+def _as_str(value: Any) -> str | None:
     """Coerce profiler fields to str (None stays None) — F7 hashing input."""
     return value if isinstance(value, str) and value else None
 
 
-def _event(kind: str, details: dict, ts: Optional[str] = None) -> dict:
+def _event(kind: str, details: dict, ts: str | None = None) -> dict:
     return {
         "ts": ts or _now_iso(),
         "kind": kind,
@@ -173,7 +174,7 @@ def _event(kind: str, details: dict, ts: Optional[str] = None) -> dict:
 
 
 def diff_snapshots(
-    prev: Optional[dict], curr: Optional[dict], ts: Optional[str] = None
+    prev: dict | None, curr: dict | None, ts: str | None = None
 ) -> list[dict]:
     """Diff two parsed snapshots -> list of events (pure; no I/O).
 
@@ -294,7 +295,7 @@ def _privacy_salt() -> bytes:
     return fresh
 
 
-def hash_identifier(value: Optional[str]) -> Optional[str]:
+def hash_identifier(value: str | None) -> str | None:
     """F7 minimization: salted SHA-256 of an SSID/BSSID, prefix nm1:.
 
     Raw SSIDs/BSSIDs never persist anywhere (events, baseline). The UI only
@@ -316,7 +317,7 @@ def _state_path() -> Path:
     return base / STATE_FILENAME
 
 
-def _load_persisted_baseline() -> Optional[dict]:
+def _load_persisted_baseline() -> dict | None:
     try:
         raw = _state_path().read_text(encoding="utf-8")
         data = json.loads(raw)
@@ -336,7 +337,7 @@ def _persist_baseline(snapshot: dict) -> None:
         pass  # baseline persistence is best-effort; in-memory still works
 
 
-_last_snapshot: Optional[dict] = _load_persisted_baseline()
+_last_snapshot: dict | None = _load_persisted_baseline()
 _state_lock = threading.Lock()
 _stop = threading.Event()
 
@@ -357,7 +358,7 @@ def emit_events(events: list[dict]) -> None:
             print(json.dumps(ev), flush=True)
 
 
-def poll_once(snapshot: Optional[dict] = None) -> list[dict]:
+def poll_once(snapshot: dict | None = None) -> list[dict]:
     """Capture (or accept an injected) snapshot, diff against previous, emit.
 
     `snapshot=` exists for deterministic testing: pass an already-parsed
@@ -375,21 +376,21 @@ def poll_once(snapshot: Optional[dict] = None) -> list[dict]:
     return events
 
 
-def reset_baseline(snapshot: Optional[dict] = None) -> None:
+def reset_baseline(snapshot: dict | None = None) -> None:
     """Seed/clear the previous-snapshot baseline (test + startup helper)."""
     global _last_snapshot
     with _state_lock:
         _last_snapshot = snapshot
 
 
-def _request_stop(signum: int, frame: Any) -> None:  # noqa: ARG001
+def _request_stop(signum: int, frame: Any) -> None:
     _stop.set()
 
 
 def run_poller(
     interval: int = DEFAULT_INTERVAL_S,
-    max_cycles: Optional[int] = None,
-    snapshot_fn: Callable[[], Optional[dict]] = capture_snapshot,
+    max_cycles: int | None = None,
+    snapshot_fn: Callable[[], dict | None] = capture_snapshot,
 ) -> int:
     """Poll every `interval` seconds until SIGTERM/SIGINT/max_cycles.
 
@@ -412,7 +413,7 @@ def run_poller(
     return 0
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="WiFi event detector (W5-E1)")
     ap.add_argument("-i", "--interval", type=int, default=DEFAULT_INTERVAL_S,
                     help="poll interval seconds (default %(default)s)")
@@ -421,6 +422,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--once", action="store_true",
                     help="single snapshot+diff, then exit")
     args = ap.parse_args(argv)
+    if args.interval < 1:
+        ap.error("--interval must be >= 1 (0 or negative busy-loops the poller)")
 
     mode = "eventstore(netmax_eventstore.append_event)" if EVENTSTORE_AVAILABLE \
         else "fallback(stdout JSON lines)"

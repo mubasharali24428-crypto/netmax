@@ -37,6 +37,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+
 # Repo root resolved from this file's location — layout-aware:
 #   dev checkout:   <repo>/desktop/bridge/engine_bridge.py → parents[2]
 #   bundled .app:   NetMaxDesktop.app/Contents/Resources/engine/engine_bridge.py
@@ -296,12 +297,20 @@ def run_engine(
     # child writing __pycache__ there breaks codesign -v ("sealed resource
     # added"). Belt-and-braces with the -B the caller passes us.
     child_env["PYTHONDONTWRITEBYTECODE"] = "1"
+    # Stale envelope from a prior run must not outlive this spawn — if the
+    # child dies before write_envelope, callers would read the old JSON.
+    try:
+        Path(json_out).unlink(missing_ok=True)
+    except OSError:
+        pass
     try:
         completed = (subprocess.run if runner is None else runner)(
             command,
             cwd=str(root),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout_s,
             env=child_env,
         )
@@ -447,7 +456,7 @@ def selftest() -> int:
             try:
                 fn()
                 results.append((name, True, ""))
-            except Exception as exc:  # noqa: BLE001 - report, don't crash
+            except Exception as exc:
                 results.append((name, False, str(exc)))
 
     ok = True

@@ -27,7 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from desktop.engine_store.store import Store  # noqa: E402
+from desktop.engine_store.store import Store
 
 APP_SUPPORT = Path.home() / "Library" / "Application Support" / "NetMaxDesktop"
 
@@ -40,11 +40,14 @@ def main(argv: list[str]) -> int:
     i = 0
     while i < len(args):
         if args[i] == "--db" and i + 1 < len(args):
-            db_path = Path(args[i + 1]).expanduser(); i += 2
+            db_path = Path(args[i + 1]).expanduser()
+            i += 2
         elif args[i] == "--jsonl" and i + 1 < len(args):
-            jsonl_path = Path(args[i + 1]).expanduser(); i += 2
+            jsonl_path = Path(args[i + 1]).expanduser()
+            i += 2
         else:
-            print(f"unknown arg: {args[i]}", file=sys.stderr); return 2
+            print(f"unknown arg: {args[i]}", file=sys.stderr)
+            return 2
     if i < len(args):
         return 2
 

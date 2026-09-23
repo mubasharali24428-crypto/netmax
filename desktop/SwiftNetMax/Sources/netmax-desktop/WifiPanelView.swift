@@ -402,9 +402,12 @@ struct WifiPanelView: View {
                 await MainActor.run {
                     // Contract P2: persist exactly like Mode Lab runs, then
                     // render from the store — one source of truth.
-                    HistoryStore.shared.append(mode: "wifi", params: [:], raw: output)
+                    // C4: process() refreshes menu-bar + posts history-change.
+                    let record = HistoryStore.shared.append(
+                        mode: "wifi", params: [:], raw: output)
                     phase = .idle
                     reloadLatest()
+                    RunPostProcessor.process(record)
                 }
             } catch {
                 await MainActor.run {

@@ -27,11 +27,11 @@ struct TargetSpeedView: View {
 
     /// Stream estimate: engine measures ~[4–8] Mbps per stream on typical
     /// links; we scale streams to the target conservatively and clamp to the
-    /// engine's 1...32 legal range. Honest label explains it's an estimate.
+    /// engine's 1...50 legal range. Honest label explains it's an estimate.
     private func streamsFor(target: Double) -> Int {
         let perStreamEstimate = 6.0
         let needed = Int((target / perStreamEstimate).rounded(.up))
-        return min(max(needed, 1), 32)
+        return min(max(needed, 1), 50)
     }
 
     var body: some View {

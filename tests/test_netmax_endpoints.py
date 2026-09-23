@@ -279,7 +279,7 @@ def test_malformed_summary_never_crashes(garbage):
         summarize(garbage)
     except GRACEFUL_REJECTIONS:
         pass  # explicit validation counts as graceful
-    except Exception as exc:  # noqa: BLE001 — deliberate: nothing else may leak
+    except Exception as exc:
         raise AssertionError(
             f"{name}(malformed) leaked {type(exc).__name__}: {exc}; "
             "return a degraded value or raise ValueError/TypeError"

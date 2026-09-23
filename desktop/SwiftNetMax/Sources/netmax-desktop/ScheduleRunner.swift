@@ -227,25 +227,29 @@ final class ScheduleRunner: ObservableObject {
         }
     }
 
-    /// Shared tail for success/failure: persist through P2, refresh the
-    /// menu-bar line, then evaluate degradation alerts. The notification
-    /// leg is gated by the user's `netmax.notify.enabled` master switch
-    /// (same contract A4-02's RunPostProcessor implements) so a switched-off
-    /// user never touches the UN framework at all; ON users get
-    /// NotificationCoordinator.process, whose authorization + quiet-hours
-    /// policy stays authoritative.
+    /// Shared tail for success/failure: persist through P2, enrich the
+    /// timeline with Wi-Fi events, then fan out the post-run pipeline.
+    ///
+    /// C4/C5: menu-bar refresh + `.netmaxHistoryDidChange` always fire;
+    /// degradation alerts are pair-scoped (only this run vs its predecessor)
+    /// and preference-gated via `RunPostProcessor.deliverableAlerts` — never
+    /// `evaluateDegradation(fullHistory)`, which re-posted every historical
+    /// drop on every schedule fire. The `notificationsAllowed` seam keeps
+    /// bare-CLI self-checks from constructing the UN framework.
     private func appendAndPublish(raw: String, mode: String, params: [String: Int]) {
-        store.append(mode: mode, params: params, raw: raw)
-        StatusBarController.publish(store: store)
+        let record = store.append(mode: mode, params: params, raw: raw)
         WifiEventEmitter.captureNow() // timeline enrichment: wifi events around this run
 
-        let records = store.loadAll()
-        Task { @MainActor [records, notificationsAllowed] in
-            // Gate first: only an opted-in user ever reaches
-            // NotificationCoordinator (whose lazy .shared would otherwise
-            // construct the UN framework).
-            guard notificationsAllowed() else { return }
-            await NotificationCoordinator.shared.process(records: records)
+        StatusBarController.publish(record: record)
+        NotificationCenter.default.post(name: .netmaxHistoryDidChange, object: nil)
+
+        guard notificationsAllowed() else { return }
+        Task { @MainActor [store] in
+            let records = store.loadAll()
+            let pending = RunPostProcessor.deliverableAlerts(
+                RunPostProcessor.alerts(triggeredBy: record, in: records))
+            guard !pending.isEmpty else { return }
+            _ = await NotificationCoordinator.shared.process(alerts: pending)
         }
     }
 }

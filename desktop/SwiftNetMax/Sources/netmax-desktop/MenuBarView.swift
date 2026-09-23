@@ -255,9 +255,16 @@ struct MenuBarView: View {
                 let output = try await client.run(
                     "turbo", args: ["--streams", "\(streams)", "--seconds", "\(seconds)"])
                 await MainActor.run {
+                    // C4: append + process so the run lands in history and
+                    // fans out menu-bar refresh / alerts / view reload.
+                    let record = HistoryStore.shared.append(
+                        mode: "turbo",
+                        params: ["streams": streams, "seconds": seconds],
+                        raw: output)
                     resultText = "Target run (\(streams) streams):\n" + output
                     status = .done
                     reloadHistory()
+                    RunPostProcessor.process(record)
                 }
             } catch {
                 await MainActor.run {
@@ -278,9 +285,14 @@ struct MenuBarView: View {
                 // "boost" = baseline vs turbo + gain % — a real C1 engine mode.
                 let output = try await client.run("boost", args: ["--seconds", "5"])
                 await MainActor.run {
+                    // C4: append + process (Quick Test previously never hit
+                    // history, so menu-bar / alerts / reload never fired).
+                    let record = HistoryStore.shared.append(
+                        mode: "boost", params: ["seconds": 5], raw: output)
                     resultText = output
                     status = .done
                     reloadHistory()   // fresh run lands in the cards immediately
+                    RunPostProcessor.process(record)
                 }
             } catch {
                 await MainActor.run {

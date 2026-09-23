@@ -11,7 +11,6 @@ import pytest
 import netmax
 import netmax_eco
 
-
 # ── fakes ────────────────────────────────────────────────────────────────────
 
 class FakeProc:
@@ -85,7 +84,7 @@ def test_url_bytes_param_matches_probe_kb(monkeypatch, kb):
     fake_ping(monkeypatch)
     seen = fake_curl(monkeypatch, FakeProc())
     netmax_eco.eco_bloat(probe_kb=kb)
-    url = seen["cmd"][[i for i, a in enumerate(seen["cmd"]) if a.startswith("https")][0]]
+    url = next(a for a in seen["cmd"] if a.startswith("https"))
     assert f"bytes={kb * 1024}" in url
     assert url.startswith(netmax.CF_DOWN)
 

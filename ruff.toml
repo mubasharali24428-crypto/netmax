@@ -1,4 +1,24 @@
 line-length = 100
 
-[per-file-ignores]
-"tests/**" = ["E501"]
+[lint]
+# Quality gate: pyflakes + pycodestyle errors + ruff self-checks.
+# Deliberately not "ALL" — shebang-exec, blind except, and subprocess check
+# are intentional patterns in this engine (curl subprocesses, best-effort capture).
+select = ["E4", "E7", "E9", "F", "RUF"]
+ignore = [
+    "RUF001",  # ambiguous unicode in UI strings (– × −) is intentional copy
+    "RUF002",
+    "RUF003",
+    "RUF005",  # concat style is fine at this size
+    "RUF007",  # zip(strict=) needs 3.10+ careful review — left for later
+    "RUF043",  # pytest match= patterns intentionally use regex metachars
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["E501", "E402", "E741"]
+"test_netmax_gui.py" = ["E501", "E402", "E741", "E702"]
+"desktop/**" = ["E501"]
+"desktop/bridge/test_engine_bridge.py" = ["E501", "E402"]
+"desktop/engine_store/test_store.py" = ["E501", "E731"]
+"tests/test_netmax_fetch.py" = ["E501", "E731"]
+"tests/test_netmax.py" = ["E501", "E402"]

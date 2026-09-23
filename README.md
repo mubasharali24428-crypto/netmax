@@ -108,13 +108,23 @@ subprocess so a failed measurement can never take down the UI.
 
 ## Tests
 
-68 offline tests (network fully mocked — safe to run anywhere):
+385 offline tests in the default suite (network fully mocked — safe to run
+anywhere), plus 94 more in the engine_store / bridge suites:
 
 ```bash
 cd ~/netmax
-python3 -m pytest            # engine + GUI suites
+python3 -m pytest            # engine + GUI + module suites (385)
 python3 -m pytest tests/test_netmax.py -v        # engine only
-python3 -m pytest tests/test_netmax_gui.py -v    # GUI only
+python3 -m pytest test_netmax_gui.py -v          # GUI only
+python3 -m pytest desktop/engine_store/test_store.py -q   # SQLite layer (38)
+python3 -m pytest desktop/bridge/test_engine_bridge.py -q # bridge (56)
+python3 -m ruff check .       # lint gate
+```
+
+Swift offline self-checks (LicenseGate, HistoryStore, Timeline, …):
+
+```bash
+bash desktop/scripts/run_swift_selftests.sh
 ```
 
 ## Project structure

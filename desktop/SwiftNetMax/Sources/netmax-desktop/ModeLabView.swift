@@ -808,9 +808,13 @@ struct ModeLabView: View {
     /// store (Lane B owns HistoryStore.swift); views only consume it here.
     /// W13B UA-2: the run is tagged with its network name when it can be
     /// determined — nil otherwise, so nothing is ever guessed.
+    /// C4: funnels through RunPostProcessor so menu-bar refresh, pair-scoped
+    /// alerts, and .netmaxHistoryDidChange all fire after every append.
     private func appendHistory(mode: String, params: [String: Int], raw: String) {
-        HistoryStore.shared.append(mode: mode, params: params, raw: raw,
-                                   network: NetContextProbe.currentNetworkName())
+        let record = HistoryStore.shared.append(
+            mode: mode, params: params, raw: raw,
+            network: NetContextProbe.currentNetworkName())
+        RunPostProcessor.process(record)
     }
 
     /// Contract P1: seed the steppers from persisted preferences via

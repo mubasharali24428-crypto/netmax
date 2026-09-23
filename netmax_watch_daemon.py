@@ -108,7 +108,7 @@ class ShutdownFlag:
 
         self._event = threading.Event()
 
-    def request(self, signum=None, frame=None) -> None:  # noqa: ARG001 - signal API
+    def request(self, signum=None, frame=None) -> None:
         self._event.set()
 
     @property
@@ -171,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
 
     shutdown = ShutdownFlag()
 
-    def _on_signal(signum, frame):  # noqa: ARG001 - signal handler API
+    def _on_signal(signum, frame):
         shutdown.request(signum, frame)
 
     prev_handlers = {}

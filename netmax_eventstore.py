@@ -80,7 +80,7 @@ def _parse_ts(raw: object) -> datetime | None:
     return stamp.astimezone(timezone.utc)
 
 
-def _coerce_bound(bound: "datetime | str | None") -> datetime | None:
+def _coerce_bound(bound: datetime | str | None) -> datetime | None:
     """Accept a datetime or an ISO8601 string for since/until; None passes through."""
     if bound is None or isinstance(bound, datetime):
         stamp = bound
@@ -135,8 +135,8 @@ def append_event(
 
 
 def load_events(
-    since: "datetime | str | None" = None,
-    until: "datetime | str | None" = None,
+    since: datetime | str | None = None,
+    until: datetime | str | None = None,
     *,
     path: str | os.PathLike[str] | None = None,
 ) -> list[dict[str, Any]]:

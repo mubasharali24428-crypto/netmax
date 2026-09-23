@@ -21,7 +21,7 @@ BRIDGE_DIR = REPO_ROOT / "desktop" / "bridge"
 if str(BRIDGE_DIR) not in sys.path:
     sys.path.insert(0, str(BRIDGE_DIR))
 
-import engine_bridge as eb  # noqa: E402
+import engine_bridge as eb
 
 PY = "/opt/fake/bin/python"
 MODES = (
@@ -245,12 +245,12 @@ def test_run_success_envelope_exit_0(tmp_path):
 def test_run_nonzero_exit_failure_envelope_exit_1(tmp_path):
     def runner(cmd, **kw):
         return _completed(2, stdout="",
-                          stderr="netmax: --streams must be 1..32, got 99\n")
+                          stderr="netmax: --streams must be 1..50, got 99\n")
 
     code, env = _run(runner, tmp_path)
     assert code == 1
     assert env["success"] is False
-    assert "--streams must be 1..32" in env["error"]
+    assert "--streams must be 1..50" in env["error"]
     assert env["data"] is None
 
 

@@ -126,13 +126,19 @@ _SQL_SET_WIFI = (
 
 # ── opening a database ───────────────────────────────────────────────────────
 
+# Bump when SCHEMA changes in a non-idempotent way; init_db applies CREATE
+# IF NOT EXISTS then stamps user_version so older files upgrade in place.
+SCHEMA_VERSION = 1
+
 
 def init_db(path: str | Path) -> sqlite3.Connection:
     """Open (creating if needed) the store at `path`; apply schema; WAL on.
 
     Parent directories are created automatically. The returned connection has
     Row factory, foreign keys ON, and a 5s busy timeout. WAL persists in the
-    database file once set here.
+    database file once set here. `PRAGMA user_version` is stamped with
+    SCHEMA_VERSION after a successful apply (migration ladder for future
+    ALTERs: read user_version, run stepwise migrations, then stamp).
     """
     target = Path(path)
     if str(target.parent) not in ("", "."):
@@ -143,6 +149,11 @@ def init_db(path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.executescript(SCHEMA)
+    current = conn.execute("PRAGMA user_version").fetchone()[0]
+    if current < SCHEMA_VERSION:
+        # ladder point: when SCHEMA_VERSION grows, apply ALTERs here keyed on
+        # `current` before stamping. CREATE IF NOT EXISTS already covers v1.
+        conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
     conn.commit()
     return conn
 
@@ -630,7 +641,7 @@ class Store:
     def __init__(self, path: str | Path) -> None:
         self._conn = init_db(path)
 
-    def __enter__(self) -> "Store":
+    def __enter__(self) -> Store:
         return self
 
     def __exit__(self, *_exc: object) -> bool:

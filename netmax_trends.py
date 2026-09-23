@@ -22,10 +22,10 @@ from datetime import datetime
 
 __all__ = [
     "SUPPORTED_METRICS",
+    "anomalies",
+    "deltas",
     "extract_series",
     "rolling_median",
-    "deltas",
-    "anomalies",
 ]
 
 # ── metrics ──────────────────────────────────────────────────────────────────

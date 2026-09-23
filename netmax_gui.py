@@ -3,12 +3,14 @@
 
 Design: the engine (netmax.py) runs as a subprocess so a hung network
 measurement can never freeze the UI. Output is streamed back over thread-safe
-callbacks and marshalled onto the Tk main loop via `root.after`.
+callbacks and marshalled onto the Tk main loop via a queue drained by
+`root.after`.
 """
 
 from __future__ import annotations
 
 import os
+import queue
 import shutil
 import subprocess
 import sys
@@ -57,7 +59,7 @@ CLI_ONLY_MODES = {
 
 SCRIPT_PATH = Path(__file__).resolve().parent / "netmax.py"
 
-STREAMS_MIN, STREAMS_MAX = 1, 32
+STREAMS_MIN, STREAMS_MAX = 1, 50
 SECONDS_MIN, SECONDS_MAX = 5, 30
 
 
@@ -150,7 +152,7 @@ class NetMaxRunner(threading.Thread):
     """Runs one subprocess at a time; streams lines to callbacks.
 
     Callbacks fire on the runner's own threads — Tk callers must marshal
-    back to the main loop themselves (the app below does, via root.after).
+    onto the main loop themselves (NetMaxApp does via a queue + root.after).
     """
 
     def __init__(
@@ -170,7 +172,7 @@ class NetMaxRunner(threading.Thread):
         # The runner whose worker loop currently owns any child. After a
         # thread hand-off this points at the replacement, so busy-checks,
         # stop(), and output attribution follow the live worker.
-        self._active: "NetMaxRunner" = self
+        self._active: NetMaxRunner = self
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
     def _busy(self) -> bool:
@@ -182,13 +184,17 @@ class NetMaxRunner(threading.Thread):
         with self._lock:
             if self._busy():
                 raise RuntimeError("a command is already running")
-            proc = subprocess.Popen(
-                argv,
+            popen_kw: dict = dict(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
             )
+            if os.name == "posix":
+                # Own process group so Stop() can killpg the whole engine tree
+                # (curl children die with it), not just the Python wrapper.
+                popen_kw["start_new_session"] = True
+            proc = subprocess.Popen(argv, **popen_kw)
             if self.is_alive():
                 self._proc = proc
                 self._stop_requested = False
@@ -209,6 +215,12 @@ class NetMaxRunner(threading.Thread):
             active._stop_requested = True
             proc = active._proc
         if proc is not None and proc.poll() is None:
+            if os.name == "posix" and proc.pid:
+                try:
+                    os.killpg(proc.pid, 9)
+                    return
+                except (ProcessLookupError, PermissionError, OSError):
+                    pass
             proc.kill()
 
     def join_active(self, timeout: float | None = None) -> None:
@@ -299,16 +311,44 @@ class NetMaxApp:
         root.configure(bg=PAGE_BG)
         root.geometry("760x560")
 
+        # Worker threads must never touch Tk widgets. They enqueue here; a
+        # main-thread ticker drains and runs the real handlers via root.after.
+        self._ui_q: queue.Queue = queue.Queue()
         self.runner = NetMaxRunner(
-            on_stdout=lambda line: root.after(0, self._append_out, line),
-            on_stderr=lambda line: root.after(0, self._append_err, line),
-            on_done=lambda code: root.after(0, self._on_done, code),
+            on_stdout=lambda line: self._ui_q.put(("out", line)),
+            on_stderr=lambda line: self._ui_q.put(("err", line)),
+            on_done=lambda code: self._ui_q.put(("done", code)),
         )
+        root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.after(50, self._drain_ui)
 
         self._build_header()
         self._build_controls()
         self._build_progress()
         self._build_log()
+
+    def _drain_ui(self) -> None:
+        try:
+            while True:
+                kind, payload = self._ui_q.get_nowait()
+                if kind == "out":
+                    self._append_out(payload)
+                elif kind == "err":
+                    self._append_err(payload)
+                elif kind == "done":
+                    self._on_done(payload)
+        except queue.Empty:
+            pass
+        except tk.TclError:
+            return
+        self.root.after(50, self._drain_ui)
+
+    def _on_close(self) -> None:
+        self.runner.stop()
+        try:
+            self.root.destroy()
+        except tk.TclError:
+            pass
 
     def _build_progress(self) -> None:
         """Determinate progress bar under the controls card.

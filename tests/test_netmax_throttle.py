@@ -11,7 +11,6 @@ import pytest
 import netmax_throttle
 from netmax_throttle import AdaptiveController, measure_feedback
 
-
 PING_STDOUT = (
     "PING 1.1.1.1 (1.1.1.1): 56 data bytes\n"
     "64 bytes from 1.1.1.1: icmp_seq=0 ttl=58 time=12.3 ms\n"

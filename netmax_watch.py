@@ -63,7 +63,15 @@ def watch_loop(interval_s: int, cycles: int, history: list[dict] | None = None) 
             if interrupted or consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                 break
             if cycle < cycles:
-                time.sleep(interval_s)
+                # Interruptible sleep: plain time.sleep resumes after SIGINT
+                # under PEP 475, so Ctrl-C during a long interval could delay
+                # exit up to interval_s (max 3600s). Poll the flag instead.
+                slept = 0.0
+                while slept < interval_s and not interrupted:
+                    time.sleep(min(0.5, interval_s - slept))
+                    slept += 0.5
+                if interrupted:
+                    break
     finally:
         signal.signal(signal.SIGINT, prev_handler)
 

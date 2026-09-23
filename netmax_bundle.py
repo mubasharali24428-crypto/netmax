@@ -19,7 +19,6 @@ Stdlib only.
 from __future__ import annotations
 
 import json
-import os
 import platform
 import re
 import subprocess
@@ -158,7 +157,7 @@ def _app_version():
     pp = APP_ROOT / "pyproject.toml"
     if pp.is_file():
         try:
-            m = re.search(r'^version\s*=\s*"([^"]+)"', pp.read_text(encoding="utf-8"), re.M)
+            m = re.search(r'^version\s*=\s*"([^"]+)"', pp.read_text(encoding="utf-8"), re.MULTILINE)
             if m:
                 return m.group(1)
         except OSError:

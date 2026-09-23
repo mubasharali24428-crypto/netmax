@@ -1,16 +1,18 @@
-# Python
-__pycache__/
-*.pyc
-.pytest_cache/
 
 # Build artifacts
-results/
-*.mcpb
-desktop/mcpb-src/
-
-# macOS
-.DS_Store
-
+# Python
 # Sensitive session documents (contain credentials)
+# macOS
+**/.DS_Store
+*.mcpb
+*.pyc
+.DS_Store
+.pytest_cache/
 SESSION-HANDOFF.md
+__pycache__/
+desktop/mcpb-src/
 docs/HN-REPLY-TEMPLATES.md
+netmax.egg-info/
+results.json
+results.png
+results/

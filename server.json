@@ -6,12 +6,12 @@
     "url": "https://github.com/mubasharali24428-crypto/netmax",
     "source": "github"
   },
-  "version": "1.0.3",
+  "version": "1.0.5",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@netmax/mcp-server",
-      "version": "1.0.3",
+      "version": "1.0.5",
       "transport": {
         "type": "stdio"
       }
