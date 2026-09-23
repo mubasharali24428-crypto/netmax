@@ -38,6 +38,7 @@ final class SwiftHarnessTests: XCTestCase {
         run("ReportsMonthlyTests") { ReportsMonthlyTests.runAll() }
         run("RunPostProcessorSelfCheck") { RunPostProcessorSelfCheck.runAll() }
         run("ScheduleRunnerSelfCheck") { ScheduleRunnerSelfCheck.runAll() }
+        run("SpeedometerTests") { SpeedometerTests.runAll() }
         run("StatusBarControllerSelfCheck") { StatusBarControllerSelfCheck.runAll() }
         run("StatusPublisherHookSelfCheck") { StatusPublisherHookSelfCheck.runAll() }
         run("TimelineCorrelationTests") { TimelineCorrelationTests.runAll() }
@@ -45,7 +46,7 @@ final class SwiftHarnessTests: XCTestCase {
         run("TimelineModelTests") { TimelineModelTests.runAll(now: Date(timeIntervalSinceReferenceDate: 900_000_000)) }
         run("TimelineTests") { TimelineTests.runAll(now: Date(timeIntervalSinceReferenceDate: 1_000_000_000)) }
 
-        XCTAssertEqual(ran, 20, "expected 20 harnesses")
+        XCTAssertEqual(ran, 21, "expected 21 harnesses")
         XCTAssertEqual(total, 0, "swift harness failures: \(total)")
     }
 }

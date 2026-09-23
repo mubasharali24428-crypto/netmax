@@ -27,7 +27,7 @@ final class ThroughputSampler: ObservableObject {
     @Published var peakDownMbps: Double = 0
 
     private var timer: Timer?
-    private var lastSample: (rx: UInt64, tx: UInt64)?
+    private var lastSample: (rx: UInt64, tx: UInt64, at: Date)?
     private var tickCount = 0
 
     private init() {
@@ -47,12 +47,21 @@ final class ThroughputSampler: ObservableObject {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let bytes = Self.interfaceBytes() else { return }
             let (rx, tx) = bytes
+            let now = Date()
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                defer { self.lastSample = (rx, tx) }
+                defer { self.lastSample = (rx, tx, now) }
                 guard let prev = self.lastSample else { return } // first tick: baseline
-                let d = Double(max(rx - prev.rx, 0)) * 8 / 1_000_000
-                let u = Double(max(tx - prev.tx, 0)) * 8 / 1_000_000
+                // Saturating subtract: interface counter can reset (ifdown/ifup);
+                // UInt64 `rx - prev.rx` traps BEFORE max() runs.
+                let dBytes = Self.saturatingDelta(rx, prev.rx)
+                let uBytes = Self.saturatingDelta(tx, prev.tx)
+                // Divide by ACTUAL elapsed seconds — a skipped/nil sample makes
+                // the next delta span >1s; assuming 1.0 inflates the reading.
+                let elapsed = now.timeIntervalSince(prev.at)
+                guard elapsed > 0.05 else { return }
+                let d = Double(dBytes) * 8 / elapsed / 1_000_000
+                let u = Double(uBytes) * 8 / elapsed / 1_000_000
                 self.tickCount += 1
                 // Slew the displayed value: a single 1s delta is spiky for
                 // a gauge needle; blend 50% previous + 50% current for a
@@ -74,9 +83,14 @@ final class ThroughputSampler: ObservableObject {
         do { try out.run() } catch { return nil }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         out.waitUntilExit()
+        return parseNetstatIBN(String(data: data, encoding: .utf8) ?? "")
+    }
 
+    /// Pure parser over `netstat -ibn` text: Link#-only sum.
+    /// (Extraction for the offline selftest — see SpeedometerTests.)
+    static func parseNetstatIBN(_ text: String) -> (rx: UInt64, tx: UInt64)? {
         var rx: UInt64 = 0, tx: UInt64 = 0, found = false
-        for line in String(data: data, encoding: .utf8)?.split(separator: "\n") ?? [] {
+        for line in text.split(separator: "\n") {
             let cols = line.split(separator: " ").map(String.init)
             // LINK-ROW-ONLY FIX: `<Link#N>` rows are one-per-interface;
             // IPv4/IPv6 rows repeat the same counters.
@@ -90,6 +104,85 @@ final class ThroughputSampler: ObservableObject {
             rx += r; tx += t; found = true
         }
         return found ? (rx, tx) : nil
+    }
+
+    /// Saturating subtract for UInt64 byte counters (reset → 0, never traps).
+    static func saturatingDelta(_ new: UInt64, _ old: UInt64) -> UInt64 {
+        new >= old ? new - old : 0
+    }
+
+    /// Old (buggy) parser kept only for the selftest's inflation assertion.
+    /// Sums EVERY en* row — IPv4/IPv6 duplicates count en0 5×.
+    static func parseNetstatIBNAllRows(_ text: String) -> (rx: UInt64, tx: UInt64)? {
+        var rx: UInt64 = 0, tx: UInt64 = 0, found = false
+        for line in text.split(separator: "\n") {
+            let cols = line.split(separator: " ").map(String.init)
+            guard cols.count >= 10, cols.first?.hasPrefix("en") == true else { continue }
+            guard let r = UInt64(cols[6]), let t = UInt64(cols[9]) else { continue }
+            rx += r; tx += t; found = true
+        }
+        return found ? (rx, tx) : nil
+    }
+}
+
+/// Offline selftest: the gauge must not inflate when netstat repeats counters.
+enum SpeedometerTests {
+    /// Run all checks; returns number of failures (0 == pass).
+    @discardableResult
+    static func runAll() -> Int {
+        var failures = 0
+        func check(_ name: String, _ cond: Bool) {
+            print("\(cond ? "PASS" : "FAIL"): \(name)")
+            if !cond { failures += 1 }
+        }
+
+        // Synthetic fixture: en0 ×5 rows (Link + 2 IPv6 + IPv4) with IDENTICAL
+        // counters, plus 6 idle Link# ifaces — matches live `netstat -ibn` on
+        // this Mac (en0 is 5 rows → old parser = 5× inflation).
+        let fixture = """
+        Name       Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll
+        en4        1500  <Link#7>    3e:31:d2:5e:97:05        0     0          0        0     0          0     0
+        en5        1500  <Link#8>    3e:31:d2:5e:97:06        0     0          0        0     0          0     0
+        en6        1500  <Link#9>    3e:31:d2:5e:97:07        0     0          0        0     0          0     0
+        en1        1500  <Link#10>   36:d4:1c:e5:bf:40        0     0          0        0     0          0     0
+        en2        1500  <Link#11>   36:d4:1c:e5:bf:44        0     0          0        0     0          0     0
+        en3        1500  <Link#12>   36:d4:1c:e5:bf:48        0     0          0        0     0          0     0
+        en0        1500  <Link#14>   ba:23:43:ae:e4:12 44979151     0 56038715958 20595066     0 10502267056     0
+        en0        1500  fe80::140a: fe80:e::140a:a3e: 44979151     - 56038715958 20595066     - 10502267056     -
+        en0        1500  2402:ad80:1 2402:ad80:130:137 44979151     - 56038715958 20595066     - 10502267056     -
+        en0        1500  2402:ad80:1 2402:ad80:130:137 44979151     - 56038715958 20595066     - 10502267056     -
+        en0        1500  10.82.255/24  10.82.255.196   44979151     - 56038715958 20595066     - 10502267056     -
+        """
+
+        let link = ThroughputSampler.parseNetstatIBN(fixture)
+        let all = ThroughputSampler.parseNetstatIBNAllRows(fixture)
+        let en0Rx: UInt64 = 56_038_715_958
+
+        check("parser returns a value", link != nil && all != nil)
+        check("Link# parser counts en0 once", link?.rx == en0Rx)
+        check("old all-row parser counts en0 5×", all?.rx == en0Rx * 5)
+        if let l = link?.rx, let a = all?.rx, l > 0 {
+            check("old parser inflates exactly 5× on this fixture", a == l * 5)
+        } else {
+            check("old parser inflates exactly 5× on this fixture", false)
+        }
+
+        // Empty / header-only → nil (no interfaces found).
+        check("empty text → nil", ThroughputSampler.parseNetstatIBN("") == nil)
+        check("header only → nil",
+              ThroughputSampler.parseNetstatIBN("Name Mtu Network Address Ipkts\n") == nil)
+
+        // Non-en interfaces ignored.
+        let loOnly = "lo0 16384 <Link#1> 127.0.0.1 1 0 100 1 0 200 0\n"
+        check("lo0 ignored", ThroughputSampler.parseNetstatIBN(loOnly) == nil)
+
+        // Saturating subtract: counter reset must yield 0, not trap.
+        check("counter reset → 0 delta (no UInt64 trap)",
+              ThroughputSampler.saturatingDelta(10, 1000) == 0)
+        check("normal delta",
+              ThroughputSampler.saturatingDelta(1500, 1000) == 500)
+
+        return failures
     }
 }
 
