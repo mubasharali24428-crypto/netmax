@@ -85,6 +85,11 @@ struct MenuBarView: View {
                 miniTimeline
             }
 
+            // M9: wifi diagnostic section (width floor 360pt; popover is 420).
+            Divider()
+            WifiDashboardSection(showsChrome: false)
+                .frame(maxWidth: .infinity)
+
             Divider()
 
             ScrollView {
@@ -118,9 +123,20 @@ struct MenuBarView: View {
         // W13: fixed height removed — the popover now sizes to content and
         // scrolls; height: 520 was clipping the speedometer + cards + results
         // stack with no way to reach the bottom.
-        .frame(width: 380)
-        .onAppear(perform: reloadHistory)
+        // M9: 420 wide so WifiPanelView's 360pt minWidth fits after 16pt pads.
+        .frame(width: 420)
+        .onAppear {
+            reloadHistory()
+            // M9: What's New once per version on the landing surface.
+            showingWhatsNew = WhatsNew.shouldShow(seen: whatsNewSeenVersion)
+        }
+        .sheet(isPresented: $showingWhatsNew) {
+            WhatsNewSheet(seenVersion: $whatsNewSeenVersion)
+        }
     }
+
+    @AppStorage(WhatsNew.seenVersionKey) private var whatsNewSeenVersion = ""
+    @State private var showingWhatsNew = false
 
     private var statusBadge: some View {
         HStack(spacing: 4) {

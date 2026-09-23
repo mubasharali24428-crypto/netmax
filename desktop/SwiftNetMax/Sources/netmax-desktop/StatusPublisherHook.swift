@@ -28,7 +28,7 @@
 //  Call exactly once per process; the guard makes repeat calls no-ops (safe
 //  against App re-init in previews/tests). Install is cheap and non-blocking:
 //  the startup publish reads one small JSONL file on the main thread, the same
-//  cost as HistoryEmptinessMonitor's initial refresh.
+//  cost as a one-shot history-file refresh.
 //
 //  Contract notes (mirrors StatusBarController.swift):
 //  - Reads history ONLY through the P2 API surface

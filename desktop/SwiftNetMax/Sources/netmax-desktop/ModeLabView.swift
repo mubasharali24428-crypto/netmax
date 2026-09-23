@@ -191,6 +191,8 @@ struct ModeLabView: View {
 
     @State private var status: RunStatus = .idle
     @State private var resultText = ""
+    /// M9: raw failure string for ModeLabErrorView (no "Error: " prefix).
+    @State private var lastErrorText: String?
 
     // W13B UA-1 (S-048/S-049): honest network context, probed once when the
     // view appears and re-checked before each run. VPN/offline show a note
@@ -616,8 +618,10 @@ struct ModeLabView: View {
                 .foregroundColor(.orange)
                 .accessibilityLabel(Text("Measured without unsupported flags"))
                 .accessibilityValue(Text(droppedFlagNames.joined(separator: ", ")))
-            }
-            if sequenceResults.isEmpty || status == .running {
+            } else if status == .error, let lastErrorText {
+                // M9: severity-styled advisor card instead of raw "Error: …".
+                ModeLabErrorView(rawError: lastErrorText)
+            } else if sequenceResults.isEmpty || status == .running {
                 legText(resultText.isEmpty ? "No results yet." : resultText,
                         editable: true)
             }
@@ -684,6 +688,7 @@ struct ModeLabView: View {
         // engine errors; VPN ⇒ the amber note refreshes for this run.
         netContext = NetContextProbe.detect()
         guard netContext.online else {
+            lastErrorText = "You appear to be offline — reconnect and try again."
             resultText = "You appear to be offline — reconnect and try again."
             status = .error
             return
@@ -699,6 +704,7 @@ struct ModeLabView: View {
 
         status = .running
         resultText = ""
+        lastErrorText = nil
         runStoppedByUser = false
         Task {
             do {
@@ -718,6 +724,7 @@ struct ModeLabView: View {
                     } else {
                         // Surfaces the envelope's error string verbatim
                         // (EngineClientError.errorDescription).
+                        lastErrorText = error.localizedDescription
                         resultText = "Error: \(error.localizedDescription)"
                         status = .error
                     }

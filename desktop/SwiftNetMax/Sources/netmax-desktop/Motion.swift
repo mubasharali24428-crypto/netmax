@@ -18,7 +18,6 @@ enum NetMaxMotion {
 }
 
 /// Press-down feedback per apple-design §1: scale on press, spring back.
-/// Applied app-wide via `.netMaxPressable()`.
 struct NetMaxPressStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -28,14 +27,6 @@ struct NetMaxPressStyle: ButtonStyle {
             .animation(reduceMotion ? NetMaxMotion.crossFade : NetMaxMotion.standard,
                        value: configuration.isPressed)
             .opacity(configuration.isPressed ? 0.9 : 1.0)
-    }
-}
-
-extension View {
-    /// Instant press-down feedback with a critically damped spring-back.
-    /// Respects Reduce Motion (cross-fade instead of scale).
-    func netMaxPressable() -> some View {
-        buttonStyle(NetMaxPressStyle())
     }
 }
 
@@ -91,11 +82,5 @@ struct NetMaxStaggeredAppear: ViewModifier {
 extension View {
     func netMaxStaggeredAppear(index: Int) -> some View {
         modifier(NetMaxStaggeredAppear(index: index))
-    }
-
-    /// Motion wrapper: replaces `animation` when Reduce Motion is on.
-    /// Usage: `.modifier(NetMaxMotionModifier(animation: NetMaxMotion.standard, value: x))`
-    func netMaxTransition(reduceMotion: Bool) -> some View {
-        reduceMotion ? AnyView(opacity(1.0)) : AnyView(self)
     }
 }

@@ -1,10 +1,10 @@
-// AUDIT M9: not mounted in production — wire or remove deliberately.
-
 //
 //  BloatStoryView.swift
 //  netmax-desktop
 //
 //  TEAM-1 T1-b — Bufferbloat storytelling card UI.
+//
+//  M9: mounted in RunDetailSheet for records whose mode is "bloat".
 //
 //  Renders a `BloatStory` (T1-a's pure model) as a self-contained,
 //  drop-in card: big grade letter tinted from the Theme grade ramp,

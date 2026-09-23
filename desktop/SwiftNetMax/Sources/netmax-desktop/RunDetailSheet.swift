@@ -57,6 +57,13 @@ struct RunDetailSheet: View {
             header
             Divider()
             summaryGrid
+            // M9: human story for bufferbloat records between summary and raw.
+            if record.mode == "bloat",
+               let g = MetricExtractor.latestBloatGrade(in: record.resultRaw),
+               let story = BloatStory.make(fromGrade: g.letter, deltaMs: g.deltaMs) {
+                Divider()
+                BloatStoryView(story: story)
+            }
             Divider()
             outputSection
         }

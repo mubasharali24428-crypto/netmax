@@ -322,7 +322,7 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 | M6 | **FIXED** | Quiet hours persisted under `netmax.notify.quiet{Start,End}{Hour,Minute}` via `NotificationPreferences`; `NotificationCoordinator` reads the shared prefs; Settings “Quiet Hours” steppers with a11y ids. |
 | M7 | **FIXED** | `HistoryStore.swift:429` — single read → filter → atomic write. |
 | M8 | **FIXED** | `HistoryStore.swift:191` + `postHistoryDidChange()` (`:516-523`) from mutators. |
-| M9 | **OPEN** | Drop-ins still unmounted (`App.swift:45` `GlobalHotkey.install` still commented; BloatStory/WifiDashboard/empty-integration/BackgroundRunnerControls/OnboardingSchedule* not mounted) — deferred as product decision (improvement 1). |
+| M9 | **FIXED (deliberate)** | Wired: BloatStory→RunDetailSheet, WifiDashboard→MenuBarView, OnboardingScheduleHost→RootView, BackgroundRunnerControls+ScheduleEditor→ScheduleTabContent, ModeLabErrorView→ModeLabError branch, WhatsNew→MenuBarView. Hidden: ReportsEmpty deleted; HistoryEmpty→Notification.Name only; TabTransition/netMaxPressable/netMaxTransition removed; NotificationPrefsView struct removed (class kept). GlobalHotkey stays commented (NSEvent starve — App.swift note). FeatureDiscovery pitch no longer claims ⌥⌘R. |
 | M10 | **FIXED (documented)** | `LicenseGate.swift:108-109` documents all-or-nothing tiers; `feature` intentionally unused. |
 
 ### LOW
@@ -338,7 +338,7 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 
 | # | Status |
 |---|---|
-| 1 (drop-ins) | OPEN — M9 product decision (M-agent lane). |
+| 1 (drop-ins) | **DONE** — M9 fixed (wire + deliberate hide; GlobalHotkey remains intentionally off). |
 | 2 (single post-run entry) | **DONE** — contract documented in `RunPostProcessor.swift` header (this session); all append sites verified wired. |
 | 3 (coordinator `[DegradationAlert]` API) | **DONE (pre-existing)** — `NotificationCoordinator.process(alerts:now:)` exists (`Notifications.swift:211`); `RunPostProcessor` + `ScheduleRunner` both use it. No duplicate added. |
 | 4 (parameter range SSOT) | **DONE** — `EngineParameterRanges.swift` + all UI call sites. |
@@ -360,4 +360,4 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 
 **Deferred-debt lane (follow-up session):** L1 (`EngineClient` PID capture), L3 (adaptive `perStreamEstimate`), M3 (`EngineParameterRanges` SSOT), M6 (quiet-hours persistence + Settings UI), Python `--adaptive` wiring (`netmax.py` + `AdaptiveController.initial_streams`), `_truncate` budget at every depth, `IncompleteRead`/`OSError` → `NetMaxError` in `netmax_fetch._read_block`. Regression tests: `tests/test_audit_deferred_debt.py`. Engine copies of `netmax.py` / `netmax_fetch.py` re-synced.
 
-**Open at snapshot:** H8 (license trial — product decision), M9 (drop-in views — product decision).
+**Open at snapshot:** H8 (license trial — product decision). M9 fixed this session (wire + deliberate hide).

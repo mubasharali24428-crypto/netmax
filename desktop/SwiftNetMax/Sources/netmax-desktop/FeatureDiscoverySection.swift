@@ -31,7 +31,7 @@ struct FeatureDiscoverySection: View {
             featureRow(
                 icon: "command",
                 title: "Shortcuts & Siri",
-                pitch: "⌘1–⌘6 tabs, ⌘R rerun, ⌥⌘R global — plus Shortcuts app actions",
+                pitch: "⌘1–⌘6 tabs, ⌘R rerun — plus Shortcuts app actions",
                 tabTag: 4 // Settings (this page documents them)
             )
         }

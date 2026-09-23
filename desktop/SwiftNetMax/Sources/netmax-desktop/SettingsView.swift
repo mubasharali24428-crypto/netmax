@@ -62,8 +62,7 @@ struct SettingsView: View {
     @AppStorage("netmax.plan.mbps") private var planMbps: Double = 100
 
     /// Self-persisting store behind the notification rules (`netmax.notify.*`),
-    /// owned by NotificationPreferences; this view binds through it exactly as
-    /// NotificationPrefsView does so both surfaces share live state.
+    /// owned by NotificationPreferences; Settings binds through it only.
     @ObservedObject private var notifyPrefs = NotificationPreferences.shared
 
     /// W12 T4-a (audit 150): picker row at the top that jumps to a section.
@@ -259,12 +258,8 @@ struct SettingsView: View {
 
     // MARK: - Notifications
 
-    /// NotificationPrefsView's content expressed as native Form sections.
-    /// That view is a top-level `Form` (with its own grouped style + frame),
-    /// which cannot nest cleanly inside this settings Form, so its master
-    /// toggle and per-rule rows are mirrored here — same store
-    /// (`NotificationPreferences.shared`), same keys, same accessibility
-    /// identifiers — instead of embedding it as a sub-Form.
+    /// Notification Form sections: master toggle + per-rule rows bound to
+    /// NotificationPreferences.shared (same keys/ids as the old prefs Form).
     private var notifications: some View {
         Group {
             Section {
@@ -417,8 +412,8 @@ struct SettingsView: View {
         )
     }
 
-    /// NotificationPrefsView's standard rule row: title + one-line effect,
-    /// bound toggle on the trailing edge.
+    /// Standard rule row: title + one-line effect, bound toggle on the
+    /// trailing edge.
     private func notificationRuleRow(
         title: String,
         subtitle: String,

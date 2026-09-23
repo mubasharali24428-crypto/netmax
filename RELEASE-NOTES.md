@@ -1,5 +1,26 @@
 # Release Notes
 
+## Unreleased — M9 product surfaces + SPM test target (v1.0.6 prep)
+
+**Swift (M9 wire)**
+- `BloatStoryView` mounted in `RunDetailSheet` for `mode == "bloat"` records.
+- `WifiDashboardSection` mounted under menu-bar metric cards; popover widened to 420pt (WifiPanel 360pt floor).
+- `OnboardingScheduleHost` replaces bare `OnboardingView` in `RootView` (schedule opt-in once when unset).
+- `ScheduleTabContent` hosts `ScheduleEditorView` + `BackgroundRunnerControlsView`.
+- `ModeLabErrorView` replaces raw `Error: …` text via `lastErrorText` on the Mode Lab error branch.
+- `WhatsNewSheet` presented from `MenuBarView` (landing surface) once per version.
+
+**Swift (M9 hide)**
+- Deleted `ReportsEmptyIntegration`; `HistoryEmptyIntegration` reduced to `Notification.Name` only.
+- Removed unused `TabTransition`, `netMaxPressable`, `netMaxTransition`.
+- Removed unmounted `NotificationPrefsView` Form struct (kept `NotificationPreferences` class + Settings sections).
+- Feature discovery no longer claims disabled global ⌥⌘R; `GlobalHotkey.install` stays commented (documented).
+
+**Tests / tooling**
+- New SPM `netmax-desktopTests` target wrapping the 20 house `runAll()` harnesses (`swift test` green).
+- Shell harness `run_swift_selftests.sh` still green (20/20).
+- AUDIT_REPORT M9 → FIXED (deliberate); re-audit of touched files.
+
 ## Unreleased — deferred debt (L1/L3/M3/M6 + Python)
 
 **Swift**

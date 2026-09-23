@@ -1,129 +1,12 @@
 //
-//  NotificationPrefsView.swift
-//  netmax-desktop
+//  NotificationPrefsView.swift — persistence only (M9 hide of the view).
 //
-//  ALEX-250 wave-1 · ALPHA-A1-05 — notification preferences UI.
-//
-//  Master notifications toggle plus one toggle per degradation rule,
-//  persisted under `netmax.notify.*` UserDefaults keys:
-//      netmax.notify.enabled                  Bool, default true
-//      netmax.notify.rule.bloatGradeDrop      Bool, default true
-//      netmax.notify.rule.packetLossSpike     Bool, default true
-//      netmax.notify.rule.successToFailure    Bool, default true
-//      netmax.notify.quietStartHour           Int,  default 22  (M6)
-//      netmax.notify.quietStartMinute         Int,  default 0
-//      netmax.notify.quietEndHour             Int,  default 7
-//      netmax.notify.quietEndMinute           Int,  default 30
-//
-//  Rule identifiers match lane A1-04's `Notifications.swift`
-//  (`DegradationAlert.Kind` raw values). Mission-brief name → shipped rule:
-//      "grade drop" → bloatGradeDrop · "high loss" → packetLossSpike ·
-//      "offline"    → successToFailure (closest shipped rule: a run fails
-//      after a successful one — the connection effectively dropped out)
-//
-//  Pattern source: SettingsView.swift — every control binds through a
-//  self-persisting prefs object (never UserDefaults directly from the
-//  view), carries an accessibilityLabel (+ hint where the effect isn't
-//  obvious), and persists immediately with no Save button, matching macOS
-//  settings-pane convention. Storage discipline mirrors AppPreferences.swift
-//  (typed Keys/Fallbacks namespaces, load-time reads, injectable defaults).
-//
-//  This file owns ONLY the preference surface. Delivery (authorization,
-//  posting, quiet hours) lives in A1-04's NotificationCoordinator.
+//  SettingsView owns the notification Form sections; this file keeps the
+//  NotificationPreferences store that SettingsView, NotificationCoordinator,
+//  and RunPostProcessor bind through.
 //
 
 import SwiftUI
-
-struct NotificationPrefsView: View {
-
-    /// Self-persisting store for all `netmax.notify.*` keys; views bind
-    /// here only — direct UserDefaults access stays inside the store,
-    /// matching contract P1's discipline.
-    @ObservedObject private var prefs = NotificationPreferences.shared
-
-    var body: some View {
-        Form {
-            master
-            rules
-        }
-        .formStyle(.grouped)
-        .frame(minWidth: 420, idealWidth: 460, minHeight: 320)
-        .accessibilityIdentifier("notifications.root")
-    }
-
-    // MARK: - Master toggle
-
-    private var master: some View {
-        Section {
-            Toggle("Enable notifications", isOn: $prefs.notificationsEnabled)
-                .accessibilityLabel(Text("Enable notifications"))
-                .accessibilityHint(Text("Master switch. When off, no notification fires regardless of the individual rules below."))
-                .accessibilityIdentifier("notifications.master")
-        } header: {
-            Text("Notifications")
-        } footer: {
-            Text(prefs.notificationsEnabled
-                 ? "NetMax will alert you when any enabled rule matches."
-                 : "Notifications are off — individual rules are kept but ignored.")
-        }
-    }
-
-    // MARK: - Per-rule toggles
-
-    private var rules: some View {
-        Section {
-            ruleRow(
-                title: "Grade drop",
-                subtitle: "Bufferbloat grade falls ≥ 2 letters between runs (e.g. B → D).",
-                isOn: $prefs.gradeDropEnabled,
-                kind: .bloatGradeDrop,
-                hint: "Alerts when a run's bufferbloat grade drops sharply compared to the previous run."
-            )
-            ruleRow(
-                title: "High loss",
-                subtitle: "Packet loss climbs above the healthy 3% threshold.",
-                isOn: $prefs.highLossEnabled,
-                kind: .packetLossSpike,
-                hint: "Alerts when measured packet loss crosses the high-loss threshold."
-            )
-            ruleRow(
-                title: "Run failed",
-                subtitle: "A measurement fails right after a successful one.",
-                isOn: $prefs.failureEnabled,
-                kind: .successToFailure,
-                hint: "Alerts when the connection appears to drop out — a failed run following a successful one."
-            )
-        } header: {
-            Text("Alert Rules")
-        } footer: {
-            Text("Rules apply to every measurement while the master switch is on.")
-        }
-        .disabled(!prefs.notificationsEnabled)
-        .opacity(prefs.notificationsEnabled ? 1 : 0.55)
-    }
-
-    /// Standard row for a toggleable rule: title + one-line effect, bound
-    /// toggle on the trailing edge.
-    private func ruleRow(
-        title: String,
-        subtitle: String,
-        isOn: Binding<Bool>,
-        kind: DegradationAlert.Kind,
-        hint: String
-    ) -> some View {
-        Toggle(isOn: isOn) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .accessibilityLabel(Text(title))
-        .accessibilityHint(Text(hint))
-        .accessibilityIdentifier("notifications.rule.\(kind.rawValue)")
-    }
-}
 
 // MARK: - Persistence (netmax.notify.*)
 
@@ -299,11 +182,3 @@ final class NotificationPreferences: ObservableObject {
         }
     }
 }
-
-#if DEBUG
-struct NotificationPrefsView_Previews: PreviewProvider {
-    static var previews: some View {
-        NotificationPrefsView()
-    }
-}
-#endif

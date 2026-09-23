@@ -1,4 +1,4 @@
-// AUDIT M9: not mounted in production — wire or remove deliberately.
+// M9: mounted from RootView for first-run onboarding.
 
 //
 //  OnboardingScheduleHost.swift

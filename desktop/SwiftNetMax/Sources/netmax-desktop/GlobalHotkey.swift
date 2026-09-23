@@ -1,5 +1,5 @@
-// AUDIT M9: not mounted in production — wire or remove deliberately.
-
+// M9: intentionally left uninstalled — NSEvent global monitors starve the
+// main event loop (App.swift:42-45). Fix = Carbon RegisterEventHotKey.
 import AppKit
 
 /// W12 T5-a (suggestion S-001) — global hotkey ⌥⌘R: run Quick Test from any

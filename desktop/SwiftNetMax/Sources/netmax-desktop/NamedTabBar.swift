@@ -83,18 +83,6 @@ struct NamedTabBar: View {
     }
 }
 
-/// Smooth tab-transition wrapper: fades + slightly rises the incoming view.
-/// Reduce Motion → opacity-only cross-fade (skill §14 / apple-design law).
-struct TabTransition: ViewModifier {
-    let isActive: Bool
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(isActive ? 1 : 0)
-            .offset(y: isActive ? 0 : 6)
-    }
-}
-
 #Preview("Named tab bar") {
     NamedTabBar(selection: .constant(0))
 }

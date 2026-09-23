@@ -1,10 +1,10 @@
-// AUDIT M9: not mounted in production — wire or remove deliberately.
-
 //
 //  ModeLabErrorView.swift
 //  netmax-desktop
 //
 //  A4-04 — Friendly error presentation for Mode Lab failures.
+//
+//  M9: mounted from ModeLabView's error branch (lastErrorText state).
 //
 //  Takes the RAW engine/bridge error string (the C1 envelope's `error`
 //  field, as surfaced by EngineClientError.errorDescription) and renders

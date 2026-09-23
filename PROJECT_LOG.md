@@ -95,4 +95,22 @@ remains the one item still pending its result.
   re-synced. AUDIT_REPORT + RELEASE-NOTES updated.
 - Verification: pytest **425 passed, 1 skipped→0 after fix, 5 subtests**; ruff clean;
   Swift selftests 20/20; bridge selftest 4/4; engine-sync OK.
-- Still open: H8 (license trial product), M9 (drop-in views product). Not pushed.
+- Still open: H8 (license trial product). Not pushed.
+
+## Session handoff — 2026-09-23 M9 + SPM test target (v1.0.6 prep)
+
+- M9 wire: BloatStory→RunDetailSheet, WifiDashboard→MenuBar (popover 420pt),
+  OnboardingScheduleHost→RootView, ScheduleTabContent (editor + BackgroundRunner),
+  ModeLabErrorView error branch, WhatsNew→MenuBarView.
+- M9 hide: ReportsEmpty deleted; HistoryEmpty→Notification.Name only; removed
+  TabTransition/netMaxPressable/netMaxTransition; NotificationPrefsView struct
+  removed (NotificationPreferences class kept); FeatureDiscovery pitch fixed;
+  GlobalHotkey stays commented (documented NSEvent starve).
+- SPM: `Package.swift` + `Tests/netmax-desktopTests/SwiftHarnessTests.swift`
+  wraps 20 `runAll()` harnesses; `swift test` green alongside shell harness.
+- Versions: desktop/package.json + server.json → **1.0.6** (pyproject stays 0.5.0).
+- AUDIT M9 → FIXED (deliberate); re-audit: MenuBar 420pt for Wifi floor; comments
+  cleaned (Settings/HistoryStore/StatusPublisherHook).
+- Verification: pytest 425, ruff clean, Swift selftests 20/20, `swift test` 1/1
+  (20 harnesses), bridge selftest 4/4, engine-sync OK.
+- Still open: H8 (license trial product). Not pushed.

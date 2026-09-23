@@ -1,10 +1,10 @@
-// AUDIT M9: not mounted in production — wire or remove deliberately.
-
 //
 //  WifiDashboardSection.swift
 //  netmax-desktop
 //
 //  ALPHA-A3-09 (wave-3, sub-wave W3a) — Dashboard "Wi‑Fi" section.
+//
+//  M9: mounted in MenuBarView under the metric cards.
 //
 //  A drop-in DASHBOARD SECTION that wraps Lane A2-03's WifiPanelView and
 //  sizes it for embedding in the Dashboard tab (MenuBarView). The panel

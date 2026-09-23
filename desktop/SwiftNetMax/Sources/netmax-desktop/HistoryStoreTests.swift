@@ -2,12 +2,10 @@ import Foundation
 
 // Offline unit tests for HistoryStore (contract P2).
 //
-// Package.swift has no test target (single executable target), and lane rules
-// forbid editing shared build files, so this file intentionally does NOT
-// compile as XCTest. It is compiled into the DEBUG build as a plain enum with
-// static checks; the real offline verification runs via a temp-dir script
-// harness against the same API (see mission report). If a test target is ever
-// added, these bodies convert 1:1 into XCTestCase methods.
+// Package.swift now has a test target that wraps these runAll() harnesses
+// (Tests/netmax-desktopTests/SwiftHarnessTests.swift). Bodies stay as plain
+// static checks so the DEBUG shell harness (run_swift_selftests.sh) and
+// `swift test` share one implementation.
 
 enum HistoryStoreTests {
     /// Run all checks; returns number of failures (0 == pass).

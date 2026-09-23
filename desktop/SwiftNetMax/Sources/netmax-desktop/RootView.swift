@@ -14,9 +14,9 @@ struct RootView: View {
             if onboardingComplete {
                 MainTabView()
             } else {
-                OnboardingView {
-                    // Fires right after the final step persisted the flag;
-                    // flipping this AppStorage-backed flag swaps in the app.
+                // M9: host wires OnboardingScheduleStep after honest-limits
+                // onboarding when netmax.schedule.enabled was never written.
+                OnboardingScheduleHost {
                     onboardingComplete = true
                 }
             }
@@ -89,7 +89,7 @@ struct MainTabView: View {
             HistoryView()
                 .tabItem { Label("History ⌘3", systemImage: "clock.arrow.circlepath") }
                 .tag(2)
-            ScheduleEditorView()
+            ScheduleTabContent()
                 .tabItem { Label("Schedule ⌘6", systemImage: "clock.badge.checkmark") }
                 .tag(5)
             ReportsView()
@@ -124,7 +124,7 @@ struct MainTabView: View {
             pane(2) { HistoryView() }
             pane(3) { ReportsView() }
             pane(4) { SettingsView(onOpenTab: { selection = $0 }) }
-            pane(5) { ScheduleEditorView() }
+            pane(5) { ScheduleTabContent() }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.15)
                                 : .spring(response: 0.4, dampingFraction: 0.85),
@@ -173,4 +173,21 @@ struct MainTabView: View {
 #Preview("Returning user") {
     RootView()
         .onAppear { DefaultOnboardingFlow.setCompleted(true) }
+}
+
+// MARK: - Schedule tab (M9: editor + background-runner controls)
+
+/// Schedule tab body: cadence editor above launchd runner controls.
+/// Nested Form on Form is invalid — each surface keeps its own chrome.
+struct ScheduleTabContent: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                ScheduleEditorView()
+                BackgroundRunnerControlsView()
+                    .padding(.horizontal)
+            }
+            .padding(.bottom, 16)
+        }
+    }
 }

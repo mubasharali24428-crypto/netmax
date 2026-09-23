@@ -1,6 +1,6 @@
 {
   "name": "@netmax/mcp-server",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "mcpName": "io.github.mubasharali24428-crypto/netmax",
   "description": "MCP server for NetMax Desktop - network diagnostics (speed test, DNS ranking, bufferbloat, WiFi) as AI coding agent tools",
   "type": "module",
