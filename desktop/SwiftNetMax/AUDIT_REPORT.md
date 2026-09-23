@@ -282,3 +282,80 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 
 - Confirmed by grep: zero production `RunPostProcessor.process(` call sites; only `NotifyDigest` doc reference for `consider|flushIfDue`; `GlobalHotkey.install` commented at `App.swift:45`; duplicate `.id(SettingsSection.startup.id)` at `SettingsView.swift:255` and `:403`.
 - No build/lint run for this audit (read-only analysis). Re-run greps above after any fix to confirm wiring.
+
+---
+
+## Status
+
+**Snapshot: 2026-09-23, end of the improvements session** (H1–H7 / M1–M10 were being fixed in parallel by other agents; "fixed" below means verified in-tree by grep at this moment, not authorship). Verified with `bash desktop/scripts/run_swift_selftests.sh` → **all green (20 harnesses)**.
+
+### CRITICAL
+
+| ID | Status | Evidence / note |
+|---|---|---|
+| C1 | **FIXED** | `process(record)` called after every production append: `ModeLabView.swift:817`, `MenuBarView.swift:267` + `:295`, `WifiPanelView.swift:410`, `ScheduleRunner.swift:243-254` (publish + pair path). Header contract strengthened this session (MUST-after-append + site list). |
+| C2 | **FIXED** | `ScheduleRunner.swift:249-252` evaluates only the final pair via `RunPostProcessor.alerts`/`deliverableAlerts`, hands `pending` to `coordinator.process(alerts:)`. |
+| C3 | **FIXED** | `RunPostProcessor.swift:146-149` posts `pending` via `NotificationCoordinator.process(alerts:)` — not full history. |
+
+### HIGH
+
+| ID | Status | Evidence / note |
+|---|---|---|
+| H1 | **FIXED** | `NetContext.swift:30-34`: empty `ifconfig` ⇒ `NetContext(online: true, vpn: false)` before `isOnline("")` can run. |
+| H2 | **FIXED** | Both ⚡ paths append + process: `MenuBarView.swift:260-267`, `:290-295`. |
+| H3 | **FIXED** | `TargetSpeedView.swift:91-93` — `onRun` completion resets `isRunning = false`; `MenuBarView.swift:69-72` passes `finished`. |
+| H4 | **FIXED** | `WifiEventEmitter.swift:81-82` — stdout/stderr → `FileHandle.nullDevice` (no undrained pipes before `waitUntilExit`). |
+| H5 | **FIXED** | `WifiEventEmitter.swift:15,41-54` — `NSLock` guards `inFlight` check-then-act; dead `lastSnapshot` removed. |
+| H6 | **FIXED** | `Notifications.swift:217` calls `NotifyDigest.consider`; `ScheduleRunner.swift:211` calls `flushIfDue` on tick. |
+| H7 | **FIXED** | `SettingsView.swift:220,224,233,242` all say `/usr/bin/python3`; `AppPreferences.resolvedInterpreter` deleted. |
+| H8 | **OPEN** | `LicenseGate.swift:64-69` still stamps trial on first launch; env overrides `:86-95` unguarded (product decision). |
+
+### MEDIUM
+
+| ID | Status | Evidence / note |
+|---|---|---|
+| M1 | **FIXED** | `ScheduleRunner.swift:72-76` flag-scan parse + self-check cases `:341-346`. |
+| M2 | **FIXED** | `SettingsView.swift:405` uses unique `.id(SettingsSection.historyRetention.id)`. |
+| M3 | **PARTIAL** | SSOT pointer comment added to `AppPreferences.Limits` (this session) → engine `engine_bridge.py RANGE_BOUNDS` (streams 1..50, seconds 5..21600). Range divergence across UIs not yet unified (improvement 4 = comment only, by design). |
+| M4 | **FIXED** | `ModeLabView.swift:713,744,756` check `runStoppedByUser` and `break` between/inside legs. |
+| M5 | **FIXED** | `StatusBarController.swift:110-117` uses file-order `.last`, same as hook. |
+| M6 | **PARTIAL** | Comment corrected to "NOT user-tunable" (`Notifications.swift:178`); no prefs keys/UI yet. |
+| M7 | **FIXED** | `HistoryStore.swift:429` — single read → filter → atomic write. |
+| M8 | **FIXED** | `HistoryStore.swift:191` + `postHistoryDidChange()` (`:516-523`) from mutators. |
+| M9 | **OPEN** | Drop-ins still unmounted (`App.swift:45` `GlobalHotkey.install` still commented; BloatStory/WifiDashboard/empty-integration/BackgroundRunnerControls/OnboardingSchedule* not mounted) — deferred as product decision (improvement 1). |
+| M10 | **FIXED (documented)** | `LicenseGate.swift:108-109` documents all-or-nothing tiers; `feature` intentionally unused. |
+
+### LOW
+
+| ID | Status | Evidence / note |
+|---|---|---|
+| L1 | **OPEN** | `EngineClient.stopCurrent` untouched — H7-owned file, skipped to avoid conflict. |
+| L2 | **FIXED** | `BackgroundRunner.swift` `xmlEscape` now escapes `& < > " '` (this session). |
+| L3 | **OPEN** | `TargetSpeedView.perStreamEstimate` — H-agent owned, skipped. |
+| L4 / L5 | **OK (n/a)** | No action required per audit. |
+
+### IMPROVEMENTS
+
+| # | Status |
+|---|---|
+| 1 (drop-ins) | OPEN — M9 product decision (M-agent lane). |
+| 2 (single post-run entry) | **DONE** — contract documented in `RunPostProcessor.swift` header (this session); all append sites verified wired. |
+| 3 (coordinator `[DegradationAlert]` API) | **DONE (pre-existing)** — `NotificationCoordinator.process(alerts:now:)` exists (`Notifications.swift:211`); `RunPostProcessor` + `ScheduleRunner` both use it. No duplicate added. |
+| 4 (parameter range SSOT) | **DONE (comment only)** — pointer to `engine_bridge.py RANGE_BOUNDS` added in `AppPreferences.Limits` (this session); no mass refactor. |
+| 5 (M8 notification) | **DONE** (by M agent). |
+| 6 (M5 newest-record) | **DONE** (by M/H agent). |
+| 7 (resolvedInterpreter / H7 docs) | **DONE** — H7. |
+| 8 (license trial UX) | OPEN — H8 (product decision). |
+| 9 (quiet hours) | **PARTIAL** — comment fixed (M6); persistence still open. |
+| 10 (WifiEventEmitter hardening) | **DONE** — H4/H5. |
+| 11 (sequence-stop + target completion) | **DONE** — M4 + H3. |
+| 12 (settings anchors) | **DONE** — M2. |
+| 13 (digest wiring) | **DONE** — H6. |
+| 14 (Quick Test persistence) | **DONE** — H2. |
+| 15 (NetContext fail-open) | **DONE** — H1. |
+| 16 (ScheduleRunner argv) | **DONE** — M1. |
+| 17 (deleteMany perf) | **DONE** — M7. |
+
+**This session's edits (improvements lane):** `RunPostProcessor.swift` (C1 header contract), `BackgroundRunner.swift` (L2 xmlEscape), `AppPreferences.swift` (M3/improvement-4 SSOT comment), `AUDIT_REPORT.md` (this Status section). WifiPanelView verified already wired — no edit.
+
+**Open at snapshot:** H8 (license trial — product decision), M9 (drop-in views — product decision), L1 (`EngineClient.stopCurrent` SIGTERM-then-SIGKILL), L3 (`perStreamEstimate` adaptive), M3 range unification (comment/pointer only by design), M6 quiet-hours persistence (comment fixed only).

@@ -175,7 +175,8 @@ final class NotificationCoordinator {
     static let shared = NotificationCoordinator()
 
     /// Quiet hours (local time); notifications due inside the window are held
-    /// until its end. Defaults 22:00–07:30, user-tunable via AppPreferences.
+    /// until its end. M6: hardcoded defaults 22:00–07:30 — NOT user-tunable
+    /// (no AppPreferences keys / Settings UI yet).
     var quietHoursStart: (hour: Int, minute: Int) = (22, 0)
     var quietHoursEnd: (hour: Int, minute: Int) = (7, 30)
 
@@ -210,6 +211,12 @@ final class NotificationCoordinator {
     @discardableResult
     func process(alerts: [DegradationAlert], now: Date = Date()) async -> [DegradationAlert] {
         guard !alerts.isEmpty else { return [] }
+        // W7-1 digest: opted-in ⇒ queue instead of posting each alert; the
+        // ScheduleRunner tick folds the queue into ONE daily summary.
+        if NotifyDigest.isEnabled {
+            for alert in alerts { NotifyDigest.consider(alert: alert) }
+            return []
+        }
         guard await requestAuthorizationIfNeeded() else { return [] }
 
         var posted: [DegradationAlert] = []
@@ -234,6 +241,32 @@ final class NotificationCoordinator {
             }
         }
         return posted
+    }
+
+    /// Post the folded daily-digest string (W7-1 flush path — called from
+    /// ScheduleRunner's tick with `NotifyDigest.flushIfDue()`'s output).
+    /// Same authorization + quiet-hours policy as individual alerts.
+    @discardableResult
+    func postDigest(_ text: String, now: Date = Date()) async -> Bool {
+        guard await requestAuthorizationIfNeeded() else { return false }
+        let content = UNMutableNotificationContent()
+        content.title = "NetMax daily digest"
+        content.body = text
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: "netmax.degradation.digest",
+            content: content,
+            trigger: Self.trigger(respectingQuietHoursFrom: now)
+        )
+        do {
+            try await center.add(request)
+            return true
+        } catch {
+            #if DEBUG
+            print("[Notifications] digest post failed: \(error.localizedDescription)")
+            #endif
+            return false
+        }
     }
 
     private static func title(for kind: DegradationAlert.Kind) -> String {

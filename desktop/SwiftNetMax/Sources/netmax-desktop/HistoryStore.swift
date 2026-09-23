@@ -188,6 +188,7 @@ final class HistoryStore {
             print("[HistoryStore] append failed: \(error.localizedDescription)")
             #endif
         }
+        Self.postHistoryDidChange() // M8: mutators notify observers (.netmaxHistoryDidChange)
         return record
     }
 
@@ -278,6 +279,7 @@ final class HistoryStore {
     /// The next append recreates the (now missing) history file.
     func clear() {
         lock.lock()
+        var changed = false
         defer { lock.unlock() }
         do {
             guard FileManager.default.fileExists(atPath: fileURL.path) else {
@@ -289,11 +291,13 @@ final class HistoryStore {
             }
             try FileManager.default.moveItem(at: fileURL, to: binURL)
             Self.applyPrivacyPermissions(binURL) // F6: bin holds the same personal data
+            changed = true
         } catch {
             #if DEBUG
             print("[HistoryStore] clear failed: \(error.localizedDescription)")
             #endif
         }
+        if changed { Self.postHistoryDidChange() } // M8
     }
 
     // MARK: Holding bin (W12 T1-a)
@@ -378,6 +382,7 @@ final class HistoryStore {
                 try blob.write(to: fileURL, options: .atomic)
                 Self.applyPrivacyPermissions(fileURL) // F6: .atomic resets perms
             }
+            Self.postHistoryDidChange() // M8
             return true
         } catch {
             #if DEBUG
@@ -421,9 +426,10 @@ final class HistoryStore {
         lock.lock()
         defer { lock.unlock() }
         let doomed = Set(records.map(Self.identityKey))
-        let kept = Self.readRecords(from: fileURL, decoder: decoder)
-            .filter { !doomed.contains(Self.identityKey($0)) }
-        let removed = Self.readRecords(from: fileURL, decoder: decoder).count - kept.count
+        // M7: single read → filter → atomic write (was reading the file twice).
+        let all = Self.readRecords(from: fileURL, decoder: decoder)
+        let kept = all.filter { !doomed.contains(Self.identityKey($0)) }
+        let removed = all.count - kept.count
         guard removed > 0 else { return 0 }
         do {
             if kept.isEmpty {
@@ -443,6 +449,7 @@ final class HistoryStore {
             print("[HistoryStore] bulk delete failed: \(error.localizedDescription)")
             #endif
         }
+        Self.postHistoryDidChange() // M8
         return removed
     }
 
@@ -496,12 +503,24 @@ final class HistoryStore {
             }
             try blob.write(to: fileURL, options: .atomic)
             Self.applyPrivacyPermissions(fileURL) // F6: .atomic resets perms
+            Self.postHistoryDidChange() // M8
             return true
         } catch {
             #if DEBUG
             print("[HistoryStore] updateNote failed: \(error.localizedDescription)")
             #endif
             return false
+        }
+    }
+
+    /// M8: `.netmaxHistoryDidChange` is posted from every HistoryStore
+    /// mutator (append/clear/delete/restore/updateNote) on the main queue,
+    /// so `StatusPublisherHook` and empty-state overlays refresh without
+    /// relying on call sites remembering to post. Async on main so mutators
+    /// stay callable from any thread without blocking on observers.
+    private static func postHistoryDidChange() {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .netmaxHistoryDidChange, object: nil)
         }
     }
 

@@ -1,5 +1,55 @@
 # Release Notes
 
+## Unreleased — audit MEDIUM + IMPROVEMENTS + post-HIGH scan (F1/F2)
+
+**MEDIUM (Swift)**
+- ScheduleRunner parses `--seconds` by flag scan, not `args[1]` positional.
+- Settings History Retention scroll anchor no longer collides with Startup.
+- Mode Lab Stop aborts multi-leg sequences between/inside legs.
+- StatusBarController uses file-order `.last` (matches StatusPublisherHook).
+- HistoryStore `deleteMany` single-read rewrite; mutators post `.netmaxHistoryDidChange`.
+- Quiet-hours comment corrected (not user-tunable yet); LicenseGate documents all-or-nothing tiers.
+
+**HIGH residuals (verified fixed)**
+- TargetSpeedView re-enables its button via completion callback (H3).
+- WifiEventEmitter: `nullDevice` pipes + `NSLock` around `inFlight` (H4/H5).
+- Daily digest wired: `NotifyDigest.consider` from alerts, `flushIfDue` on schedule tick (H6).
+- Interpreter help text and resolution all say `/usr/bin/python3`; dead `resolvedInterpreter` removed (H7).
+
+**Python MEDIUM**
+- Upload: per-endpoint `TimeoutExpired` failover across all verified endpoints.
+- Fetch: oversize/symlink/incomplete output validation; bridge unknown-mode envelope.
+- GUI: curl availability gated to `CURL_MODES`; watch-daemon lock TOCTOU fixed.
+- Watch: interruptible sleep seam (`on_interrupt`) + daemon `_release_lock` in finally.
+
+**Post-HIGH scan fixes**
+- **F1** GUI `NetMaxRunner.start_command` reuses the parked worker thread instead of spawning a replacement every run (thread leak).
+- **F2** `netmax_fetch` mbps counts only network bytes fetched this run — resumed on-disk bytes no longer inflate throughput.
+
+**Tests / CI / docs**
+- New `tests/test_audit_high_regressions.py`, `tests/test_netmax_watch_daemon.py`; F1/F2 regression tests.
+- README/RELEASE-NOTES/PROJECT_LOG personal-path scrub; requirements-ci ranged pins; testpaths include bridge+store.
+
+## Unreleased — audit CRITICAL+HIGH (commit 995063a)
+
+Fixes already committed in the audit pass; summarized here for the changelog:
+
+**CRITICAL**
+- `measure.py` quarantines a corrupt `history.json` (atomic write, never wipes it).
+- `netmax_fetch` discards single-chunk resume manifests; validates meta shapes.
+- `netmax_upload` unlinks the payload only when create succeeded (no orphan `finally`).
+- Swift `HistoryStore`/`RunPostProcessor` pair-scoped; notifications pref-gated.
+
+**HIGH**
+- ping/curl subprocess timeouts; `FileNotFoundError` → `NetMaxError`.
+- wifievents rejects `-i 0`; watch sleep is interruptible (PEP 475).
+- `split_chunks` clamps streams ≤ size (no zero-span chunks).
+- GUI: queue marshalling, killpg stop, `WM_DELETE_WINDOW`, streams `1..50`.
+- bridge: unlink stale `--json-out`, utf-8 decode, `encoding=`/`errors=replace`.
+- store: `PRAGMA user_version` migration ladder stamped to `SCHEMA_VERSION`.
+- CI: pip cache, `timeout-minutes`, ranged pins; testpaths include bridge+store.
+- README test-count honesty; `.DS_Store`/egg-info/results.* untracked.
+
 ## v0.7.0-draft — 2026-09-08 (W18 verifier pass)
 
 ### Modes & Tuning

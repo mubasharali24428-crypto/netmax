@@ -92,6 +92,30 @@ def test_falls_through_on_non_200(monkeypatch):
     assert mbps == pytest.approx(800000 * 8 / 1.0 / 1e6)
 
 
+def test_timeout_on_first_endpoint_falls_through(monkeypatch):
+    """A hung curl on endpoint 0 must not abort failover to the next."""
+    ok = _fake_run("200 800000 1.0")
+    calls = {"n": 0}
+
+    def flaky(cmd, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs.get("timeout", 1))
+        return ok(cmd, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", flaky)
+    mbps, _mb = netmax_upload.upload_probe(seconds=3.0)
+    assert mbps == pytest.approx(800000 * 8 / 1.0 / 1e6)
+    assert calls["n"] >= 2
+
+
+def test_non_numeric_writeout_is_netmaxerror_not_valueerror(monkeypatch):
+    """int()/float() parse failure must land as NetMaxError, not escape."""
+    monkeypatch.setattr(subprocess, "run", _fake_run("200 abc 1.0"))
+    with pytest.raises(netmax.NetMaxError):
+        netmax_upload.upload_probe(seconds=2.0)
+
+
 def test_raises_netmax_error_when_all_fail(monkeypatch):
     fake = _fake_run("503 0 0.2", returncode=0)
     monkeypatch.setattr(subprocess, "run", fake)

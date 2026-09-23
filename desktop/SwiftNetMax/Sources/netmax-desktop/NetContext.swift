@@ -27,6 +27,11 @@ enum NetContextProbe {
     static func detect() -> NetContext {
         let ifconfig = run("/sbin/ifconfig", ["-a"])
         let netstat = run("/usr/sbin/netstat", ["-rn"])
+        // Probe failure yields "" (see run() below) — degrade to online per
+        // the header contract: a broken probe must never block a run.
+        guard !ifconfig.isEmpty else {
+            return NetContext(online: true, vpn: false)
+        }
         return NetContext(
             online: isOnline(ifconfig),
             vpn: hasActiveRoutedTunnel(ifconfig: ifconfig, routes: netstat)
@@ -110,7 +115,7 @@ enum NetContextProbe {
         do {
             try process.run()
         } catch {
-            return "" // degrade honestly-empty; caller treats as "unknown"
+            return "" // failure ⇒ empty; detect() degrades to (online: true, vpn: false)
         }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()

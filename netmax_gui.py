@@ -38,6 +38,9 @@ DISCLAIMER = (
 
 MODES = ("baseline", "turbo", "boost", "dns", "bloat", "full")
 
+# Modes that shell out to curl; dns does not and must run without it.
+CURL_MODES = ("baseline", "turbo", "boost", "bloat", "full")
+
 MODE_HELP = {
     "baseline": "Single-stream throughput — what ordinary apps get.",
     "turbo": "N parallel streams — bigger share under contention.",
@@ -45,16 +48,6 @@ MODE_HELP = {
     "dns": "Rank public DNS resolvers by latency.",
     "bloat": "Bufferbloat: latency increase under load, graded A+–F.",
     "full": "Everything above + TCP tuning notes.",
-}
-
-# Extra CLI-only v0.4 modes surfaced in a dropdown-adjacent menu label.
-CLI_ONLY_MODES = {
-    "upload": "Upload-speed probe (Mbps up).",
-    "loss": "Packet-loss percent.",
-    "jitter": "Jitter — mean consecutive RTT delta.",
-    "wifi": "WiFi RSSI / noise / channel.",
-    "export": "Export newest run as CSV/JSON.",
-    "watch": "Continuous monitor (bloat+DNS per cycle).",
 }
 
 SCRIPT_PATH = Path(__file__).resolve().parent / "netmax.py"
@@ -195,15 +188,19 @@ class NetMaxRunner(threading.Thread):
                 # (curl children die with it), not just the Python wrapper.
                 popen_kw["start_new_session"] = True
             proc = subprocess.Popen(argv, **popen_kw)
-            if self.is_alive():
-                self._proc = proc
-                self._stop_requested = False
+            active = self._active
+            if active is not self and active.is_alive():
+                # F1: reuse the parked worker instead of checking self.is_alive()
+                # (the root runner is never started, so that branch was dead and
+                # every start_command leaked the previous idle _wait_for_work).
+                with active._lock:
+                    active._proc = proc
+                    active._stop_requested = False
             else:
                 # A Thread object can only be started once; if the worker loop
                 # exited after a prior stop(), hand off to a fresh runner.
                 replacement = NetMaxRunner(self._on_stdout, self._on_stderr, self._on_done)
                 replacement._proc = proc
-                replacement._lock = threading.Lock()  # fresh lock for fresh worker
                 self._active = replacement
         if replacement is not None:
             replacement.start()
@@ -477,7 +474,7 @@ class NetMaxApp:
         self.stop_btn.configure(state="normal" if running else "disabled")
 
     def on_run(self) -> None:
-        if not _curl_available():
+        if self.mode_var.get() in CURL_MODES and not _curl_available():
             self._append_out("netmax: curl not found on PATH — cannot measure.\n")
             return
         try:

@@ -26,6 +26,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     case modeLabDefaults
     case interpreter
     case startup
+    case historyRetention
     case notifications
     case onboarding
     case about
@@ -38,6 +39,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .modeLabDefaults: "Mode Lab Defaults"
         case .interpreter: "Python Interpreter"
         case .startup: "Startup"
+        case .historyRetention: "History Housekeeping"
         case .notifications: "Notifications"
         case .onboarding: "Onboarding"
         case .about: "About"
@@ -204,8 +206,8 @@ struct SettingsView: View {
 
     // MARK: - Python interpreter
 
-    /// True when the override is empty (resolve on PATH) or names an
-    /// executable file.
+    /// True when the override is empty (default /usr/bin/python3) or names
+    /// an executable file.
     private var overrideLooksValid: Bool {
         let trimmed = prefs.pythonOverride
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -219,7 +221,7 @@ struct SettingsView: View {
                 .textFieldStyle(.roundedBorder)
                 .disableAutocorrection(true)
                 .accessibilityLabel(Text("Python interpreter override"))
-                .accessibilityHint(Text("Full path to the Python 3 interpreter the engine should use. Leave empty to resolve python3 on PATH."))
+                .accessibilityHint(Text("Full path to the Python 3 interpreter the engine should use. Leave empty to use /usr/bin/python3."))
 
             if !prefs.pythonOverride.isEmpty {
                 if overrideLooksValid {
@@ -228,7 +230,7 @@ struct SettingsView: View {
                         .font(.caption)
                         .accessibilityLabel(Text("Interpreter override looks valid"))
                 } else {
-                    Label("No executable at this path — run will fall back to python3 on PATH", systemImage: "exclamationmark.triangle.fill")
+                    Label("No executable at this path — run will fall back to /usr/bin/python3", systemImage: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
                         .font(.caption)
                         .accessibilityLabel(Text("Interpreter override path not found"))
@@ -237,7 +239,7 @@ struct SettingsView: View {
         } header: {
             Text("Python Interpreter")
         } footer: {
-            Text("/usr/bin/python3 or full path — leave empty to use python3 from PATH.")
+            Text("/usr/bin/python3 or a full path — leave empty to use /usr/bin/python3.")
         }
         .id(SettingsSection.interpreter.id) // T4-a anchor
     }
@@ -400,7 +402,7 @@ struct SettingsView: View {
                  ? "All runs are kept forever."
                  : "Runs older than \(retentionDays) day\(retentionDays == 1 ? "" : "s") move to archive-history.jsonl — nothing is ever silently destroyed.")
         }
-        .id(SettingsSection.startup.id) // nearest existing anchor; no new section enum case needed for one row
+        .id(SettingsSection.historyRetention.id) // M2: unique anchor (was reusing startup)
     }
 
     // MARK: - Onboarding

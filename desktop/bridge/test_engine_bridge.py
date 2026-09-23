@@ -326,6 +326,36 @@ def test_run_never_raises_past_call(tmp_path):
         pytest.fail(f"run_engine leaked an exception: {exc!r}")
 
 
+def test_unknown_mode_direct_call_writes_envelope_without_spawning(tmp_path):
+    """run_engine("nope") must not KeyError — envelope + exit 1, no runner."""
+
+    def runner(cmd, **kw):  # pragma: no cover - must never be reached
+        raise AssertionError(f"engine spawned for unknown mode: {cmd}")
+
+    out = tmp_path / "env.json"
+    code = eb.run_engine("nope", None, None, None, str(out), runner=runner)
+    env = json.loads(out.read_text(encoding="utf-8"))
+    assert code == 1
+    assert env["success"] is False
+    assert env["mode"] == "nope"
+    assert env["data"] is None
+    assert "unknown mode" in env["error"]
+
+
+def test_run_engine_passes_utf8_replace_encoding(tmp_path):
+    """Child decode must be encoding=utf-8, errors=replace (mojibake-proof)."""
+    seen = {}
+
+    def runner(cmd, **kw):
+        seen.update(kw)
+        return _completed(0, stdout='{"ok": true}')
+
+    code, _env = _run(runner, tmp_path)
+    assert code == 0
+    assert seen["encoding"] == "utf-8"
+    assert seen["errors"] == "replace"
+
+
 # ── CLI surface ──────────────────────────────────────────────────────────────
 
 
@@ -402,9 +432,10 @@ def test_selftest_passes_all_offline_checks(capsys):
     captured = capsys.readouterr()
     assert rc == 0
     for name in ("arg_mapping_per_mode", "envelope_writer_temp_file",
-                 "interpreter_resolution_mocked_env"):
+                 "interpreter_resolution_mocked_env", "run_engine_encoding_utf8"):
         assert f"PASS {name}" in captured.out
     assert "FAIL" not in captured.out
+    assert "4/4 checks passed" in captured.out
 
 
 def test_selftest_reports_and_fails_on_broken_check(capsys):

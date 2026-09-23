@@ -128,14 +128,19 @@ class _Counter:
     def __init__(self, total: int | None, on_progress):
         self._lock = threading.Lock()
         self.done = 0
+        # F2: bytes fetched from the network THIS run — resume credits on disk
+        # count toward done (progress) but must not inflate the returned mbps.
+        self.net = 0
         self.total = total
         self.on_progress = on_progress
         self._last_reported = 0
 
-    def add(self, n: int) -> None:
+    def add(self, n: int, *, net: bool = True) -> None:
         fire = False
         with self._lock:
             self.done += n
+            if net:
+                self.net += n
             if self.on_progress is not None and (
                 self.done - self._last_reported >= PROGRESS_EVERY
             ):
@@ -156,11 +161,28 @@ def _fetch_chunk(
     counter: _Counter,
 ) -> None:
     """Fetch one byte-range into its part file, resuming a partial part."""
-    have = part.stat().st_size if part.exists() else 0
     want_total = end - start + 1
-    if have >= want_total:
-        counter.add(0)  # already complete from an earlier run
-        return
+    have = 0
+    # Safety first: never trust a part's size before proving it is a regular
+    # file — a pre-placed symlink whose target is >= want_total used to skip
+    # every check below and poison assembly with foreign bytes.
+    if part.exists() or part.is_symlink():
+        if part.is_symlink() or not part.is_file():
+            raise NetMaxError(
+                f"refusing unsafe existing path {part} (symlink or non-file)"
+            )
+        have = part.stat().st_size
+        if have > want_total:
+            # Corrupt leftover (e.g. a server ignored Range once and the full
+            # body landed here): its prefix is NOT this chunk — discard it.
+            part.unlink()
+            have = 0
+        elif have == want_total:
+            counter.add(want_total, net=False)  # complete from an earlier run
+            return
+        if have:
+            # partial resume: progress credit only — not network bytes (F2)
+            counter.add(have, net=False)
     headers = {"Range": f"bytes={start + have}-{end}"}
     resp = _open(url, headers)
     try:
@@ -168,12 +190,8 @@ def _fetch_chunk(
         if status is not None and int(status) >= 400:
             raise NetMaxError(f"range request {headers['Range']} got HTTP {status}")
         # Symlink-safe write: O_EXCL create (fails on pre-placed symlinks),
-        # 0600 perms, private part data.
+        # 0600 perms, private part data (path already vetted above).
         if part.exists() or part.is_symlink():
-            if part.is_symlink() or not part.is_file():
-                raise NetMaxError(
-                    f"refusing unsafe existing path {part} (symlink or non-file)"
-                )
             fd = os.open(part, os.O_WRONLY | os.O_APPEND)  # legit resume
         else:
             fd = _open_excl(part)
@@ -250,7 +268,6 @@ def download(
     length, ranged = _head(url)
 
     # Resume path: valid meta + matching url means prior parts are reusable.
-    resumed = False
     chunks: list[tuple[int, int]] | None = None
     if length is not None and ranged:
         meta_file = _meta_path(out_path)
@@ -269,13 +286,13 @@ def download(
                     parsed: list[tuple[int, int]] = []
                     for c in meta["chunks"]:
                         if not (isinstance(c, (list, tuple)) and len(c) == 2
-                                and all(isinstance(v, int) for v in c)):
+                                and all(isinstance(v, int) for v in c)
+                                and 0 <= c[0] <= c[1] < length):
                             parsed = []
                             break
                         parsed.append((c[0], c[1]))
                     if len(parsed) == len(meta["chunks"]) and parsed:
                         chunks = parsed
-                        resumed = True
             except (ValueError, KeyError, OSError, TypeError):
                 pass
         if chunks is None:
@@ -305,10 +322,9 @@ def download(
                 }, mfh)
 
     # A single chunk means the single-stream path writes out_path directly —
-    # part-file assembly never applies and must not unlink the finished file.
+    # part-file assembly never applies (no part files exist for it).
     if chunks is not None and len(chunks) < 2:
         chunks = None
-        resumed = False
         try:
             os.remove(_meta_path(out_path))
         except FileNotFoundError:
@@ -343,20 +359,13 @@ def download(
             # F10 completeness (single-stream path): same O_EXCL + 0600
             # policy as _assemble — never follow a pre-placed symlink,
             # never leave the download world-readable.
-            if resumed and out_path.exists():
+            if out_path.exists() or out_path.is_symlink():
                 if out_path.is_symlink() or not out_path.is_file():
                     raise NetMaxError(
                         f"refusing unsafe output path {out_path} (symlink or non-file)"
                     )
-                out_fd = os.open(out_path, os.O_WRONLY | os.O_APPEND)
-            else:
-                if out_path.exists() or out_path.is_symlink():
-                    if out_path.is_symlink() or not out_path.is_file():
-                        raise NetMaxError(
-                            f"refusing unsafe output path {out_path} (symlink or non-file)"
-                        )
-                    out_path.unlink()
-                out_fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                out_path.unlink()
+            out_fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(out_fd, "wb") as fh:
                 while True:
                     block = resp.read(65536)
@@ -376,10 +385,19 @@ def download(
         total_bytes = out_path.stat().st_size
         counter.flush()
 
+    # Completeness: an empty/short body (server closed early) or a poisoned
+    # assembly must fail loudly, never return a truncated file as success.
+    if length is not None and total_bytes != length:
+        raise NetMaxError(
+            f"download incomplete: got {total_bytes} of {length} bytes"
+        )
+
     elapsed = max(time.monotonic() - started, 1e-9)
     return {
         "bytes": total_bytes,
-        "mbps": total_bytes * 8 / elapsed / 1e6,
+        # F2: mbps = network bytes this run only — a resumed download must not
+        # divide the full file size by this run's short elapsed time.
+        "mbps": counter.net * 8 / elapsed / 1e6,
         "streams_used": streams_used,
         "elapsed_s": elapsed,
     }

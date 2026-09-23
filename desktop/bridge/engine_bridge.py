@@ -22,8 +22,8 @@ other stdout is wrapped as {"raw": "..."} inside `data`.
 
 `selftest` performs OFFLINE checks only (argument mapping, argument
 range bounds, envelope writer against a temp file, interpreter-
-resolution logic with mocked env). It never spawns the engine and never
-touches the network.
+resolution logic with mocked env, subprocess encoding contract).
+It never spawns the engine and never touches the network.
 """
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ import sys
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -159,8 +160,10 @@ def validate_ranges(
     """Bridge-side range check (W7-4/F2), BEFORE any subprocess spawn.
 
     Returns None when every given value is within RANGE_BOUNDS (unset
-    flags pass); otherwise returns netmax.py's exact argparse message,
-    e.g. "netmax: --seconds must be 5..21600, got 0".
+    flags pass); otherwise returns a netmax-style range message stating
+    the accepted bounds, e.g. "netmax: --seconds must be 5..21600, got 0"
+    (the engine words its own --seconds error as quick/long bands; the
+    bounds themselves are identical).
     """
     given: dict[str, int | None] = {
         "streams": streams,
@@ -256,6 +259,13 @@ def run_engine(
 ) -> int:
     """Run one engine mode and write the envelope. Returns exit code."""
     root = REPO_ROOT if repo_root is None else Path(repo_root)
+    # Unknown mode: MODE_FLAGS[mode] would KeyError — land in the envelope.
+    if mode not in MODE_FLAGS:
+        detail = f"unknown mode {mode!r}"
+        write_envelope(json_out, success=False, mode=mode, data=None,
+                       error=stderr_tail(detail))
+        print(f"engine_bridge: {detail}", file=sys.stderr)
+        return 1
     # W7-4/F2: reject out-of-range values BEFORE spawning anything.
     range_error = validate_ranges(streams, seconds, count)
     if timeout_s is None:
@@ -324,12 +334,9 @@ def run_engine(
             error=f"engine timed out after {int(timeout_s)}s and was killed",
         )
         return 1
-    except FileNotFoundError as exc:
-        write_envelope(
-            json_out, success=False, mode=mode, data=None, error=stderr_tail(str(exc))
-        )
-        return 1
-    except OSError as exc:
+    except Exception as exc:
+        # Contract: every failure lands in the envelope — FileNotFoundError,
+        # OSError, and any other spawn/decode error must never escape main().
         write_envelope(
             json_out, success=False, mode=mode, data=None, error=stderr_tail(str(exc))
         )
@@ -410,6 +417,26 @@ def _check_interpreter_resolution() -> None:
         raise AssertionError("blank NETMAX_PYTHON must fall back")
 
 
+def _check_run_engine_encoding(tmp_dir: str) -> None:
+    """run_engine must spawn the child with encoding=utf-8, errors=replace."""
+    seen: dict = {}
+
+    def fake_runner(cmd, **kwargs):
+        seen.update(kwargs)
+        return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+
+    json_out = os.path.join(tmp_dir, "enc.json")
+    code = run_engine("dns", None, None, None, json_out, runner=fake_runner,
+                      timeout_s=5)
+    if code != 0:
+        raise AssertionError(f"expected exit 0, got {code}")
+    if seen.get("encoding") != "utf-8" or seen.get("errors") != "replace":
+        raise AssertionError(
+            f"expected encoding=utf-8 errors=replace, got "
+            f"{seen.get('encoding')!r}/{seen.get('errors')!r}"
+        )
+
+
 def _check_range_validation() -> None:
     if validate_ranges(None, None, None) is not None:
         raise AssertionError("unset flags must validate clean")
@@ -443,7 +470,7 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory(prefix="netmax-bridge-selftest-") as tmp_dir:
         def _args_and_ranges() -> None:
             # Range validation folds under the arg-mapping check so the
-            # selftest surface stays 3/3 (W7-4/F2).
+            # selftest surface stays 4/4 (W7-4/F2 + encoding contract).
             _check_arg_mapping()
             _check_range_validation()
 
@@ -451,6 +478,7 @@ def selftest() -> int:
             ("arg_mapping_per_mode", _args_and_ranges),
             ("envelope_writer_temp_file", lambda: _check_envelope_writer(tmp_dir)),
             ("interpreter_resolution_mocked_env", _check_interpreter_resolution),
+            ("run_engine_encoding_utf8", lambda: _check_run_engine_encoding(tmp_dir)),
         ]
         for name, fn in checks:
             try:

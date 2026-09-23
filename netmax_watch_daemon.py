@@ -87,6 +87,11 @@ def _acquire_lock(path: Path) -> bool:
         else:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write(f"{os.getpid()}\n")
+            # TOCTOU guard: a concurrent starter may have unlinked our still-
+            # empty file and created its own between open and write. Only own
+            # the lock if our PID is what the path holds now.
+            if _read_pid(path) != os.getpid():
+                return False
             return True
     return False
 
@@ -131,7 +136,11 @@ def run_daemon(interval_s: int, shutdown: ShutdownFlag) -> list[dict]:
     """
     history: list[dict] = []
     while not shutdown.requested:
-        netmax_watch.watch_loop(interval_s, 1, history=history)
+        # on_interrupt: watch_loop replaces SIGINT while it runs; without
+        # this, Ctrl-C interrupts one cycle but never flips the daemon flag.
+        netmax_watch.watch_loop(
+            interval_s, 1, history=history, on_interrupt=shutdown.request
+        )
         if shutdown.requested:
             break
         shutdown.wait(timeout=float(interval_s))
@@ -202,10 +211,10 @@ def main(argv: list[str] | None = None) -> int:
                 signal.signal(sig, handler)
             except (ValueError, OSError):
                 pass
+        _release_lock(lock_path)
 
     print(netmax.summarize_watch_history(history), flush=True)
     print("netmax_watch_daemon: clean shutdown.", flush=True)
-    _release_lock(lock_path)
     return exit_code
 
 

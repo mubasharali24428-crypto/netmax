@@ -305,11 +305,14 @@ enum BackgroundRunner {
         return stdout
     }
 
-    /// Escape text for inclusion in plist XML character data.
+    /// Escape text for inclusion in plist XML — safe for both character
+    /// data and attribute values (L2): `&<>"'` all covered, `&` first.
     private static func xmlEscape(_ value: String) -> String {
         value.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&apos;")
     }
 }
 

@@ -16,7 +16,8 @@ struct TargetSpeedView: View {
     @State private var selectedTarget: Double?
     @State private var isRunning = false
     @State private var lastResult: String = ""
-    let onRun: (_ streams: Int, _ seconds: Int, _ targetMbps: Double) -> Void
+    let onRun: (_ streams: Int, _ seconds: Int, _ targetMbps: Double,
+                _ finished: @escaping () -> Void) -> Void
 
     /// Target menu = sensible fractions of the plan, deduped and ≤ plan.
     private var targets: [Double] {
@@ -87,7 +88,9 @@ struct TargetSpeedView: View {
                     Spacer()
                     Button {
                         isRunning = true
-                        onRun(streamsFor(target: target), 10, target)
+                        onRun(streamsFor(target: target), 10, target) {
+                            isRunning = false
+                        }
                     } label: {
                         Label("Reach \(formatMbps(target))",
                               systemImage: "arrow.up.forward.circle.fill")

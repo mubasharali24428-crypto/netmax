@@ -735,8 +735,13 @@ struct ModeLabView: View {
         status = .running
         resultText = ""
         sequenceResults = []
+        runStoppedByUser = false
         Task {
+            // M4: Stop must abort the multi-leg chain, not just SIGKILL the
+            // current process — check the flag before each leg and on stop.
+            var stopped = false
             for modeID in Self.sequenceModes {
+                if runStoppedByUser { stopped = true; break }
                 let mode = ModeCatalog.definition(for: modeID)
                 let args = mappedArgs(for: mode)
                 do {
@@ -748,6 +753,7 @@ struct ModeLabView: View {
                                       raw: output)
                     }
                 } catch {
+                    if runStoppedByUser { stopped = true; break }
                     await MainActor.run {
                         sequenceResults.append(
                             SequenceLegResult(mode: mode.id,
@@ -756,7 +762,14 @@ struct ModeLabView: View {
                 }
             }
             await MainActor.run {
-                status = .done
+                if stopped || runStoppedByUser {
+                    // W16 parity with the single-run path: honest stop, not an error.
+                    resultText = "Test stopped by user."
+                    status = .idle
+                    runStoppedByUser = false
+                } else {
+                    status = .done
+                }
             }
         }
     }

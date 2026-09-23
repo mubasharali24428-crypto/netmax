@@ -203,6 +203,72 @@ def test_resume_skips_complete_chunks_and_writes_meta(tmp_path, fake_net):
     assert stats["bytes"] == 400
 
 
+def test_resume_mbps_counts_only_network_bytes(tmp_path, fake_net, monkeypatch):
+    """F2: resumed bytes already on disk must not inflate mbps.
+
+    Half the file is pre-seeded; elapsed is pinned so the expected mbps is
+    exactly the 200 network bytes fetched this run — not the full 400.
+    """
+    _, install = fake_net
+    size = 400
+    body = make_body(size)
+
+    def serve(url, h):
+        if "range" not in h:
+            return FakeResponse(
+                {"Content-Length": str(size), "Accept-Ranges": "bytes"}, body)
+        start, end = (int(x) for x in h["range"].split("=")[1].split("-"))
+        return FakeResponse({}, body[start:end + 1])
+
+    install(serve)
+    out = tmp_path / "f.bin"
+    chunks = netmax_fetch.split_chunks(size, 4)
+    out.with_name(out.name + ".netmax-meta.json").write_text(json.dumps({
+        "url": "http://x/f", "size": size,
+        "chunks": [[s, e] for s, e in chunks],
+    }))
+    for i in (0, 1):  # pre-seed half the file (200 of 400 bytes)
+        s, e = chunks[i]
+        out.with_name(f"{out.name}.netmax-part-{i}").write_bytes(body[s:e + 1])
+
+    # Pin elapsed at 1.0s: download() calls monotonic() twice (start/end).
+    ticks = iter([1000.0, 1001.0])
+    monkeypatch.setattr(netmax_fetch.time, "monotonic", lambda: next(ticks, 1001.0))
+
+    stats = netmax_fetch.download("http://x/f", out, streams=4)
+
+    assert stats["bytes"] == 400
+    # 200 network bytes in 1.0s = 1.6 Mbps (not 400 bytes = 3.2 Mbps).
+    assert stats["mbps"] == pytest.approx(200 * 8 / 1.0 / 1e6)
+
+
+def test_fully_resumed_download_reports_zero_mbps(tmp_path, fake_net):
+    """F2: when every chunk is already on disk, mbps must be 0 — no network."""
+    _, install = fake_net
+    size = 200
+    body = make_body(size)
+
+    def serve(url, h):
+        if "range" not in h:
+            return FakeResponse(
+                {"Content-Length": str(size), "Accept-Ranges": "bytes"}, body)
+        raise AssertionError("no range fetch expected when fully resumed")
+
+    install(serve)
+    out = tmp_path / "f.bin"
+    chunks = netmax_fetch.split_chunks(size, 2)
+    out.with_name(out.name + ".netmax-meta.json").write_text(json.dumps({
+        "url": "http://x/f", "size": size,
+        "chunks": [[s, e] for s, e in chunks],
+    }))
+    for i, (s, e) in enumerate(chunks):
+        out.with_name(f"{out.name}.netmax-part-{i}").write_bytes(body[s:e + 1])
+
+    stats = netmax_fetch.download("http://x/f", out, streams=2)
+    assert stats["bytes"] == size
+    assert stats["mbps"] == 0.0
+
+
 def test_resume_meta_url_mismatch_refetches_all(tmp_path, fake_net):
     _, install = fake_net
     size = 200
@@ -218,7 +284,7 @@ def test_resume_meta_url_mismatch_refetches_all(tmp_path, fake_net):
     out = tmp_path / "f.bin"
     chunks = netmax_fetch.split_chunks(size, 2)
     out.with_name(out.name + ".netmax-meta.json").write_text(json.dumps({
-        "url": "http://OTHER/f", "size": size,
+        "url": "http://x/f", "size": size,
         "chunks": [[s, e] for s, e in chunks],
     }))
     s, e = chunks[0]
@@ -226,6 +292,79 @@ def test_resume_meta_url_mismatch_refetches_all(tmp_path, fake_net):
 
     netmax_fetch.download("http://x/f", out, streams=2)
     assert out.read_bytes() == body  # stale part overwritten by fresh fetch
+
+
+def test_oversize_part_deleted_and_refetched(tmp_path, fake_net):
+    """A part larger than its chunk must not be trusted — refetch from scratch."""
+    _, install = fake_net
+    size = 400
+    body = make_body(size)
+
+    def serve(url, h):
+        if "range" not in h:
+            return FakeResponse(
+                {"Content-Length": str(size), "Accept-Ranges": "bytes"}, body)
+        start, end = (int(x) for x in h["range"].split("=")[1].split("-"))
+        return FakeResponse({}, body[start:end + 1])
+
+    install(serve)
+    out = tmp_path / "f.bin"
+    chunks = netmax_fetch.split_chunks(size, 4)
+    out.with_name(out.name + ".netmax-meta.json").write_text(json.dumps({
+        "url": "http://x/f", "size": size,
+        "chunks": [[s, e] for s, e in chunks],
+    }))
+    # Part 0 claims chunk [0, 99] but holds 200 bytes — poisoned resume.
+    out.with_name(f"{out.name}.netmax-part-0").write_bytes(make_body(200))
+
+    stats = netmax_fetch.download("http://x/f", out, streams=4)
+    assert out.read_bytes() == body
+    assert stats["bytes"] == size
+
+
+def test_symlinked_part_refused(tmp_path, fake_net):
+    """Pre-placed symlink part must not be followed or trusted."""
+    _, install = fake_net
+    size = 400
+    body = make_body(size)
+
+    def serve(url, h):
+        if "range" not in h:
+            return FakeResponse(
+                {"Content-Length": str(size), "Accept-Ranges": "bytes"}, body)
+        start, end = (int(x) for x in h["range"].split("=")[1].split("-"))
+        return FakeResponse({}, body[start:end + 1])
+
+    install(serve)
+    out = tmp_path / "f.bin"
+    chunks = netmax_fetch.split_chunks(size, 4)
+    out.with_name(out.name + ".netmax-meta.json").write_text(json.dumps({
+        "url": "http://x/f", "size": size,
+        "chunks": [[s, e] for s, e in chunks],
+    }))
+    target = tmp_path / "elsewhere.bin"
+    target.write_bytes(make_body(100))
+    out.with_name(f"{out.name}.netmax-part-0").symlink_to(target)
+
+    with pytest.raises(NetMaxError, match="refusing unsafe"):
+        netmax_fetch.download("http://x/f", out, streams=4)
+
+
+def test_short_body_raises_incomplete(tmp_path, fake_net):
+    """Single-stream: Content-Length lies; final length check must catch it."""
+    _, install = fake_net
+
+    def serve(url, h):
+        if "range" not in h:
+            # No Accept-Ranges → single-stream path; HEAD says 300, body 250.
+            return FakeResponse({"Content-Length": "300"}, make_body(250))
+        start, end = (int(x) for x in h["range"].split("=")[1].split("-"))
+        return FakeResponse({}, make_body(300)[start:end + 1])
+
+    install(serve)
+    out = tmp_path / "f.bin"
+    with pytest.raises(NetMaxError, match="incomplete"):
+        netmax_fetch.download("http://x/f", out, streams=4)
 
 
 # ── progress callback ────────────────────────────────────────────────────────

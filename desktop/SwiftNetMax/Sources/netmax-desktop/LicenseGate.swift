@@ -104,6 +104,11 @@ final class LicenseGate: ObservableObject {
     }
 
     /// A tier of Trial or Pro unlocks paid lanes.
+    ///
+    /// M10: tiers are all-or-nothing — `feature` is intentionally unused;
+    /// every `Feature` case checks the same tier (Free blocks all paid
+    /// features; Trial/Pro unlock all of them). Per-feature policy is not
+    /// implemented.
     func canUse(_ feature: Feature, now: Date = Date()) -> Bool {
         return LicenseGate.effectiveTier(self, now: now) != Tier.Free
     }

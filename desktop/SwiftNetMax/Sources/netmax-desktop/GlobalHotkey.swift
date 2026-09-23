@@ -1,3 +1,5 @@
+// AUDIT M9: not mounted in production — wire or remove deliberately.
+
 import AppKit
 
 /// W12 T5-a (suggestion S-001) — global hotkey ⌥⌘R: run Quick Test from any

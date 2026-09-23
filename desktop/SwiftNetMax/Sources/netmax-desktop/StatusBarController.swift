@@ -106,10 +106,15 @@ enum StatusBarController {
     /// Republish from the store: picks up the newest record, or clears the
     /// keys when history is empty. Call after each completed run and after
     /// Clear History.
+    ///
+    /// M5: "newest" is the LAST record in file order — same algorithm as
+    /// `StatusPublisherHook.publishNow` — because `HistoryRecord.ts` has
+    /// second granularity and same-second ties would otherwise resolve
+    /// differently depending on the publish path.
     static func publish(store: HistoryStore = .shared,
                         now: Date = Date(),
                         defaults: UserDefaults = .standard) {
-        publish(record: store.loadAll().max { $0.ts < $1.ts },
+        publish(record: store.loadAll().last,
                 now: now, defaults: defaults)
     }
 

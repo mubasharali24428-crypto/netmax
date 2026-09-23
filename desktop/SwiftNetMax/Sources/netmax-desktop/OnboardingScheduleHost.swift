@@ -1,3 +1,5 @@
+// AUDIT M9: not mounted in production — wire or remove deliberately.
+
 //
 //  OnboardingScheduleHost.swift
 //  netmax-desktop

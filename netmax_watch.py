@@ -10,11 +10,18 @@ from netmax import format_watch_status
 MAX_CONSECUTIVE_FAILURES = 5
 
 
-def watch_loop(interval_s: int, cycles: int, history: list[dict] | None = None) -> list[dict]:
+def watch_loop(
+    interval_s: int,
+    cycles: int,
+    history: list[dict] | None = None,
+    *,
+    on_interrupt=None,
+) -> list[dict]:
     """Run bloat_grade + dns_ranking every interval_s for up to cycles cycles.
 
     Appends {delta_ms, grade, dns_ms} per cycle to history (created if None)
-    and returns it. SIGINT sets a flag for a clean exit. Stops early after
+    and returns it. SIGINT sets a flag for a clean exit and invokes
+    on_interrupt (e.g. a daemon shutdown flag) when given. Stops early after
     MAX_CONSECUTIVE_FAILURES consecutive failed cycles.
     """
     if not isinstance(interval_s, int) or interval_s < 5:
@@ -30,6 +37,8 @@ def watch_loop(interval_s: int, cycles: int, history: list[dict] | None = None) 
     def _on_sigint(signum, frame):
         nonlocal interrupted
         interrupted = True
+        if on_interrupt is not None:
+            on_interrupt()
 
     prev_handler = signal.signal(signal.SIGINT, _on_sigint)
 

@@ -230,7 +230,6 @@ class TestMedianRtt:
             started["t"] += 3.0  # 3000 ms per attempt ≥ 2000 ms threshold
             return started["t"]
 
-        monkeypatch.setattr(netmax.time.perf_counter, "__globals__", {}, raising=False) if False else None
         monkeypatch.setattr(time_mod, "perf_counter", lambda: bump())
 
         def hanging_query(server, name, timeout=2.0):

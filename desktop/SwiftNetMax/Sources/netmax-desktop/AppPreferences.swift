@@ -40,6 +40,15 @@ final class AppPreferences: ObservableObject {
     }
 
     // MARK: Sane ranges enforced on every set.
+    //
+    // Improvement 4 / M3 — these are STORAGE clamps only, not the engine
+    // contract. Source of truth for what the engine accepts lives in
+    // `desktop/bridge/engine_bridge.py` `RANGE_BOUNDS` (streams 1...50,
+    // seconds 5...21600 — quick band 5...30); `engine/netmax.py`
+    // `_checked` / `_checked_duration` enforce the same numbers at run
+    // time. UI seed catalogs (ModeLab `ModeParameter`, DurationEntry,
+    // Target Speed) may be tighter — when tightening or widening anything
+    // here, reconcile against RANGE_BOUNDS first, never the reverse.
 
     enum Limits {
         static let streams = 1...50
@@ -141,12 +150,6 @@ final class AppPreferences: ObservableObject {
     }
 
     // MARK: Helpers for non-UI consumers (lanes A/B/D)
-
-    /// Convenience for the engine client: the override when set, else the
-    /// bare command resolved on PATH at spawn time.
-    var resolvedInterpreter: String {
-        pythonOverride.isEmpty ? "python3" : pythonOverride
-    }
 
     /// Pull `value` into `range`. Out-of-range inputs land on the nearest
     /// bound; there are no sentinel error values by design.

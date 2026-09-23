@@ -66,6 +66,10 @@ def upload_probe(seconds: float) -> tuple[float, float]:
                 raise netmax.NetMaxError(
                     "curl not found on PATH — install curl to measure upload"
                 ) from None
+            except subprocess.TimeoutExpired:
+                # One hung endpoint must not abort failover to the next.
+                problems.append(f"{endpoint}: curl hung past subprocess timeout")
+                continue
             wall = time.monotonic() - started
             parts = proc.stdout.split()
             if len(parts) != 3:
@@ -77,7 +81,13 @@ def upload_probe(seconds: float) -> tuple[float, float]:
             if code_s != "200":
                 problems.append(f"{endpoint}: HTTP {code_s}")
                 continue
-            nbytes, secs = int(nbytes_s), float(secs_s)
+            try:
+                nbytes, secs = int(nbytes_s), float(secs_s)
+            except ValueError:
+                problems.append(
+                    f"{endpoint}: unparseable numbers {nbytes_s!r} {secs_s!r}"
+                )
+                continue
             if secs <= 0 or wall <= 0:
                 problems.append(f"{endpoint}: zero/negative duration")
                 continue
@@ -87,8 +97,6 @@ def upload_probe(seconds: float) -> tuple[float, float]:
                 continue
             mbps = nbytes * 8 / secs / 1e6
             return mbps, nbytes / 1e6
-    except subprocess.TimeoutExpired:
-        problems.append("curl hung past subprocess timeout — aborted")
     finally:
         if payload_path is not None:
             try:

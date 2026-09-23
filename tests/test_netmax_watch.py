@@ -118,3 +118,33 @@ def test_sigint_stops_cleanly(monkeypatch):
     # default handler restored before returning
     assert signal.getsignal(signal.SIGINT) in (signal.SIG_DFL,
                                                signal.default_int_handler)
+
+
+def test_on_interrupt_called_on_sigint(monkeypatch):
+    """Daemon seam: on_interrupt fires when SIGINT interrupts the loop."""
+    import signal
+
+    state = {"cycles_done": 0, "interrupted": []}
+
+    def bloat(streams, seconds):
+        state["cycles_done"] += 1
+        if state["cycles_done"] == 1:
+            handler = signal.getsignal(signal.SIGINT)
+            handler(signal.SIGINT, None)
+        return (20.0, 10.0, "B")
+
+    monkeypatch.setattr(netmax_watch.netmax, "bloat_grade", bloat)
+    monkeypatch.setattr(netmax_watch.netmax, "dns_ranking",
+                        lambda: [("X", 10.0)])
+    monkeypatch.setattr(netmax_watch.time, "sleep", lambda s: None)
+
+    prev = signal.signal(signal.SIGINT, signal.SIG_DFL)
+    try:
+        hist = netmax_watch.watch_loop(
+            5, 10, on_interrupt=lambda: state["interrupted"].append(True)
+        )
+    finally:
+        signal.signal(signal.SIGINT, prev)
+    assert state["interrupted"] == [True]
+    assert len(hist) == 1
+    assert state["cycles_done"] == 1

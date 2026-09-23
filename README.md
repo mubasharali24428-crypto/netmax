@@ -75,6 +75,8 @@ $NETMAX_PYTHON netmax.py full --seconds 10      # or just: python3 netmax.py ful
 
 Requires: Python 3.10+, `curl`, and network access for live measurements.
 
+Versioning: Python package version in `pyproject.toml`; MCP npm package version in `desktop/package.json`.
+
 ## CLI examples
 
 ```bash
@@ -108,12 +110,12 @@ subprocess so a failed measurement can never take down the UI.
 
 ## Tests
 
-385 offline tests in the default suite (network fully mocked — safe to run
-anywhere), plus 94 more in the engine_store / bridge suites:
+412 offline tests in the default suite (network fully mocked — safe to run
+anywhere), including the 94 in the engine_store / bridge suites:
 
 ```bash
 cd ~/netmax
-python3 -m pytest            # engine + GUI + module suites (385)
+python3 -m pytest            # full suite (412: engine + GUI + modules + bridge + store)
 python3 -m pytest tests/test_netmax.py -v        # engine only
 python3 -m pytest test_netmax_gui.py -v          # GUI only
 python3 -m pytest desktop/engine_store/test_store.py -q   # SQLite layer (38)
@@ -137,7 +139,7 @@ bash desktop/scripts/run_swift_selftests.sh
 | `netmetrics.py` | Packet loss, jitter, WiFi info modules |
 | `netmax_export.py` | CSV/JSON export of measurement runs |
 | `netmax_watch.py` | Continuous monitor loop |
-| `measure.py` | Live measurement run → `results.json` + `results.png` charts + history.json |
+| `measure.py` | Live measurement run → `results/<ts>/results.json` + chart + `results/history.json` |
 | `tests/` | Offline pytest suites for all modules |
 | `docs/FEATURE-SPECS.md` | Implementation specs for the v0.4 feature set |
 | `PROJECT_LOG.md` | Build log, verified results, debugging notes |

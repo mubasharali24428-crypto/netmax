@@ -69,6 +69,16 @@ final class ScheduleRunner: ObservableObject {
     static let runMode = "boost"
     static let runArgs = ["--seconds", "10"]
 
+    /// M1: parse `--seconds N` by scanning for the flag — never positionally
+    /// from `args[1]`, which breaks if flag order or extra flags change.
+    /// Missing/invalid value falls back to `fallback` (the historical default).
+    static func seconds(from args: [String], fallback: Int = 10) -> Int {
+        guard let i = args.firstIndex(of: "--seconds"), i + 1 < args.count else {
+            return fallback
+        }
+        return Int(args[i + 1]) ?? fallback
+    }
+
     // MARK: Published state (read-only to observers)
 
     /// True while the repeating timer is armed. UI (Settings/RootView lane)
@@ -195,6 +205,12 @@ final class ScheduleRunner: ObservableObject {
         case .waiting, .disabled:
             break
         }
+        // W7-1: fold queued digest alerts into ONE summary when due (nil
+        // unless the digest gate is on, the queue is non-empty, and 24h
+        // have passed). Master-off skips the flush so the queue waits.
+        if notificationsAllowed(), let digest = NotifyDigest.flushIfDue() {
+            Task { await NotificationCoordinator.shared.postDigest(digest) }
+        }
         return decision
     }
 
@@ -215,7 +231,7 @@ final class ScheduleRunner: ObservableObject {
             let args = Self.runArgs
             do {
                 let raw = try await performRun(mode, args)
-                let seconds = args.count >= 2 ? (Int(args[1]) ?? 10) : 10
+                let seconds = Self.seconds(from: args)
                 appendAndPublish(raw: raw, mode: mode,
                                  params: args.isEmpty ? [:] : ["seconds": seconds])
                 self.lastRunAt = Date()
@@ -325,6 +341,15 @@ enum ScheduleRunnerSelfCheck {
             failures += (rec.params == ["seconds": 10]) ? 0 : 1
             failures += (rec.resultRaw == fakeRaw) ? 0 : 1
         } else { failures += 1 }
+
+        // 6) M1: --seconds parsed by flag scan, order-independent; missing
+        //    or invalid value falls back to 10 (never positional args[1]).
+        failures += (ScheduleRunner.seconds(from: ["--seconds", "10"]) == 10) ? 0 : 1
+        failures += (ScheduleRunner.seconds(from: ["--streams", "4", "--seconds", "10"]) == 10) ? 0 : 1
+        failures += (ScheduleRunner.seconds(from: ["--seconds", "25", "--streams", "8"]) == 25) ? 0 : 1
+        failures += (ScheduleRunner.seconds(from: ["--streams", "4"]) == 10) ? 0 : 1
+        failures += (ScheduleRunner.seconds(from: []) == 10) ? 0 : 1
+        failures += (ScheduleRunner.seconds(from: ["--seconds", "abc"]) == 10) ? 0 : 1
 
         return failures
     }

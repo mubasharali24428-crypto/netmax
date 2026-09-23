@@ -66,8 +66,9 @@ struct MenuBarView: View {
             // picks a target within it, app computes the streams needed.
             // Sits directly under Run Quick Test so both paths to the main
             // feature are visible without tab navigation.
-            TargetSpeedView { streams, seconds, _ in
-                runQuickTest(streams: streams, seconds: seconds)
+            TargetSpeedView { streams, seconds, _, finished in
+                runQuickTest(streams: streams, seconds: seconds,
+                             completion: finished)
             }
 
             // W13: live speedometer — real-time throughput of every app on
@@ -246,8 +247,11 @@ struct MenuBarView: View {
 
     /// W12 USER-IDEA overload: target-speed path passes explicit streams so
     /// the engine opens exactly the parallelism the chosen target needs.
-    private func runQuickTest(streams: Int, seconds: Int) {
-        guard status != .running else { return }
+    /// `completion` re-enables TargetSpeedView's button (H3) once the run
+    /// finishes (or bails early).
+    private func runQuickTest(streams: Int, seconds: Int,
+                              completion: (() -> Void)? = nil) {
+        guard status != .running else { completion?(); return }
         status = .running
         resultText = ""
         Task {
@@ -265,11 +269,13 @@ struct MenuBarView: View {
                     status = .done
                     reloadHistory()
                     RunPostProcessor.process(record)
+                    completion?()
                 }
             } catch {
                 await MainActor.run {
                     resultText = "Error: \(error.localizedDescription)"
                     status = .error
+                    completion?()
                 }
             }
         }

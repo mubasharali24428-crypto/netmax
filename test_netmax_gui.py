@@ -44,6 +44,15 @@ class ThemeConstantsTest(unittest.TestCase):
             {"baseline", "turbo", "boost", "dns", "bloat", "full"},
         )
 
+    def test_curl_modes_exclude_dns(self):
+        """dns must run without curl; every other GUI mode needs it."""
+        self.assertEqual(
+            set(netmax_gui.CURL_MODES),
+            {"baseline", "turbo", "boost", "bloat", "full"},
+        )
+        self.assertNotIn("dns", netmax_gui.CURL_MODES)
+        self.assertTrue(set(netmax_gui.CURL_MODES) <= set(netmax_gui.MODES))
+
 
 class BuildCommandTest(unittest.TestCase):
     """build_command must produce argv netmax.py's argparse accepts."""
@@ -215,6 +224,28 @@ class RunnerPlumbingTest(unittest.TestCase):
             elapsed = time.monotonic() - stopped_at
             self.assertLess(elapsed, 8, f"stop() took {elapsed:.1f}s")
             self.assertLess(done[0], 0, "child should have died by signal, not exited 0")
+        finally:
+            self._cleanup(runner)
+
+    def test_second_start_reuses_parked_worker_no_thread_leak(self):
+        """F1: a completed run's worker parks in _wait_for_work; the next
+        start_command must hand it the new child, not spawn a replacement."""
+        runner, out, _err, done, finished = self._make_runner()
+        try:
+            runner.start_command([self.PY, "-c", "print('one')"])
+            self.assertTrue(finished.wait(20))
+            first_active = runner._active
+            self.assertIsNot(first_active, runner)
+            self.assertTrue(first_active.is_alive())  # parked, not dead
+
+            finished.clear()
+            done.clear()
+            out.clear()
+            runner.start_command([self.PY, "-c", "print('two')"])
+            self.assertTrue(finished.wait(20))
+            self.assertIs(runner._active, first_active)  # reused, not replaced
+            self.assertIn("two", out)
+            self.assertEqual(done, [0])
         finally:
             self._cleanup(runner)
 

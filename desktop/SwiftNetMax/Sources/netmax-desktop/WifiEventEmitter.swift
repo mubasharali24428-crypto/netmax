@@ -10,7 +10,9 @@ import AppKit
 /// are enrichment, not critical path.
 enum WifiEventEmitter {
     private static let queue = DispatchQueue(label: "netmax.wifievents", qos: .utility)
-    private static var lastSnapshot: [String: Any]? = nil as [String: Any]?  // parsed shape
+    /// Guards `inFlight` — check-then-act from both the calling thread and
+    /// the utility queue (H5).
+    private static let lock = NSLock()
     /// Interpreter resolution, mirroring EngineClient/BackgroundRunner
     /// (F11/F12 residue fixed here): never a bare "python3" PATH lookup —
     /// the inherited PATH can surface an unexpected interpreter (a uv-
@@ -37,10 +39,17 @@ enum WifiEventEmitter {
     private static var inFlight = false
 
     static func captureNow() {
-        guard !inFlight else { return }
-        inFlight = true
+        lock.lock()
+        let busy = inFlight
+        if !busy { inFlight = true }
+        lock.unlock()
+        guard !busy else { return }
         queue.async {
-            defer { inFlight = false }
+            defer {
+                lock.lock()
+                inFlight = false
+                lock.unlock()
+            }
             runOnce()
         }
     }
@@ -67,8 +76,10 @@ enum WifiEventEmitter {
         env.removeValue(forKey: "PYTHONHOME")
         proc.environment = env
         proc.currentDirectoryURL = workDir
-        proc.standardOutput = Pipe()
-        proc.standardError = Pipe()
+        // Output is unused — nullDevice avoids the undrained-pipe deadlock
+        // (child blocks writing a full ~64KB buffer while waitUntilExit waits).
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
         do {
             try proc.run()
         } catch {
