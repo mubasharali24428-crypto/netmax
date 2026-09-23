@@ -1,5 +1,21 @@
 # Release Notes
 
+## Unreleased — deferred debt (L1/L3/M3/M6 + Python)
+
+**Swift**
+- L1: `EngineClient.stopCurrent` captures the PID while the handle is live and re-checks `isRunning` before SIGKILL (narrows the PID-recycle window).
+- L3: Target Speed derives Mbps-per-stream from the last history run (fallback 6.0) instead of a fixed constant.
+- M3: new `EngineParameterRanges` SSOT (mirrors `engine_bridge.py` RANGE_BOUNDS); Mode Lab / Target Speed / Duration Entry / AppPreferences all read from it.
+- M6: quiet hours persisted under `netmax.notify.quiet*` with Settings steppers; `NotificationCoordinator` reads the shared prefs (default still 22:00–07:30).
+
+**Python**
+- `fetch --adaptive` is wired: one pre-download latency/loss probe via `AdaptiveController` (may step down from `--streams`; probe failure falls back to the requested count).
+- `_truncate` honors a custom `budget` at every nesting depth (was ignored on recursive calls).
+- `netmax_fetch` maps `http.client.IncompleteRead` / `OSError` mid-read failures onto `NetMaxError` (documented contract).
+
+**Tests / docs**
+- New `tests/test_audit_deferred_debt.py`; engine copies of `netmax.py` / `netmax_fetch.py` re-synced; AUDIT_REPORT Status updated (L1/L3/M3/M6 FIXED).
+
 ## Unreleased — audit MEDIUM + IMPROVEMENTS + post-HIGH scan (F1/F2)
 
 **MEDIUM (Swift)**

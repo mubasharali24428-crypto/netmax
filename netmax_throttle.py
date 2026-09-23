@@ -25,14 +25,20 @@ class AdaptiveController:
     QUIET_LOSS_PCT = 0.5
     QUIET_STREAK_NEEDED = 3
 
-    def __init__(self, min_streams: int = 2, max_streams: int = 16):
+    def __init__(self, min_streams: int = 2, max_streams: int = 16,
+                 initial_streams: int | None = None):
         if min_streams < 1:
             raise ValueError("min_streams must be >= 1")
         if max_streams < min_streams:
             raise ValueError("max_streams must be >= min_streams")
         self.min_streams = min_streams
         self.max_streams = max_streams
-        self._streams = min_streams
+        start = min_streams if initial_streams is None else initial_streams
+        if not (min_streams <= start <= max_streams):
+            raise ValueError(
+                f"initial_streams must be in [{min_streams}, {max_streams}], got {start}"
+            )
+        self._streams = start
         self._quiet_streak = 0
         self.reason = "init"
 

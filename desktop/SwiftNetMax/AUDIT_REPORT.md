@@ -316,10 +316,10 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 |---|---|---|
 | M1 | **FIXED** | `ScheduleRunner.swift:72-76` flag-scan parse + self-check cases `:341-346`. |
 | M2 | **FIXED** | `SettingsView.swift:405` uses unique `.id(SettingsSection.historyRetention.id)`. |
-| M3 | **PARTIAL** | SSOT pointer comment added to `AppPreferences.Limits` (this session) → engine `engine_bridge.py RANGE_BOUNDS` (streams 1..50, seconds 5..21600). Range divergence across UIs not yet unified (improvement 4 = comment only, by design). |
+| M3 | **FIXED** | New `EngineParameterRanges.swift` SSOT (mirrors `engine_bridge.py RANGE_BOUNDS`); ModeLab `ModeParameter`, `ModeLabView` seed, `DurationEntryView`, `TargetSpeedView`, and `AppPreferences.Limits` comments all read from it. |
 | M4 | **FIXED** | `ModeLabView.swift:713,744,756` check `runStoppedByUser` and `break` between/inside legs. |
 | M5 | **FIXED** | `StatusBarController.swift:110-117` uses file-order `.last`, same as hook. |
-| M6 | **PARTIAL** | Comment corrected to "NOT user-tunable" (`Notifications.swift:178`); no prefs keys/UI yet. |
+| M6 | **FIXED** | Quiet hours persisted under `netmax.notify.quiet{Start,End}{Hour,Minute}` via `NotificationPreferences`; `NotificationCoordinator` reads the shared prefs; Settings “Quiet Hours” steppers with a11y ids. |
 | M7 | **FIXED** | `HistoryStore.swift:429` — single read → filter → atomic write. |
 | M8 | **FIXED** | `HistoryStore.swift:191` + `postHistoryDidChange()` (`:516-523`) from mutators. |
 | M9 | **OPEN** | Drop-ins still unmounted (`App.swift:45` `GlobalHotkey.install` still commented; BloatStory/WifiDashboard/empty-integration/BackgroundRunnerControls/OnboardingSchedule* not mounted) — deferred as product decision (improvement 1). |
@@ -329,9 +329,9 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 
 | ID | Status | Evidence / note |
 |---|---|---|
-| L1 | **OPEN** | `EngineClient.stopCurrent` untouched — H7-owned file, skipped to avoid conflict. |
+| L1 | **FIXED** | `EngineClient.stopCurrent` captures PID while the handle is known-running; SIGKILL re-checks `process.isRunning` before signalling (narrows PID-recycle window). |
 | L2 | **FIXED** | `BackgroundRunner.swift` `xmlEscape` now escapes `& < > " '` (this session). |
-| L3 | **OPEN** | `TargetSpeedView.perStreamEstimate` — H-agent owned, skipped. |
+| L3 | **FIXED** | `TargetSpeedView.adaptivePerStreamEstimate()` derives Mbps/stream from the last history record (`params.streams` + `MetricExtractor.latestSpeedMbps`); falls back to 6.0. |
 | L4 / L5 | **OK (n/a)** | No action required per audit. |
 
 ### IMPROVEMENTS
@@ -341,12 +341,12 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 | 1 (drop-ins) | OPEN — M9 product decision (M-agent lane). |
 | 2 (single post-run entry) | **DONE** — contract documented in `RunPostProcessor.swift` header (this session); all append sites verified wired. |
 | 3 (coordinator `[DegradationAlert]` API) | **DONE (pre-existing)** — `NotificationCoordinator.process(alerts:now:)` exists (`Notifications.swift:211`); `RunPostProcessor` + `ScheduleRunner` both use it. No duplicate added. |
-| 4 (parameter range SSOT) | **DONE (comment only)** — pointer to `engine_bridge.py RANGE_BOUNDS` added in `AppPreferences.Limits` (this session); no mass refactor. |
+| 4 (parameter range SSOT) | **DONE** — `EngineParameterRanges.swift` + all UI call sites. |
 | 5 (M8 notification) | **DONE** (by M agent). |
 | 6 (M5 newest-record) | **DONE** (by M/H agent). |
 | 7 (resolvedInterpreter / H7 docs) | **DONE** — H7. |
 | 8 (license trial UX) | OPEN — H8 (product decision). |
-| 9 (quiet hours) | **PARTIAL** — comment fixed (M6); persistence still open. |
+| 9 (quiet hours) | **DONE** — M6 persistence + Settings UI + coordinator wiring. |
 | 10 (WifiEventEmitter hardening) | **DONE** — H4/H5. |
 | 11 (sequence-stop + target completion) | **DONE** — M4 + H3. |
 | 12 (settings anchors) | **DONE** — M2. |
@@ -358,4 +358,6 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 
 **This session's edits (improvements lane):** `RunPostProcessor.swift` (C1 header contract), `BackgroundRunner.swift` (L2 xmlEscape), `AppPreferences.swift` (M3/improvement-4 SSOT comment), `AUDIT_REPORT.md` (this Status section). WifiPanelView verified already wired — no edit.
 
-**Open at snapshot:** H8 (license trial — product decision), M9 (drop-in views — product decision), L1 (`EngineClient.stopCurrent` SIGTERM-then-SIGKILL), L3 (`perStreamEstimate` adaptive), M3 range unification (comment/pointer only by design), M6 quiet-hours persistence (comment fixed only).
+**Deferred-debt lane (follow-up session):** L1 (`EngineClient` PID capture), L3 (adaptive `perStreamEstimate`), M3 (`EngineParameterRanges` SSOT), M6 (quiet-hours persistence + Settings UI), Python `--adaptive` wiring (`netmax.py` + `AdaptiveController.initial_streams`), `_truncate` budget at every depth, `IncompleteRead`/`OSError` → `NetMaxError` in `netmax_fetch._read_block`. Regression tests: `tests/test_audit_deferred_debt.py`. Engine copies of `netmax.py` / `netmax_fetch.py` re-synced.
+
+**Open at snapshot:** H8 (license trial — product decision), M9 (drop-in views — product decision).

@@ -325,8 +325,78 @@ struct SettingsView: View {
             }
             .disabled(!notifyPrefs.notificationsEnabled)
             .opacity(notifyPrefs.notificationsEnabled ? 1 : 0.55)
+
+            // M6 — quiet hours (netmax.notify.quiet*): hold delivery inside
+            // a local-time window; may wrap midnight (e.g. 22:00–07:30).
+            Section {
+                Stepper {
+                    Text(String(format: "Start: %02d:%02d",
+                                notifyPrefs.quietStartHour,
+                                notifyPrefs.quietStartMinute))
+                } onIncrement: {
+                    bumpQuietStart()
+                } onDecrement: {
+                    dropQuietStart()
+                }
+                .accessibilityLabel(Text("Quiet hours start"))
+                .accessibilityHint(Text("When to stop delivering notifications immediately. Increments by 5 minutes; wraps through midnight."))
+                .accessibilityIdentifier("notifications.quietStart")
+
+                Stepper {
+                    Text(String(format: "End: %02d:%02d",
+                                notifyPrefs.quietEndHour,
+                                notifyPrefs.quietEndMinute))
+                } onIncrement: {
+                    bumpQuietEnd()
+                } onDecrement: {
+                    dropQuietEnd()
+                }
+                .accessibilityLabel(Text("Quiet hours end"))
+                .accessibilityHint(Text("When held notifications may deliver. Increments by 5 minutes; wraps through midnight."))
+                .accessibilityIdentifier("notifications.quietEnd")
+            } header: {
+                Text("Quiet Hours")
+            } footer: {
+                Text("Alerts that fire inside this window wait until it ends. Default 22:00–07:30.")
+            }
+            .disabled(!notifyPrefs.notificationsEnabled)
+            .opacity(notifyPrefs.notificationsEnabled ? 1 : 0.55)
         }
         .id(SettingsSection.notifications.id) // T4-a anchor
+    }
+
+    // M6 quiet-hours steppers: ±5 minutes with hour wrap (0…23 / 0…59).
+
+    private func bumpQuietStart() {
+        var m = notifyPrefs.quietStartMinute + 5
+        var h = notifyPrefs.quietStartHour
+        if m > 59 { m = 0; h = h >= 23 ? 0 : h + 1 }
+        notifyPrefs.quietStartMinute = m
+        notifyPrefs.quietStartHour = h
+    }
+
+    private func dropQuietStart() {
+        var m = notifyPrefs.quietStartMinute - 5
+        var h = notifyPrefs.quietStartHour
+        if m < 0 { m = 55; h = h <= 0 ? 23 : h - 1 }
+        notifyPrefs.quietStartMinute = m
+        notifyPrefs.quietStartHour = h
+    }
+
+    private func bumpQuietEnd() {
+        var m = notifyPrefs.quietEndMinute + 5
+        var h = notifyPrefs.quietEndHour
+        if m > 59 { m = 0; h = h >= 23 ? 0 : h + 1 }
+        notifyPrefs.quietEndMinute = m
+        notifyPrefs.quietEndHour = h
+    }
+
+    private func dropQuietEnd() {
+        var m = notifyPrefs.quietEndMinute - 5
+        var h = notifyPrefs.quietEndHour
+        if m < 0 { m = 55; h = h <= 0 ? 23 : h - 1 }
+        notifyPrefs.quietEndMinute = m
+        notifyPrefs.quietEndHour = h
     }
 
     /// W12 T1-c state mirror: true while the digest gate (`netmax.notify.digest`)

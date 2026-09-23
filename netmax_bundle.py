@@ -88,19 +88,24 @@ def _redact_wifi_value(value):
 
 
 def _truncate(value, budget=None):
-    """Recursively truncate long strings inside dicts/lists/tuples."""
+    """Recursively truncate long strings inside dicts/lists/tuples.
+
+    `budget` (int max chars, or a set — legacy call shape) is honored at
+    every depth; omitted callers use MAX_STR. Callers that pass a custom
+    budget previously had it silently ignored on nested values (M-debt).
+    """
     if isinstance(budget, set) or budget is None:
         budget = MAX_STR
     if isinstance(value, str):
-        if len(value) <= MAX_STR:
+        if len(value) <= budget:
             return value
-        return value[:MAX_STR] + f" ...[+{len(value) - MAX_STR} chars truncated]"
+        return value[:budget] + f" ...[+{len(value) - budget} chars truncated]"
     if isinstance(value, dict):
-        return {k: _truncate(v) for k, v in value.items()}
+        return {k: _truncate(v, budget) for k, v in value.items()}
     if isinstance(value, list):
-        return [_truncate(v) for v in value]
+        return [_truncate(v, budget) for v in value]
     if isinstance(value, tuple):
-        return tuple(_truncate(v) for v in value)
+        return tuple(_truncate(v, budget) for v in value)
     return value
 
 

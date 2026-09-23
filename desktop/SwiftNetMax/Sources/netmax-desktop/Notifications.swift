@@ -175,10 +175,18 @@ final class NotificationCoordinator {
     static let shared = NotificationCoordinator()
 
     /// Quiet hours (local time); notifications due inside the window are held
-    /// until its end. M6: hardcoded defaults 22:00–07:30 — NOT user-tunable
-    /// (no AppPreferences keys / Settings UI yet).
-    var quietHoursStart: (hour: Int, minute: Int) = (22, 0)
-    var quietHoursEnd: (hour: Int, minute: Int) = (7, 30)
+    /// until its end. M6: bound to `NotificationPreferences` keys
+    /// `netmax.notify.quiet*` (defaults 22:00–07:30); Settings edits re-read
+    /// via the shared prefs object on every trigger evaluation.
+    var quietHoursStart: (hour: Int, minute: Int) {
+        let p = NotificationPreferences.shared
+        return (p.quietStartHour, p.quietStartMinute)
+    }
+
+    var quietHoursEnd: (hour: Int, minute: Int) {
+        let p = NotificationPreferences.shared
+        return (p.quietEndHour, p.quietEndMinute)
+    }
 
     private let center = UNUserNotificationCenter.current()
 

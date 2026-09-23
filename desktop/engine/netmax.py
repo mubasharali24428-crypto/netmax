@@ -538,9 +538,28 @@ def main(argv: list[str] | None = None) -> None:
                 pct = f"{done * 100 / total:.0f}%" if total else f"{done}B"
                 print(f"\rfetching… {pct} ({done / 1e6:.1f} MB)", end="", flush=True)
 
+            streams = _checked(args.streams, 1, 50, "--streams")
+            if getattr(args, "adaptive", False):
+                # Wire the dormant flag: one pre-download latency/loss probe;
+                # AdaptiveController may step DOWN from the requested count
+                # (never ramps mid-download — workers are fixed at start).
+                try:
+                    import netmax_throttle
+                    ctrl = netmax_throttle.AdaptiveController(
+                        min_streams=1, max_streams=streams,
+                        initial_streams=streams,
+                    )
+                    latency_ms, loss_pct = netmax_throttle.measure_feedback()
+                    streams = ctrl.feed(latency_ms, loss_pct)
+                    print(f"\nadaptive: {streams} streams ({ctrl.reason})",
+                          file=sys.stderr)
+                except (NetMaxError, ValueError) as exc:
+                    print(f"\nadaptive probe skipped ({exc}); "
+                          f"using --streams {streams}", file=sys.stderr)
+
             stats = netmax_fetch.download(
                 args.url, out_path,
-                streams=_checked(args.streams, 1, 50, "--streams"),
+                streams=streams,
                 on_progress=_show,
             )
             elapsed = time.monotonic() - started

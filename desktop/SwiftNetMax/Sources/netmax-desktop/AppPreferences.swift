@@ -41,14 +41,11 @@ final class AppPreferences: ObservableObject {
 
     // MARK: Sane ranges enforced on every set.
     //
-    // Improvement 4 / M3 — these are STORAGE clamps only, not the engine
-    // contract. Source of truth for what the engine accepts lives in
-    // `desktop/bridge/engine_bridge.py` `RANGE_BOUNDS` (streams 1...50,
-    // seconds 5...21600 — quick band 5...30); `engine/netmax.py`
-    // `_checked` / `_checked_duration` enforce the same numbers at run
-    // time. UI seed catalogs (ModeLab `ModeParameter`, DurationEntry,
-    // Target Speed) may be tighter — when tightening or widening anything
-    // here, reconcile against RANGE_BOUNDS first, never the reverse.
+    // M3 — STORAGE clamps only for these default prefs (contract P1). The
+    // engine-facing SSOT is `EngineParameterRanges` (mirrors
+    // `engine_bridge.py` RANGE_BOUNDS: streams 1...50, seconds 5...21600,
+    // count 1...100). When tightening or widening anything here, reconcile
+    // against EngineParameterRanges / RANGE_BOUNDS first, never the reverse.
 
     enum Limits {
         static let streams = 1...50

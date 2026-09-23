@@ -26,13 +26,24 @@ struct TargetSpeedView: View {
         return Array(Set(raw)).sorted()
     }
 
-    /// Stream estimate: engine measures ~[4–8] Mbps per stream on typical
-    /// links; we scale streams to the target conservatively and clamp to the
-    /// engine's 1...50 legal range. Honest label explains it's an estimate.
+    /// Stream estimate: prefer the last measured run's throughput/stream;
+    /// fall back to 6.0 Mbps when history is empty or unusable. Clamped to
+    /// the engine's legal range (EngineParameterRanges.streams).
     private func streamsFor(target: Double) -> Int {
-        let perStreamEstimate = 6.0
+        let perStreamEstimate = Self.adaptivePerStreamEstimate()
         let needed = Int((target / perStreamEstimate).rounded(.up))
-        return min(max(needed, 1), 50)
+        return min(max(needed, 1), EngineParameterRanges.streams.upperBound)
+    }
+
+    /// L3: derive Mbps/stream from the most recent history record that has
+    /// both a stream count and a parseable speed; nil-safe fallback 6.0.
+    private static func adaptivePerStreamEstimate() -> Double {
+        let fallback = 6.0
+        guard let last = HistoryStore.shared.loadAll().last,
+              let streams = last.params["streams"], streams > 0,
+              let mbps = MetricExtractor.latestSpeedMbps(in: last.resultRaw),
+              mbps > 0 else { return fallback }
+        return max(1.0, mbps / Double(streams))
     }
 
     var body: some View {

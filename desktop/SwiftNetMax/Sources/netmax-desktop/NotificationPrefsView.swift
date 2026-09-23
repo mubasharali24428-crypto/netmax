@@ -10,6 +10,10 @@
 //      netmax.notify.rule.bloatGradeDrop      Bool, default true
 //      netmax.notify.rule.packetLossSpike     Bool, default true
 //      netmax.notify.rule.successToFailure    Bool, default true
+//      netmax.notify.quietStartHour           Int,  default 22  (M6)
+//      netmax.notify.quietStartMinute         Int,  default 0
+//      netmax.notify.quietEndHour             Int,  default 7
+//      netmax.notify.quietEndMinute           Int,  default 30
 //
 //  Rule identifiers match lane A1-04's `Notifications.swift`
 //  (`DegradationAlert.Kind` raw values). Mission-brief name → shipped rule:
@@ -141,6 +145,11 @@ final class NotificationPreferences: ObservableObject {
         static let bloatGradeDrop   = "netmax.notify.rule.bloatGradeDrop"
         static let packetLossSpike  = "netmax.notify.rule.packetLossSpike"
         static let successToFailure = "netmax.notify.rule.successToFailure"
+        // M6 — quiet-hours window (local wall clock; may wrap midnight).
+        static let quietStartHour   = "netmax.notify.quietStartHour"
+        static let quietStartMinute = "netmax.notify.quietStartMinute"
+        static let quietEndHour     = "netmax.notify.quietEndHour"
+        static let quietEndMinute   = "netmax.notify.quietEndMinute"
 
         static func key(for kind: DegradationAlert.Kind) -> String {
             "netmax.notify.rule.\(kind.rawValue)"
@@ -154,6 +163,11 @@ final class NotificationPreferences: ObservableObject {
         static let bloatGradeDrop   = true
         static let packetLossSpike  = true
         static let successToFailure = true
+        // Prior hardcoded window: 22:00 – 07:30.
+        static let quietStartHour   = 22
+        static let quietStartMinute = 0
+        static let quietEndHour     = 7
+        static let quietEndMinute   = 30
 
         static func fallback(for kind: DegradationAlert.Kind) -> Bool { true }
     }
@@ -180,6 +194,31 @@ final class NotificationPreferences: ObservableObject {
         didSet { persist(failureEnabled, key: Keys.successToFailure) }
     }
 
+    // MARK: Quiet hours (M6) — 0...23 / 0...59, persisted immediately.
+
+    @Published var quietStartHour: Int {
+        didSet { persistHour(quietStartHour, key: Keys.quietStartHour) }
+    }
+
+    @Published var quietStartMinute: Int {
+        didSet { persistMinute(quietStartMinute, key: Keys.quietStartMinute) }
+    }
+
+    @Published var quietEndHour: Int {
+        didSet { persistHour(quietEndHour, key: Keys.quietEndHour) }
+    }
+
+    @Published var quietEndMinute: Int {
+        didSet { persistMinute(quietEndMinute, key: Keys.quietEndMinute) }
+    }
+
+    /// Effective window for NotificationCoordinator (may wrap midnight).
+    var quietWindow: (start: (hour: Int, minute: Int),
+                      end: (hour: Int, minute: Int)) {
+        (start: (quietStartHour, quietStartMinute),
+         end: (quietEndHour, quietEndMinute))
+    }
+
     // MARK: Setup
 
     private let defaults: UserDefaults
@@ -192,6 +231,10 @@ final class NotificationPreferences: ObservableObject {
         _gradeDropEnabled     = Published(initialValue: Self.read(defaults, Keys.bloatGradeDrop, Fallbacks.bloatGradeDrop))
         _highLossEnabled      = Published(initialValue: Self.read(defaults, Keys.packetLossSpike, Fallbacks.packetLossSpike))
         _failureEnabled       = Published(initialValue: Self.read(defaults, Keys.successToFailure, Fallbacks.successToFailure))
+        _quietStartHour       = Published(initialValue: Self.readInt(defaults, Keys.quietStartHour, Fallbacks.quietStartHour, 0...23))
+        _quietStartMinute     = Published(initialValue: Self.readInt(defaults, Keys.quietStartMinute, Fallbacks.quietStartMinute, 0...59))
+        _quietEndHour         = Published(initialValue: Self.readInt(defaults, Keys.quietEndHour, Fallbacks.quietEndHour, 0...23))
+        _quietEndMinute       = Published(initialValue: Self.readInt(defaults, Keys.quietEndMinute, Fallbacks.quietEndMinute, 0...59))
     }
 
     // MARK: Helpers for non-UI consumers (delivery layer)
@@ -215,9 +258,44 @@ final class NotificationPreferences: ObservableObject {
         (defaults.object(forKey: key) as? Bool) ?? fallback
     }
 
+    /// Load-time int read with range pull-back (quiet-hours fields).
+    private static func readInt(_ defaults: UserDefaults, _ key: String,
+                                _ fallback: Int, _ range: ClosedRange<Int>) -> Int {
+        guard let n = defaults.object(forKey: key) as? Int else { return fallback }
+        return min(max(n, range.lowerBound), range.upperBound)
+    }
+
     private func persist(_ value: Bool, key: String) {
         if defaults.object(forKey: key) as? Bool != value {
             defaults.set(value, forKey: key)
+        }
+    }
+
+    private func persistHour(_ value: Int, key: String) {
+        let clamped = min(max(value, 0), 23)
+        if clamped != value { quietStartOrEndFix(key: key, clamped: clamped); return }
+        if defaults.object(forKey: key) as? Int != value {
+            defaults.set(value, forKey: key)
+        }
+    }
+
+    private func persistMinute(_ value: Int, key: String) {
+        let clamped = min(max(value, 0), 59)
+        if clamped != value { quietStartOrEndFix(key: key, clamped: clamped); return }
+        if defaults.object(forKey: key) as? Int != value {
+            defaults.set(value, forKey: key)
+        }
+    }
+
+    /// Re-entry convergence for an out-of-range hour/minute write: map the
+    /// key back onto the matching @Published field (didSet re-enters once).
+    private func quietStartOrEndFix(key: String, clamped: Int) {
+        switch key {
+        case Keys.quietStartHour: quietStartHour = clamped
+        case Keys.quietStartMinute: quietStartMinute = clamped
+        case Keys.quietEndHour: quietEndHour = clamped
+        case Keys.quietEndMinute: quietEndMinute = clamped
+        default: break
         }
     }
 }

@@ -126,8 +126,9 @@ struct DurationEntryView: View {
     }
 
     private func applyClamped(_ raw: Int) {
-        guard raw >= 5 else { flashInvalid(); syncDraftFromSeconds(); return }
-        let clamped = min(max(raw, 5), 21_600) // 5 s … 6 h
+        let range = EngineParameterRanges.seconds // 5 s … 6 h (M3 SSOT)
+        guard raw >= range.lowerBound else { flashInvalid(); syncDraftFromSeconds(); return }
+        let clamped = min(max(raw, range.lowerBound), range.upperBound)
         seconds = clamped
         invalidFlash = false
     }

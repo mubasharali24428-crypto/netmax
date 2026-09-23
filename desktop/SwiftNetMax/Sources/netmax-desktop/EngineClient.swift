@@ -82,10 +82,14 @@ struct EngineClient {
     /// SIGKILL after a grace period. Safe to call when idle.
     @MainActor static func stopCurrent() {
         guard let process = engineCurrentProcess, process.isRunning else { return }
+        // L1: capture PID while we know this handle is live — reading it
+        // after a possible exit widens the PID-recycle window.
+        let pid = process.processIdentifier
         process.terminate() // SIGTERM — engine shuts down cleanly
-        // Escalate if it ignores TERM for 3 s.
+        // Escalate if it ignores TERM for 3 s; re-check OUR handle first so
+        // a recycled PID is never signalled.
         DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            if process.isRunning { kill(pid, SIGKILL) }
         }
     }
 

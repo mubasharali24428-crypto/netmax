@@ -8,6 +8,7 @@ Falls back to a single stream when the server ignores Accept-Ranges.
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import threading
@@ -34,6 +35,22 @@ PROGRESS_EVERY = 65536  # bytes between on_progress callbacks per worker
 # with sticky bit), not their private per-user subtrees (e.g. pytest's
 # 0700 tmp dirs) — those are already attacker-inaccessible.
 _SHARED_ROOTS = ("/tmp", "/private/tmp", "/var/tmp", "/Users/Shared")
+
+
+def _read_block(resp, n: int = 65536) -> bytes:
+    """Read one body block; map mid-stream failures onto NetMaxError.
+
+    urllib can raise `http.client.IncompleteRead` (or an OSError on a
+    reset socket) when the peer closes early — that used to escape
+    `download()` as a bare exception instead of the documented
+    NetMaxError contract.
+    """
+    try:
+        return resp.read(n)
+    except http.client.IncompleteRead as exc:
+        raise NetMaxError(f"connection closed mid-read: {exc}") from exc
+    except OSError as exc:
+        raise NetMaxError(f"read failed: {exc}") from exc
 
 
 def _assert_safe_out_dir(out_path: Path) -> None:
@@ -197,7 +214,7 @@ def _fetch_chunk(
             fd = _open_excl(part)
         with os.fdopen(fd, "wb") as fh:
             while True:
-                block = resp.read(65536)
+                block = _read_block(resp)
                 if not block:
                     break
                 fh.write(block)
@@ -368,7 +385,7 @@ def download(
             out_fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(out_fd, "wb") as fh:
                 while True:
-                    block = resp.read(65536)
+                    block = _read_block(resp)
                     if not block:
                         break
                     fh.write(block)

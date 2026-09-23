@@ -82,3 +82,17 @@ remains the one item still pending its result.
 - Open / deferred: H8 license trial (product), M9 drop-in views (product), L1 SIGTERM-then-SIGKILL,
   L3 adaptive `perStreamEstimate`, M3 range SSOT (comment-only), M6 quiet-hours persistence.
 - Remote: `github/main` at `1992edd`; local `main` ahead by 2 — not pushed.
+
+## Session handoff — 2026-09-23 deferred-debt lane (L1/L3/M3/M6 + Python)
+
+- Implemented: L1 PID-capture in `EngineClient.stopCurrent`; L3 adaptive
+  `perStreamEstimate` from last history; M3 `EngineParameterRanges` SSOT;
+  M6 quiet-hours prefs + Settings steppers + coordinator wiring.
+- Python: `fetch --adaptive` wired through `AdaptiveController(initial_streams=…)`;
+  `_truncate` budget at every depth; `IncompleteRead`/`OSError` → `NetMaxError`
+  via `netmax_fetch._read_block`.
+- New tests: `tests/test_audit_deferred_debt.py`. Engine `netmax.py`/`netmax_fetch.py`
+  re-synced. AUDIT_REPORT + RELEASE-NOTES updated.
+- Verification: pytest **425 passed, 1 skipped→0 after fix, 5 subtests**; ruff clean;
+  Swift selftests 20/20; bridge selftest 4/4; engine-sync OK.
+- Still open: H8 (license trial product), M9 (drop-in views product). Not pushed.

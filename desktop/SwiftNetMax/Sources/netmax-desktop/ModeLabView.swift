@@ -102,13 +102,13 @@ private enum ModeParameter: String, CaseIterable {
 
     var label: String { rawValue.capitalized }
 
-    /// Inclusive stepper range per the L3-A mission brief.
-    /// (Tighter than the engine's own server-side validation — always valid.)
+    /// Inclusive stepper range — seed catalog subset of
+    /// `EngineParameterRanges` (M3 SSOT; always within engine bounds).
     var range: ClosedRange<Int> {
         switch self {
-        case .streams: 2...50
-        case .seconds: 5...30
-        case .count: 5...50
+        case .streams: EngineParameterRanges.seedStreams
+        case .seconds: EngineParameterRanges.quickSeconds
+        case .count: EngineParameterRanges.seedCount
         }
     }
 
@@ -841,14 +841,17 @@ struct ModeLabView: View {
     /// stale key can't select an unknown mode or wedge a stepper).
     private func seedDefaultsFromPreferences() {
         let prefs = AppPreferences.shared
-        streams = min(max(prefs.defaultStreams, 2), 16)
-        seconds = min(max(prefs.defaultSeconds, 5), 30)
-        count = min(max(prefs.defaultCount, 5), 50)
+        let seedS = EngineParameterRanges.seedStreams
+        let seedQ = EngineParameterRanges.quickSeconds
+        let seedC = EngineParameterRanges.seedCount
+        streams = min(max(prefs.defaultStreams, seedS.lowerBound), seedS.upperBound)
+        seconds = min(max(prefs.defaultSeconds, seedQ.lowerBound), seedQ.upperBound)
+        count = min(max(prefs.defaultCount, seedC.lowerBound), seedC.upperBound)
 
-        if storedStreams >= 2 && storedStreams <= 16 {
+        if storedStreams >= seedS.lowerBound && storedStreams <= seedS.upperBound {
             streams = storedStreams
         }
-        if storedSeconds >= 5 && storedSeconds <= 30 {
+        if storedSeconds >= seedQ.lowerBound && storedSeconds <= seedQ.upperBound {
             seconds = storedSeconds
         }
         if ModeCatalog.modes.contains(where: { $0.id == storedModeID }) {
