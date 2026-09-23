@@ -28,7 +28,7 @@ die() { printf '[build_app] ERROR: %s\n' "$*" >&2; exit 1; }
 [[ -d "$BRIDGE_DIR" ]] || die "missing $BRIDGE_DIR (B2 has not landed?)"
 
 # P2.5 (Strategic Revenue Plan): 1.0 signals a product a buyer can trust.
-APP_VERSION="1.0.0"
+APP_VERSION="$(python3 -c "import json;print(json.load(open('$REPO_ROOT/desktop/package.json'))['version'])")"
 APP_BUILD="$(date -u '+%Y%m%d')"
 log "version: $APP_VERSION (build $APP_BUILD)"
 
