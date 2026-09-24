@@ -22,101 +22,6 @@
 import AppKit
 import SwiftUI
 
-// MARK: - Monthly summary model (W13B UB-2, S-009)
-
-/// Aggregated last-N-days stats behind the Monthly Summary card/PDF.
-/// Pure computation over injected records + clock so it is offline-checkable.
-struct MonthlySummaryStats: Equatable {
-    /// Runs recorded inside the window.
-    let testsCount: Int
-    /// Mean of recognizable Mbps values in the window; nil when none parse.
-    let averageMbps: Double?
-    /// Worst bufferbloat grade letter seen in the window (Waveform rubric
-    /// order); nil when no payload carried a grade.
-    let worstGrade: String?
-    /// Total unusual readings flagged by AnomalyEngine across mbps / loss /
-    /// jitter within the window (quiet gate respected: thin data counts 0).
-    let anomalyCount: Int
-}
-
-enum MonthlySummary {
-    /// Default analysis window in days.
-    static let windowDays = 30
-
-    /// Compute the last-`days`-day summary. Records may arrive in any order;
-    /// timestamps decide membership. `now` is injectable for determinism.
-    static func compute(from records: [HistoryRecord],
-                        now: Date = Date(),
-                        days: Int = windowDays) -> MonthlySummaryStats {
-        let cutoff = now.addingTimeInterval(-Double(days) * 86_400)
-        let window = records.filter { $0.ts >= cutoff }
-
-        // Average speed through the SAME extractor the dashboard cards use,
-        // so the headline number can never disagree with the cards.
-        let speeds = window.compactMap { MetricExtractor.latestSpeedMbps(in: $0.resultRaw) }
-        let average = speeds.isEmpty ? nil : speeds.reduce(0, +) / Double(speeds.count)
-
-        // Worst grade by the engine's Waveform rubric order (A+ … F).
-        let gradeOrder = NotificationRules.gradeOrder
-        let letters = window.compactMap {
-            MetricExtractor.latestBloatGrade(in: $0.resultRaw)?.letter
-        }
-        let worst = letters.compactMap { gradeOrder.firstIndex(of: $0) }.max()
-            .map { gradeOrder[$0] }
-
-        // Unusual readings: MAD-flagged points per metric, summed across
-        // mbps/loss/jitter. The engine's quiet gate keeps thin data silent.
-        let anomalies = AnomalyMetric.allCases.reduce(0) { total, metric in
-            let series = AnomalyEngine.extractSeries(window, metric: metric)
-            return total + AnomalyEngine.anomalies(in: series).count
-        }
-
-        return MonthlySummaryStats(testsCount: window.count,
-                                   averageMbps: average,
-                                   worstGrade: worst,
-                                   anomalyCount: anomalies)
-    }
-
-    /// Human date-range line for the card/PDF header, e.g. "Jul 27 – Aug 26".
-    static func dateRangeText(from start: Date, to end: Date) -> String {
-        let fmt = DateFormatter()
-        fmt.locale = Locale(identifier: "en_US_POSIX")
-        fmt.dateFormat = "MMM d"
-        return "\(fmt.string(from: start)) – \(fmt.string(from: end))"
-    }
-
-    /// Map the stats onto ReportCardPDF's renderer input. Score bars: only
-    /// average speed carries one (tiered like the dashboard's own ladder);
-    /// counts honestly render without bars.
-    static func pdfContent(for stats: MonthlySummaryStats,
-                           days: Int = windowDays) -> ReportCardPDF.Content {
-        var speedScore: Double?
-        if let avg = stats.averageMbps {
-            speedScore = avg >= 100 ? 1.0 : avg >= 50 ? 0.75 : avg >= 25 ? 0.5 : 0.25
-        }
-        let speedValue = stats.averageMbps.map {
-            String(format: "%.1f Mbps", $0)
-        } ?? "no measurable runs"
-        let rows: [ReportCardPDF.Content.Row] = [
-            .init(metric: "Tests run", value: "\(stats.testsCount)", score: nil),
-            .init(metric: "Average speed", value: speedValue, score: speedScore),
-            .init(metric: "Worst bufferbloat grade",
-                  value: stats.worstGrade ?? "—", score: nil),
-            .init(metric: "Unusual readings", value: "\(stats.anomalyCount)", score: nil),
-        ]
-        return ReportCardPDF.Content(
-            title: "NetMax Monthly Summary",
-            dateRangeText: "Last \(days) days · "
-                + dateRangeText(from: Date().addingTimeInterval(-Double(days) * 86_400),
-                                to: Date()),
-            overallGrade: stats.worstGrade ?? "—",
-            sections: [.init(heading: "Monthly overview", rows: rows)],
-            limitsFooter:
-                "Honest limits: aggregates describe when you tested — quiet weeks say little."
-        )
-    }
-}
-
 struct ReportsView: View {
 
     // MARK: Dependencies
@@ -169,6 +74,31 @@ struct ReportsView: View {
                 exportButtons(for: record)
             } else {
                 emptyState
+            }
+
+            // Task 3: ISP evidence packet — chronological degradation
+            // timeline + plan-vs-actual for support tickets.
+            if !records.isEmpty {
+                Button {
+                    exportIspEvidence()
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Export ISP Evidence Packet…")
+                            Text("Markdown timeline of degradations + plan vs actual — paste into a support ticket")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "doc.text")
+                            .foregroundColor(.accentColor)
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("Writes a markdown evidence packet you can send to your ISP")
+                .accessibilityLabel(Text("Export ISP evidence packet"))
+                .accessibilityHint(Text("Saves a markdown file with the degradation timeline and plan-vs-actual speeds for an ISP support ticket."))
+                .accessibilityIdentifier("reports.exportIspEvidence")
             }
 
             // W13B UB-2 (S-009): Monthly Summary card — last-30-day aggregate
@@ -472,6 +402,20 @@ struct ReportsView: View {
         monthly = MonthlySummary.compute(from: records)
     }
 
+    /// Task 3: ISP evidence packet — plan comes from the shared Target Speed
+    /// AppStorage key (`netmax.plan.mbps`); nil when never set (default 0
+    /// after first read is still meaningful — pass Double only if > 0).
+    private func exportIspEvidence() {
+        let plan = UserDefaults.standard.object(forKey: "netmax.plan.mbps") as? Double
+        let planMbps = (plan ?? 0) > 0 ? plan : nil
+        if let url = IspEvidencePacket.export(records: records, planMbps: planMbps) {
+            savedPath = url.path
+            status = .success
+        } else {
+            status = .cancelled
+        }
+    }
+
     /// UB-2 (S-009): NSSavePanel → render the Monthly Summary card through
     /// ReportCardPDF and write it. Same non-blocking `begin` pattern as
     /// ReportCardShareView's save path (works without a parent window).
@@ -583,26 +527,6 @@ private enum ExportStatus: Equatable {
     case success
     case failure(String)
     case cancelled
-}
-
-// MARK: - Store seam (Lane B integration)
-
-/// Minimal read-side surface of Lane B's `HistoryStore` that this view needs.
-/// Keeps `ReportsView` testable without touching the real history file and
-/// decouples us from store-internal changes.
-protocol HistoryStoreProviding {
-    func loadAll() -> [HistoryRecord]
-}
-
-/// Production adapter around `HistoryStore.shared`.
-struct SystemHistoryStore: HistoryStoreProviding {
-    private let backing: HistoryStore
-
-    init(backing: HistoryStore = .shared) {
-        self.backing = backing
-    }
-
-    func loadAll() -> [HistoryRecord] { backing.loadAll() }
 }
 
 #if DEBUG

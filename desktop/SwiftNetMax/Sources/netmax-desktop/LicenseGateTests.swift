@@ -67,6 +67,28 @@ enum LicenseGateTests {
             trialEndISO: LicenseGate.iso(now.addingTimeInterval(-9 * 86400.0)))
         check(g3.resolvedTier(now: now) == LicenseGate.Tier.Pro)
 
+        // H8: a fresh gate with no stored trial is Free (no auto-stamp),
+        // startTrial opens a 14-day window, and a second startTrial while
+        // active is a no-op.
+        let gFresh = LicenseGate(defaults: freshStore())
+        check(gFresh.trialStartedAt.isEmpty && gFresh.trialEndsAt.isEmpty)
+        check(!gFresh.isTrialActive(now: now))
+        check(gFresh.resolvedTier(now: now) == LicenseGate.Tier.Free)
+        gFresh.startTrial(now: now)
+        check(gFresh.isTrialActive(now: now))
+        check(gFresh.resolvedTier(now: now) == LicenseGate.Tier.Trial)
+        let stampedStart = gFresh.trialStartedAt
+        gFresh.startTrial(now: now.addingTimeInterval(60))
+        check(gFresh.trialStartedAt == stampedStart)
+
+        // H8: expired trial cannot be restarted — one shot, then Free.
+        let gExpiredStart = LicenseGate(defaults: freshStore(),
+            trialStartISO: LicenseGate.iso(now.addingTimeInterval(-20 * 86400.0)),
+            trialEndISO: LicenseGate.iso(now.addingTimeInterval(-6 * 86400.0)))
+        gExpiredStart.startTrial(now: now)
+        check(!gExpiredStart.isTrialActive(now: now))
+        check(gExpiredStart.resolvedTier(now: now) == LicenseGate.Tier.Free)
+
         return failures
     }
 }

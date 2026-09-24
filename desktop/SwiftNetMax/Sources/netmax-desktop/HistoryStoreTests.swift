@@ -172,5 +172,12 @@ enum HistoryStoreTests {
 
     private static func cleanup(_ url: URL) {
         try? FileManager.default.removeItem(at: url)
+        // Task 4: drop the sibling SQLite mirror too (history.jsonl → .db).
+        let db = url.deletingPathExtension().appendingPathExtension("db")
+        try? FileManager.default.removeItem(at: db)
+        for suffix in ["-wal", "-shm"] {
+            try? FileManager.default.removeItem(
+                at: db.appendingPathExtension(suffix))
+        }
     }
 }

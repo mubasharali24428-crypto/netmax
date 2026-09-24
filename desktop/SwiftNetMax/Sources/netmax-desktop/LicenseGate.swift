@@ -47,6 +47,10 @@ final class LicenseGate: ObservableObject {
 
     /// Injected state for tests (mirrors HistoryStore's fileURL injection).
     /// Production passes nothing and reads/persists via UserDefaults.
+    ///
+    /// H8 fix: the trial is NEVER auto-started here. An empty stored window
+    /// stays empty (`isTrialActive` → false → Free) until the user presses
+    /// "Start trial" (or a future gated-feature first use calls `startTrial`).
     init(defaults: UserDefaults = .standard,
          trialStartISO: String = "",
          trialEndISO: String = "") {
@@ -62,11 +66,20 @@ final class LicenseGate: ObservableObject {
             _trialStartedAt = Published(initialValue: storedStart)
             _trialEndsAt    = Published(initialValue: storedEnd)
         } else {
-            // First real launch: begin the trial now and stamp both bounds.
-            let now = Date()
-            _trialStartedAt = Published(initialValue: LicenseGate.iso(now))
-            _trialEndsAt    = Published(initialValue: LicenseGate.iso(now.addingTimeInterval(Double(LicenseGate.TRIAL_DAYS) * 86_400)))
+            // H8: first launch does NOT begin a trial. Both bounds stay
+            // empty so the gate reports Free until an explicit startTrial.
+            _trialStartedAt = Published(initialValue: "")
+            _trialEndsAt    = Published(initialValue: "")
         }
+    }
+
+    /// Explicit 14-day trial start (H8). One shot: once stamped (active or
+    /// expired) further calls are no-ops — an expired trial requires key
+    /// activation instead of a restart. Bounds persist via @Published.
+    func startTrial(now: Date = Date()) {
+        guard trialStartedAt.isEmpty else { return }
+        trialStartedAt = LicenseGate.iso(now)
+        trialEndsAt    = LicenseGate.iso(now.addingTimeInterval(Double(LicenseGate.TRIAL_DAYS) * 86_400))
     }
 
     @Published var licenseKey: String {
@@ -83,6 +96,8 @@ final class LicenseGate: ObservableObject {
 // MARK: Tier resolution (pure — testable without a UI)
 
     static func effectiveTier(_ gate: LicenseGate, now: Date = Date()) -> Tier {
+        #if DEBUG
+        // Dev/test override only — release builds ignore env entirely (H8).
         let mode = ProcessInfo.processInfo.environment["NETMAX_LICENSE_MODE"] ?? ""
         if !mode.isEmpty {
             let m = mode.lowercased()
@@ -93,6 +108,7 @@ final class LicenseGate: ObservableObject {
         if ProcessInfo.processInfo.environment["NETMAX_LICENSE_DISABLED"] == "1" {
             return Tier.Pro
         }
+        #endif
         return gate.resolvedTier(now: now)
     }
 

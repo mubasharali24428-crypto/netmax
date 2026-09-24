@@ -268,7 +268,7 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 | `ModeLabView` sequence + Stop | None | M4 untested |
 | `NotificationCoordinator.process` per-rule prefs | Preferences covered indirectly via `deliverableAlerts` self-check; coordinator not | Full-history + quiet-hours integration thin |
 | `LicenseGate.canUse` feature differentiation | `LicenseGateTests` covers expired/pro feature calls | Ignores `feature` — tests do not catch M10 |
-| `GlobalHotkey` | None + install commented out | Dead |
+| `GlobalHotkey` | Carbon `RegisterEventHotKey` + install in App.init | Live (⌥⌘R) |
 | `HistoryStore` mutators posting change notification | Hook self-check **simulates** the post manually | Production mutators never post (M8) untested |
 | `ScheduleRunner` params parse (`args[1]`) | Self-check hardcodes `== ["--seconds","10"]` | M1 latent break not covered |
 | `SettingsView` anchor ids | None (UI) | M2 not covered |
@@ -280,7 +280,7 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 
 ## Verification notes
 
-- Confirmed by grep: zero production `RunPostProcessor.process(` call sites; only `NotifyDigest` doc reference for `consider|flushIfDue`; `GlobalHotkey.install` commented at `App.swift:45`; duplicate `.id(SettingsSection.startup.id)` at `SettingsView.swift:255` and `:403`.
+- Confirmed by grep: `RunPostProcessor.process(` wired at production append sites (C1 FIXED); `GlobalHotkey.install` called from `App.swift:42` (Task 2 — Carbon ⌥⌘R Live); duplicate `.id(SettingsSection.startup.id)` at `SettingsView.swift` — M2 FIXED (unique historyRetention id).
 - No build/lint run for this audit (read-only analysis). Re-run greps above after any fix to confirm wiring.
 
 ---
@@ -308,7 +308,7 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 | H5 | **FIXED** | `WifiEventEmitter.swift:15,41-54` — `NSLock` guards `inFlight` check-then-act; dead `lastSnapshot` removed. |
 | H6 | **FIXED** | `Notifications.swift:217` calls `NotifyDigest.consider`; `ScheduleRunner.swift:211` calls `flushIfDue` on tick. |
 | H7 | **FIXED** | `SettingsView.swift:220,224,233,242` all say `/usr/bin/python3`; `AppPreferences.resolvedInterpreter` deleted. |
-| H8 | **OPEN** | `LicenseGate.swift:64-69` still stamps trial on first launch; env overrides `:86-95` unguarded (product decision). |
+| H8 | **FIXED** | Trial no longer auto-stamps on launch; explicit `startTrial()` + Settings License section; `NETMAX_LICENSE_*` env overrides DEBUG-only. |
 
 ### MEDIUM
 
@@ -322,7 +322,7 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 | M6 | **FIXED** | Quiet hours persisted under `netmax.notify.quiet{Start,End}{Hour,Minute}` via `NotificationPreferences`; `NotificationCoordinator` reads the shared prefs; Settings “Quiet Hours” steppers with a11y ids. |
 | M7 | **FIXED** | `HistoryStore.swift:429` — single read → filter → atomic write. |
 | M8 | **FIXED** | `HistoryStore.swift:191` + `postHistoryDidChange()` (`:516-523`) from mutators. |
-| M9 | **FIXED (deliberate)** | Wired: BloatStory→RunDetailSheet, WifiDashboard→MenuBarView, OnboardingScheduleHost→RootView, BackgroundRunnerControls+ScheduleEditor→ScheduleTabContent, ModeLabErrorView→ModeLabError branch, WhatsNew→MenuBarView. Hidden: ReportsEmpty deleted; HistoryEmpty→Notification.Name only; TabTransition/netMaxPressable/netMaxTransition removed; NotificationPrefsView struct removed (class kept). GlobalHotkey stays commented (NSEvent starve — App.swift note). FeatureDiscovery pitch no longer claims ⌥⌘R. |
+| M9 | **FIXED (deliberate)** | Wired: BloatStory→RunDetailSheet, WifiDashboard→MenuBarView, OnboardingScheduleHost→RootView, BackgroundRunnerControls+ScheduleEditor→ScheduleTabContent, ModeLabErrorView→ModeLabError branch, WhatsNew→MenuBarView. Hidden: ReportsEmpty deleted; HistoryEmpty→Notification.Name only; TabTransition/netMaxPressable/netMaxTransition removed; NotificationPrefsView struct removed (class kept). GlobalHotkey now installed in App.init (Live ⌥⌘R — Task 2); FeatureDiscovery pitch claims ⌥⌘R. |
 | M10 | **FIXED (documented)** | `LicenseGate.swift:108-109` documents all-or-nothing tiers; `feature` intentionally unused. |
 
 ### LOW
@@ -338,14 +338,14 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 
 | # | Status |
 |---|---|
-| 1 (drop-ins) | **DONE** — M9 fixed (wire + deliberate hide; GlobalHotkey remains intentionally off). |
+| 1 (drop-ins) | **DONE** — M9 fixed (wire + deliberate hide; GlobalHotkey live via Carbon ⌥⌘R). |
 | 2 (single post-run entry) | **DONE** — contract documented in `RunPostProcessor.swift` header (this session); all append sites verified wired. |
 | 3 (coordinator `[DegradationAlert]` API) | **DONE (pre-existing)** — `NotificationCoordinator.process(alerts:now:)` exists (`Notifications.swift:211`); `RunPostProcessor` + `ScheduleRunner` both use it. No duplicate added. |
 | 4 (parameter range SSOT) | **DONE** — `EngineParameterRanges.swift` + all UI call sites. |
 | 5 (M8 notification) | **DONE** (by M agent). |
 | 6 (M5 newest-record) | **DONE** (by M/H agent). |
 | 7 (resolvedInterpreter / H7 docs) | **DONE** — H7. |
-| 8 (license trial UX) | OPEN — H8 (product decision). |
+| 8 (license trial UX) | **DONE** — H8 fixed (explicit `startTrial()` + Settings License UI + DEBUG-only env). |
 | 9 (quiet hours) | **DONE** — M6 persistence + Settings UI + coordinator wiring. |
 | 10 (WifiEventEmitter hardening) | **DONE** — H4/H5. |
 | 11 (sequence-stop + target completion) | **DONE** — M4 + H3. |
@@ -360,4 +360,4 @@ Package has **no SPM test target** (`Package.swift`); tests are plain `enum … 
 
 **Deferred-debt lane (follow-up session):** L1 (`EngineClient` PID capture), L3 (adaptive `perStreamEstimate`), M3 (`EngineParameterRanges` SSOT), M6 (quiet-hours persistence + Settings UI), Python `--adaptive` wiring (`netmax.py` + `AdaptiveController.initial_streams`), `_truncate` budget at every depth, `IncompleteRead`/`OSError` → `NetMaxError` in `netmax_fetch._read_block`. Regression tests: `tests/test_audit_deferred_debt.py`. Engine copies of `netmax.py` / `netmax_fetch.py` re-synced.
 
-**Open at snapshot:** H8 (license trial — product decision). M9 fixed this session (wire + deliberate hide).
+**Open at snapshot:** none — H8 FIXED (Task 1); GlobalHotkey LIVE ⌥⌘R (Task 2). Prior open items (H8, M9) closed this session.

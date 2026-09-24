@@ -148,6 +148,9 @@ enum RunPostProcessor {
         // history. Re-evaluating every historical pair re-posts old drops
         // (C5) and bypasses the preference filter applied above.
         _ = await NotificationCoordinator.shared.process(alerts: pending)
+        // Task 3: optional auto-triage — gated by netmax.triage.auto +
+        // rate cap + re-entrancy inside AutoTriage. Fire-and-forget.
+        AutoTriage.maybeRun(alerts: pending)
     }
 }
 

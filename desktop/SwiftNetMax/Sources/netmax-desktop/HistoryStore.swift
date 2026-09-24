@@ -78,6 +78,12 @@ final class HistoryStore {
     private let fileURL: URL
     private let lock = NSLock()
 
+    /// Task 4: SQLite primary store beside history.jsonl. JSONL remains the
+    /// append-log / Python-compat mirror; reads prefer SQLite when it has
+    /// rows. Set `useSQLite = false` in tests that want pure-JSONL behavior.
+    let sqlite: HistorySQLite
+    var useSQLite = true
+
     /// ISO8601 timestamps, e.g. `2026-08-23T12:34:56Z` (contract P2).
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -94,6 +100,12 @@ final class HistoryStore {
     ///   production callers use `shared`, which uses `defaultFileURL`.
     init(fileURL: URL = HistoryStore.defaultFileURL) {
         self.fileURL = fileURL
+        // Task 4: SQLite mirrors this store's JSONL. The .db name is derived
+        // from the JSONL basename (history.jsonl → history.db) so isolated
+        // test stores in the same temp directory never share one database.
+        let dbName = fileURL.deletingPathExtension().lastPathComponent + ".db"
+        self.sqlite = HistorySQLite(
+            dbURL: fileURL.deletingLastPathComponent().appendingPathComponent(dbName))
     }
 
     // MARK: F7 — SSID minimization at rest
@@ -188,6 +200,11 @@ final class HistoryStore {
             print("[HistoryStore] append failed: \(error.localizedDescription)")
             #endif
         }
+        // Task 4: mirror into SQLite (primary read path). Failure leaves
+        // JSONL as sole truth — loadAll falls back automatically.
+        if useSQLite {
+            sqlite.insert(record)
+        }
         Self.postHistoryDidChange() // M8: mutators notify observers (.netmaxHistoryDidChange)
         return record
     }
@@ -205,6 +222,19 @@ final class HistoryStore {
         let retentionDays = UserDefaults.standard.integer(forKey: Self.retentionDaysKey)
         lock.lock()
         defer { lock.unlock() }
+        // Task 4: prefer SQLite when it has rows; seed from JSONL on first
+        // run after this feature ships (migrateFromJSONLIfNeeded is a no-op
+        // once rows exist). Any SQLite failure falls through to JSONL.
+        if useSQLite && sqlite.open() {
+            if sqlite.migrateFromJSONLIfNeeded(
+                Self.readRecords(from: fileURL, decoder: decoder)) {
+                let all = sqlite.loadAll()
+                if !all.isEmpty || retentionDays <= 0 {
+                    if retentionDays <= 0 { return all }
+                    return enforceRetentionLocked(days: retentionDays, recordsProvider: { all })
+                }
+            }
+        }
         guard retentionDays > 0 else {
             return Self.readRecords(from: fileURL, decoder: decoder)
         }
@@ -215,8 +245,10 @@ final class HistoryStore {
     /// it once; `enforceRetention(days:)` is the public testable wrapper that
     /// takes it itself). See `enforceRetention` for the full contract.
     private func enforceRetentionLocked(days retentionDays: Int,
-                                        now: Date = Date()) -> [HistoryRecord] {
-        let all = Self.readRecords(from: fileURL, decoder: decoder)
+                                        now: Date = Date(),
+                                        recordsProvider: (() -> [HistoryRecord])? = nil
+    ) -> [HistoryRecord] {
+        let all = recordsProvider?() ?? Self.readRecords(from: fileURL, decoder: decoder)
         let cutoff = now.addingTimeInterval(-Double(retentionDays) * 86_400)
         let expired = all.filter { $0.ts < cutoff }
         guard !expired.isEmpty else { return all }
@@ -263,6 +295,7 @@ final class HistoryStore {
                 try blob.write(to: fileURL, options: .atomic)
                 Self.applyPrivacyPermissions(fileURL) // F6: .atomic resets perms
             }
+            if useSQLite { sqlite.replaceAll(kept) } // Task 4: keep mirrors in sync
         } catch {
             #if DEBUG
             print("[HistoryStore] retention rewrite failed: \(error.localizedDescription)")
@@ -297,7 +330,10 @@ final class HistoryStore {
             print("[HistoryStore] clear failed: \(error.localizedDescription)")
             #endif
         }
-        if changed { Self.postHistoryDidChange() } // M8
+        if changed {
+            if useSQLite { sqlite.replaceAll([]) } // Task 4: empty the mirror too
+            Self.postHistoryDidChange() // M8
+        }
     }
 
     // MARK: Holding bin (W12 T1-a)
@@ -382,6 +418,7 @@ final class HistoryStore {
                 try blob.write(to: fileURL, options: .atomic)
                 Self.applyPrivacyPermissions(fileURL) // F6: .atomic resets perms
             }
+            if useSQLite { sqlite.replaceAll(merged) } // Task 4: sync mirror
             Self.postHistoryDidChange() // M8
             return true
         } catch {
@@ -443,6 +480,7 @@ final class HistoryStore {
                 try blob.write(to: fileURL, options: .atomic)
                 Self.applyPrivacyPermissions(fileURL) // F6: .atomic resets perms
             }
+            if useSQLite { sqlite.replaceAll(kept) } // Task 4: sync mirror
         } catch {
             // Same best-effort policy as append/clear: never crash the app.
             #if DEBUG
@@ -501,10 +539,11 @@ final class HistoryStore {
                 blob.append(try encoder.encode(line))
                 blob.append(0x0A) // JSON Lines: newline-terminated
             }
-            try blob.write(to: fileURL, options: .atomic)
-            Self.applyPrivacyPermissions(fileURL) // F6: .atomic resets perms
-            Self.postHistoryDidChange() // M8
-            return true
+                try blob.write(to: fileURL, options: .atomic)
+                Self.applyPrivacyPermissions(fileURL) // F6: .atomic resets perms
+                if useSQLite { sqlite.replaceAll(records) } // Task 4: sync mirror
+                Self.postHistoryDidChange() // M8
+                return true
         } catch {
             #if DEBUG
             print("[HistoryStore] updateNote failed: \(error.localizedDescription)")

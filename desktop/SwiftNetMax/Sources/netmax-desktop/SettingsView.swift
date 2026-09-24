@@ -29,6 +29,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     case historyRetention
     case notifications
     case onboarding
+    case license
     case about
 
     var id: String { rawValue }
@@ -42,6 +43,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .historyRetention: "History Housekeeping"
         case .notifications: "Notifications"
         case .onboarding: "Onboarding"
+        case .license: "License"
         case .about: "About"
         }
     }
@@ -81,6 +83,7 @@ struct SettingsView: View {
                 historyRetention // W13B UB-4
                 notifications
                 onboardingReset
+                licenseSection
                 about
             }
             .formStyle(.grouped)
@@ -258,6 +261,12 @@ struct SettingsView: View {
 
     // MARK: - Notifications
 
+    /// Task 3: auto-triage opt-in — bound to AutoTriage.enabledKey.
+    /// When a degradation alert fires, NetMax runs one extra `full` engine
+    /// pass (rate-capped at 1/30 min) to gather deeper evidence for the
+    /// ISP report. Default OFF.
+    @AppStorage(AutoTriage.enabledKey) private var autoTriageEnabled = false
+
     /// Notification Form sections: master toggle + per-rule rows bound to
     /// NotificationPreferences.shared (same keys/ids as the old prefs Form).
     private var notifications: some View {
@@ -289,6 +298,18 @@ struct SettingsView: View {
                 Text(digestOn
                      ? "Alerts accumulate quietly and arrive as ONE summary roughly every 24 hours."
                      : "Each matching alert is posted as soon as it fires.")
+            }
+
+            // Task 3: auto-triage toggle under Alert Rules.
+            Section {
+                Toggle("Auto-triage on degradation alerts", isOn: $autoTriageEnabled)
+                    .accessibilityLabel(Text("Auto-triage on degradation alerts"))
+                    .accessibilityHint(Text("When an alert fires, run one extra full diagnostic pass (at most once every 30 minutes) to enrich the ISP evidence packet."))
+                    .accessibilityIdentifier("notifications.autoTriage")
+            } header: {
+                Text("Diagnostics")
+            } footer: {
+                Text("Adds a `full` engine run after a degradation alert so your ISP evidence packet has deeper data. Rate-capped to one pass every 30 minutes. Default off.")
             }
 
             Section {
@@ -504,6 +525,77 @@ struct SettingsView: View {
         UserDefaults.standard.set(false, forKey: OnboardingConstants.completionKey)
     }
 
+    // MARK: - License (H8)
+
+    /// H8: the trial never auto-starts — the user presses "Start trial"
+    /// (or a future gated-feature first use calls `startTrial`). Key field
+    /// activates Pro offline (structural 5x4 check only).
+    @ObservedObject private var license = LicenseGate.shared
+
+    private var licenseSection: some View {
+        Section {
+            HStack {
+                Text("Current tier")
+                Spacer()
+                Text(tierLabel)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(Text("Current license tier: \(tierLabel)"))
+            }
+
+            switch LicenseGate.effectiveTier(license) {
+            case .Pro:
+                Label("Pro — activated", systemImage: "checkmark.seal.fill")
+                    .foregroundColor(.green)
+                    .accessibilityLabel(Text("Pro tier activated"))
+                Button("Deactivate key") { license.deactivate() }
+                    .accessibilityLabel(Text("Deactivate license key"))
+                    .accessibilityHint(Text("Removes the stored key and returns to Free (or active trial)."))
+            case .Trial:
+                let ends = license.trialEndsAt
+                Label("Trial active until \(ends)", systemImage: "clock.badge.checkmark")
+                    .foregroundColor(.accentColor)
+                    .accessibilityLabel(Text("Trial active until \(ends)"))
+            case .Free:
+                if license.trialStartedAt.isEmpty && license.trialEndsAt.isEmpty {
+                    Button("Start 14-day trial") { license.startTrial() }
+                        .accessibilityLabel(Text("Start 14-day free trial"))
+                        .accessibilityHint(Text("Unlocks Pro features for 14 days. Starts once — cannot be restarted after it expires."))
+                        .accessibilityIdentifier("license.startTrial")
+                } else {
+                    Label("Trial expired — enter a key for Pro", systemImage: "lock.fill")
+                        .foregroundColor(.secondary)
+                        .accessibilityLabel(Text("Trial expired. Enter a license key for Pro."))
+                }
+                HStack {
+                    TextField("ABCD-EF12-GH34-IJ56-KL78", text: $license.licenseKey)
+                        .textFieldStyle(.roundedBorder)
+                        .disableAutocorrection(true)
+                        .onSubmit { _ = license.activate(license.licenseKey) }
+                        .accessibilityLabel(Text("License key"))
+                        .accessibilityHint(Text("Five groups of four uppercase letters or digits, e.g. ABCD-EF12-GH34-IJ56-KL78."))
+                        .accessibilityIdentifier("license.keyField")
+                    Button("Activate") { _ = license.activate(license.licenseKey) }
+                        .disabled(!LicenseGate.isWellFormedKey(license.licenseKey))
+                        .accessibilityLabel(Text("Activate license key"))
+                        .accessibilityIdentifier("license.activate")
+                }
+            }
+        } header: {
+            Text("License")
+        } footer: {
+            Text("FREE keeps every current feature. PRO unlocks scheduled reports, PDF report cards, and exports. Validation is offline (no network call).")
+        }
+        .id(SettingsSection.license.id)
+    }
+
+    private var tierLabel: String {
+        switch LicenseGate.effectiveTier(license) {
+        case .Pro: "PRO"
+        case .Trial: "TRIAL"
+        case .Free: "FREE"
+        }
+    }
+
     // MARK: - About
 
     private var versionLine: String {
@@ -513,11 +605,12 @@ struct SettingsView: View {
         return "NetMax Desktop \(version) (\(build))"
     }
 
-    // MARK: Updates stub (W12 T1-e)
+    // MARK: Updates (task 2 — real GitHub Releases check)
 
-    /// Release page the "Check for Updates…" row opens. A constant so tests
-    /// and future Sparkle wiring share one spelling.
-    static let releasesPageURL = "https://github.com/netmax/releases"
+    /// Release page the "Check for Updates…" row opens. Single source of
+    /// truth lives on UpdateChecker (real repo, not the old github.com/netmax
+    /// placeholder).
+    static let releasesPageURL = UpdateChecker.releasesPageURL
 
     /// Build date from Info.plist (`NetMaxBuildDate`, stamped by
     /// build_app.sh). Falls back to the bundle version when the key is
@@ -542,9 +635,48 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: Update-check state (task 2)
+
+    @State private var updateStatusMessage: String?
+    @State private var updateStatusIsError = false
+    @State private var isCheckingUpdate = false
+    @State private var updateButtonTitle = "Check for Updates…"
+
+    /// Button-triggered GitHub Releases check. Never claims "up to date"
+    /// when the request failed — surfaces the error instead.
+    private func checkForUpdates() {
+        guard !isCheckingUpdate else { return }
+        isCheckingUpdate = true
+        updateButtonTitle = "Checking…"
+        updateStatusMessage = nil
+        Task {
+            let outcome = await UpdateChecker.check()
+            await MainActor.run {
+                isCheckingUpdate = false
+                updateButtonTitle = "Check for Updates…"
+                if let err = outcome.errorMessage {
+                    updateStatusMessage = err
+                    updateStatusIsError = true
+                } else if outcome.updateAvailable {
+                    updateStatusMessage =
+                        "Update available: \(outcome.latestVersion ?? "?") "
+                        + "(you have \(outcome.currentVersion))."
+                    updateStatusIsError = false
+                    if let s = outcome.htmlURL, let u = URL(string: s) {
+                        NSWorkspace.shared.open(u)
+                    }
+                } else {
+                    updateStatusMessage =
+                        "You're up to date (\(outcome.currentVersion))."
+                    updateStatusIsError = false
+                }
+            }
+        }
+    }
+
     /// W13B TEAM-UB / UB-5 (S-100): discussions board the feedback row
-    /// opens. A constant so tests and future wiring share one spelling.
-    static let feedbackPageURL = "https://github.com/netmax/discussions"
+    /// opens. Real repo (was github.com/netmax/discussions placeholder).
+    static let feedbackPageURL = UpdateChecker.feedbackPageURL
 
     /// Opens the GitHub Discussions page in the user's default browser.
     static func openFeedbackPage() {
@@ -564,11 +696,13 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
                 .accessibilityLabel(Text("engine: 192 offline tests"))
 
-            // T3-c (W11-A-102): telemetry stance, stated in-app.
-            Text("Privacy: All data stays on this Mac. The app makes no telemetry calls.")
+            // T3-c (W11-A-102): telemetry stance, stated in-app. Task 2
+            // adds ONE optional network path: the button-triggered GitHub
+            // Releases check below (no background polling).
+            Text("Privacy: All data stays on this Mac. No telemetry. Updates check GitHub only when you press the button.")
                 .font(.callout)
                 .foregroundColor(.secondary)
-                .accessibilityLabel(Text("Privacy: all data stays on this Mac. The app makes no telemetry calls."))
+                .accessibilityLabel(Text("Privacy: all data stays on this Mac. No telemetry. Updates check GitHub only when you press the button."))
 
             // W13B UA-4 (S-079/S-080): the full "What leaves your Mac"
             // statement, as user-facing rows under a visible heading.
@@ -577,16 +711,15 @@ struct SettingsView: View {
             // re-verify and keep this honest):
             //   grep -rn "URLSession\|dataTask\|URLRequest" Sources/ \
             //     | grep -v SettingsView.swift | wc -l
-            //     → 0 hits outside this comment: the app layer itself makes
-            //     NO network calls of any kind.
+            //     → 1 hit: UpdateChecker's button-triggered GitHub API call
+            //       (no background polling, no telemetry).
             //   grep -rln "urlopen\|requests\." netmax.py netmetrics.py \
             //     netmax_netcontext.py | wc -l
             //     → 0: no Python HTTP client libraries anywhere.
-            //   The ONLY outbound traffic lives in the engine (netmax.py):
-            //   `curl` downloads from the speed-test endpoint list at the
-            //   top of that file (speed.cloudflare.com, proof.ovh.net) and
-            //   UDP DNS probes for the dns mode — exactly the endpoints a
-            //   run tests against and prints in its own output.
+            //   Engine outbound traffic lives in netmax.py: `curl` downloads
+            //   from the speed-test endpoint list at the top of that file
+            //   (speed.cloudflare.com, proof.ovh.net) and UDP DNS probes for
+            //   the dns mode — exactly the endpoints a run tests against.
             Text("Your Privacy")
                 .font(.caption.weight(.semibold))
                 .accessibilityLabel(Text("Your Privacy"))
@@ -598,10 +731,10 @@ struct SettingsView: View {
                 .font(.callout)
                 .foregroundColor(.secondary)
                 .accessibilityLabel(Text("No telemetry, no analytics, no tracking calls"))
-            Text("Only outbound connections: the speed-test and upload-test endpoints a run tests against (proof.ovh.net, speed.cloudflare.com for downloads; httpbin.org / postman-echo.com only when you run an upload probe).")
+            Text("Only outbound connections: the speed-test and upload-test endpoints a run tests against (proof.ovh.net, speed.cloudflare.com for downloads; httpbin.org / postman-echo.com only when you run an upload probe), plus GitHub's Releases API when you press “Check for Updates…”.")
                 .font(.callout)
                 .foregroundColor(.secondary)
-                .accessibilityLabel(Text("Only outbound connections are the speed-test endpoints you choose to test against"))
+                .accessibilityLabel(Text("Only outbound connections are the speed-test endpoints you choose to test against, plus GitHub Releases when you check for updates"))
 
             // T3-c (W11-A-101): grading rubric surfaced in-app.
             Text("Methodology: Grades use Waveform/DSLReports-style latency-under-load rubric.")
@@ -615,15 +748,15 @@ struct SettingsView: View {
                 .foregroundColor(.secondary)
                 .accessibilityLabel(Text("Licenses: SwiftUI, Apple engines, no third-party runtime dependencies"))
 
-            // W12 T1-e (W11-A-134): honest update stub. No Sparkle feed
-            // exists yet — this reports the build date from Info.plist and
-            // opens the release page instead of pretending to auto-update.
+            // Task 2: real GitHub Releases check (button-triggered; no
+            // background polling). Shows latest tag + opens the release page
+            // when an update is available; honest error text when offline.
             Button {
-                Self.openReleasesPage()
+                checkForUpdates()
             } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Check for Updates…")
+                        Text(updateButtonTitle)
                         Text(buildDateLine)
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -634,10 +767,17 @@ struct SettingsView: View {
                 }
             }
             .buttonStyle(.plain)
-            .help("Opens the NetMax releases page in your browser")
+            .help("Queries GitHub Releases for the latest NetMax version (only when pressed)")
             .accessibilityLabel(Text("Check for updates"))
-            .accessibilityHint(Text("There is no automatic updater yet. Opens the NetMax releases page in your browser so you can compare against the version shown here."))
+            .accessibilityHint(Text("Checks the NetMax GitHub Releases page for a newer version. Makes one network request only when pressed."))
             .accessibilityIdentifier("settings.checkForUpdates")
+
+            if let msg = updateStatusMessage {
+                Text(msg)
+                    .font(.caption)
+                    .foregroundColor(updateStatusIsError ? .orange : .secondary)
+                    .accessibilityLabel(Text(msg))
+            }
 
             // W13B TEAM-UB / UB-5 (S-100): feedback link — Help-menu-style
             // row in About, opening GitHub Discussions in the browser.
@@ -661,6 +801,28 @@ struct SettingsView: View {
             .accessibilityLabel(Text("Send feedback"))
             .accessibilityHint(Text("Opens the NetMax GitHub Discussions page in your browser so you can share ideas or report issues."))
             .accessibilityIdentifier("settings.sendFeedback")
+
+            // N9: sanitized support bundle for crash/bug reports.
+            Button {
+                _ = SupportBundle.export()
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Export Support Bundle…")
+                        Text("Zip with last 10 runs + versions — sanitized (no history dump, no SSID, no env)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "archivebox")
+                        .foregroundColor(.accentColor)
+                }
+            }
+            .buttonStyle(.plain)
+            .help("Writes a sanitized diagnostics zip you can attach to a bug report")
+            .accessibilityLabel(Text("Export support bundle"))
+            .accessibilityHint(Text("Saves a zip containing the last 10 runs, app version, and platform info. Absolute paths, SSIDs, and secrets are redacted."))
+            .accessibilityIdentifier("settings.exportSupportBundle")
         } header: {
             Text("About")
         } footer: {

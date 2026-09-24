@@ -1,54 +1,86 @@
-// M9: intentionally left uninstalled — NSEvent global monitors starve the
-// main event loop (App.swift:42-45). Fix = Carbon RegisterEventHotKey.
-import AppKit
+//
+//  GlobalHotkey.swift
+//  netmax-desktop
+//
+//  W12 T5-a (S-001) · NSEvent monitors replaced with Carbon
+//  RegisterEventHotKey — the old global/local NSEvent monitors starve the
+//  main event loop (app drew but ignored clicks; App.swift disabled them).
+//  Carbon hotkeys are delivered through the normal event stream, so no
+//  monitor loop runs. ⌥⌘R posts `.netmaxRerunLast` (same notification the
+//  in-app ⌘R shortcut posts).
+//
 
-/// W12 T5-a (suggestion S-001) — global hotkey ⌥⌘R: run Quick Test from any
-/// app.
-///
-/// Uses NSEvent global + local monitors. The global monitor sees keystrokes
-/// in OTHER apps; the local monitor covers our own windows (global monitors
-/// do not fire for events aimed at this process). Both route to the same
-/// handler, which posts `.netmaxRerunLast` — the notification MenuBarView's
-/// Quick Test already observes.
-///
-/// Honest limitations:
-/// - Accessibility-free global monitoring cannot intercept keys inside secure
-///   fields (password managers); acceptable for a convenience hotkey.
-/// - Requires the app to be running (it is — LSUIElement menu-bar app).
+import AppKit
+import Carbon.HIToolbox
+
 enum GlobalHotkey {
-    private static var globalMonitor: Any?
-    private static var localMonitor: Any?
+    /// 'NMHK' — private signature identifying our hotkey registration.
+    private static let signature = OSType(0x4E4D_484B)
+    private static let hotKeyID = EventHotKeyID(signature: signature, id: 1)
+
+    private static var hotKeyRef: EventHotKeyRef?
+    private static var handlerRef: EventHandlerRef?
 
     /// Idempotent install. Call once at app init.
     static func install() {
-        guard globalMonitor == nil else { return }
-        let mask: NSEvent.EventTypeMask = [.keyDown]
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { event in
-            guard matches(event) else { return }
-            post()
-        }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { event in
-            if matches(event) {
-                post()
-                return nil // consumed
-            }
-            return event
-        }
+        guard hotKeyRef == nil else { return }
+
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            hotKeyHandler,
+            1,
+            &eventType,
+            nil,
+            &handlerRef
+        )
+        // ⌥⌘R — mirrors the in-app ⌘R without colliding with it.
+        RegisterEventHotKey(
+            UInt32(kVK_ANSI_R),
+            UInt32(cmdKey | optionKey),
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
     }
 
     static func uninstall() {
-        if let g = globalMonitor { NSEvent.removeMonitor(g); globalMonitor = nil }
-        if let l = localMonitor { NSEvent.removeMonitor(l); localMonitor = nil }
+        if let ref = hotKeyRef {
+            UnregisterEventHotKey(ref)
+            hotKeyRef = nil
+        }
+        if let h = handlerRef {
+            RemoveEventHandler(h)
+            handlerRef = nil
+        }
     }
 
-    /// ⌥⌘R — mirrors the in-app ⌘R without colliding with it.
-    private static func matches(_ event: NSEvent) -> Bool {
-        event.modifierFlags.contains([.command, .option])
-            && event.keyCode == 15 // R
-            && event.type == .keyDown
-    }
+    /// Carbon callback (C convention — no captures). Filters by signature,
+    /// then posts on the main queue so SwiftUI observers update safely.
+    private static let hotKeyHandler: EventHandlerUPP = { _, event, _ in
+        guard let event else { return OSStatus(eventNotHandledErr) }
+        var hkID = EventHotKeyID()
+        let status = GetEventParameter(
+            event,
+            EventParamName(kEventParamDirectObject),
+            EventParamType(typeEventHotKeyID),
+            nil,
+            MemoryLayout<EventHotKeyID>.size,
+            nil,
+            &hkID
+        )
+        guard status == noErr,
+              hkID.signature == GlobalHotkey.signature,
+              hkID.id == GlobalHotkey.hotKeyID.id
+        else { return OSStatus(eventNotHandledErr) }
 
-    private static func post() {
-        NotificationCenter.default.post(name: .netmaxRerunLast, object: nil)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .netmaxRerunLast, object: nil)
+        }
+        return noErr
     }
 }

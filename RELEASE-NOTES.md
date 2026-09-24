@@ -1,5 +1,24 @@
 # Release Notes
 
+## 1.0.6
+
+**Swift**
+- H8 license: fresh gates no longer auto-stamp a trial; explicit `startTrial()` (one-shot), DEBUG-only env overrides, Settings License UI (Start trial / Activate / Deactivate).
+- N9 support bundle: sanitized `SupportBundle.export()` (drops history/env/SSID, redacts secrets, truncates) from Settings.
+- Carbon hotkey live: `GlobalHotkey.install()` registers ⌥⌘R → posts `.netmaxRerunLast` (real `RegisterEventHotKey`, not a no-op).
+- Update check: `UpdateChecker` hits GitHub releases API; Settings "Check for Updates" reports real version / errors (replaces placeholder github.com/netmax URLs).
+- Auto-triage: after degradation delivery, `AutoTriage` may re-run a short probe (30-min cap, DEBUG-only fire path); Settings toggle `notifications.autoTriage`.
+- ISP evidence packet: `IspEvidencePacket.format/export` builds a shareable markdown report (plan vs actual + degradation timeline) from Reports.
+- Task 4 SQLite primary: `HistoryStore` mirrors JSONL into `history.db` (flat `history` table); reads prefer SQLite with one-time JSONL seed; full rewrites keep both in sync. Per-store `.db` name derived from JSONL basename so isolated test stores never share a database.
+- View decomposition (extract-only): `MetricsExtraction`, `MonthlySummary`, `HistoryStoreProviding` pulled out of Dashboard/Reports.
+
+**Tooling**
+- `desktop/scripts/sync_versions.sh`: apply / `--check` / version-arg; package.json → pyproject + cask + RELEASE-NOTES (sha256 intentionally untouched until DMG rebuild).
+
+**Tests / audit**
+- New harnesses: SupportBundle, UpdateChecker, AutoTriage, HistorySQLite, IspEvidence (26 total; shell + SPM green).
+- AUDIT_REPORT: H8 → FIXED; GlobalHotkey → Live (⌥⌘R).
+
 ## Unreleased — M9 product surfaces + SPM test target (v1.0.6 prep)
 
 **Swift (M9 wire)**

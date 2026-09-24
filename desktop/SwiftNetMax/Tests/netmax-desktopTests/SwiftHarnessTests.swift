@@ -26,10 +26,13 @@ final class SwiftHarnessTests: XCTestCase {
 
         run("AnomalyAnnotationsTests") { AnomalyAnnotationsTests.runAll() }
         run("AnomalyEngineTests") { AnomalyEngineTests.runAll() }
+        run("AutoTriageTests") { AutoTriageTests.runAll() }
         run("DashboardCardsTests") { DashboardCardsTests.runAll() }
         run("EngineIntegrityCheckTests") { EngineIntegrityCheckTests.runAll() }
         run("HistoryStoreTests") { HistoryStoreTests.runAll() }
+        run("HistorySQLiteTests") { HistorySQLiteTests.runAll() }
         run("HistoryCompareTests") { HistoryCompareTests.runAll() }
+        run("IspEvidenceTests") { IspEvidenceTests.runAll() }
         run("LicenseGateTests") { LicenseGateTests.runAll() }
         run("ModeLabTests") { ModeLabTests.runAll() }
         run("NetContextProbe") { NetContextProbe.runAll() }
@@ -41,12 +44,14 @@ final class SwiftHarnessTests: XCTestCase {
         run("SpeedometerTests") { SpeedometerTests.runAll() }
         run("StatusBarControllerSelfCheck") { StatusBarControllerSelfCheck.runAll() }
         run("StatusPublisherHookSelfCheck") { StatusPublisherHookSelfCheck.runAll() }
+        run("SupportBundleTests") { SupportBundleTests.runAll() }
         run("TimelineCorrelationTests") { TimelineCorrelationTests.runAll() }
         run("TimelineEventMarkersTests") { TimelineEventMarkersTests.runAll() }
         run("TimelineModelTests") { TimelineModelTests.runAll(now: Date(timeIntervalSinceReferenceDate: 900_000_000)) }
         run("TimelineTests") { TimelineTests.runAll(now: Date(timeIntervalSinceReferenceDate: 1_000_000_000)) }
+        run("UpdateCheckerTests") { UpdateCheckerTests.runAll() }
 
-        XCTAssertEqual(ran, 21, "expected 21 harnesses")
+        XCTAssertEqual(ran, 26, "expected 26 harnesses")
         XCTAssertEqual(total, 0, "swift harness failures: \(total)")
     }
 }
