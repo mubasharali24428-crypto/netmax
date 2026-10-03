@@ -39,6 +39,17 @@ def test_plugin_json_valid_and_version_synced():
         "plugin version drifted from the MCP server version")
 
 
+def test_vscode_manifest_valid_and_version_synced():
+    manifest = json.loads((PLUGINS / "vscode" / "package.json").read_text())
+    assert manifest["engines"]["vscode"].startswith("^1.")
+    cmds = [c["command"] for c in manifest["contributes"]["commands"]]
+    assert "netmax.showTrends" in cmds
+    assert manifest["main"] == "./extension.js"
+    pkg = json.loads((REPO / "desktop" / "package.json").read_text())
+    assert manifest["version"] == pkg["version"], (
+        "vscode extension drifted from the MCP server version")
+
+
 def test_commands_have_frontmatter_descriptions():
     cmds = sorted((PLUGINS / "claude-code" / "commands").glob("*.md"))
     assert len(cmds) >= 2, "expected at least diagnose/speed commands"

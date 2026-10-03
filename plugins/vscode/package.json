@@ -1,0 +1,29 @@
+{
+  "name": "netmax-trends",
+  "displayName": "NetMax Trends",
+  "description": "Trend charts for NetMax network diagnostics (reads the macOS app history; zero dependencies)",
+  "version": "1.0.7",
+  "publisher": "mubasharali24428-crypto",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onCommand:netmax.showTrends"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "netmax.showTrends",
+        "title": "NetMax: Show Trends"
+      }
+    ]
+  },
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

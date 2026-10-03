@@ -81,6 +81,9 @@ jobs:
       - name: Syntax gate
         run: npm test
 
+      - name: VS Code trends unit tests (zero-dep node:test)
+        run: node --test ../plugins/vscode/test/trends.test.js
+
       - name: Start server (loopback) + run parallel smoke
         run: |
           node netmax-mcp-server.mjs --http &

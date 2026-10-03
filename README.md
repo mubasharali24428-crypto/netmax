@@ -125,12 +125,12 @@ subprocess so a failed measurement can never take down the UI.
 
 ## Tests
 
-512 offline tests in the default suite (network fully mocked — safe to run
+513 offline tests in the default suite (network fully mocked — safe to run
 anywhere), including the 104 in the engine_store / bridge suites:
 
 ```bash
 cd ~/netmax-app
-python3 -m pytest            # full suite (512: engine + GUI + modules + bridge + store)
+python3 -m pytest            # full suite (513: engine + GUI + modules + bridge + store)
 python3 -m pytest tests/test_netmax.py -v        # engine only
 python3 -m pytest test_netmax_gui.py -v          # GUI only
 python3 -m pytest desktop/engine_store/test_store.py -q   # SQLite layer (38)
