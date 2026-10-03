@@ -1222,14 +1222,19 @@ class TestArgparseDefaults:
     ])
     def test_defaults_streams8_seconds10(self, monkeypatch, argv, fn):
         seen = {}
-        monkeypatch.setattr(netmax, fn, lambda *a: seen.update(args=a))
+        monkeypatch.setattr(netmax, fn,
+                            lambda *a, **kw: seen.update(args=a, kwargs=kw))
         netmax.main(argv)
         args = seen["args"]
         if fn == "run_baseline":
-            assert args == (10,)                       # seconds default 10
+            assert args[0] == 10                      # seconds default 10
         else:
-            assert args[0] == 8                        # streams default 8
-            assert args[1] == 10                       # seconds default 10
+            assert args[0] == 8                       # streams default 8
+            assert args[1] == 10                      # seconds default 10
+        if fn in ("run_baseline", "run_turbo"):
+            # P3 item 44: adaptive is opt-in and must default off, so the
+            # measurement path is byte-for-byte the one already tested.
+            assert seen.get("kwargs", {}).get("adaptive") is False
 
 
 class TestUdpTimeout:

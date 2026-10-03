@@ -503,11 +503,151 @@ SHARE_NOTE = (
 )
 
 
-def run_baseline(seconds: int) -> float:
-    mbps, mb = throughput(1, seconds)
+# ── adaptive duration (P3 item 44) ────────────────────────────────────────────
+#
+# A fixed `--seconds` is a guess about how long a line needs to settle. A
+# converged baseline can be known in 18s; a contended one may need the full
+# window or it is lying. The measurement therefore runs in slices and stops
+# only when the RATE has stopped moving — never below the floor, never after
+# the caller's window (which stays a hard ceiling).
+#
+# `throughput()` above is deliberately untouched: it is the well-tested path
+# every existing mode uses. This is opt-in and additive.
+ADAPTIVE_SLICE_S = 4.0
+# Never conclude from less than this, whatever the numbers say — TCP
+# slow-start dominates the first few seconds.
+ADAPTIVE_MIN_S = 12.0
+# Rate must stay inside ±this band for ADAPTIVE_STABLE_SLICES in a row.
+ADAPTIVE_TOLERANCE_PCT = 4.0
+ADAPTIVE_STABLE_SLICES = 2
+
+
+def throughput_adaptive(
+    streams: int,
+    seconds: float,
+    limit_bps: float | None = None,
+    *,
+    min_seconds: float = ADAPTIVE_MIN_S,
+    tolerance_pct: float = ADAPTIVE_TOLERANCE_PCT,
+    stable_slices: int = ADAPTIVE_STABLE_SLICES,
+    slice_s: float = ADAPTIVE_SLICE_S,
+) -> tuple[float, float, float, dict[str, Any]]:
+    """Slice-wise throughput that stops once the rate has settled.
+
+    Returns (mbps, MB, elapsed_seconds, detail). `elapsed_seconds` is the
+    time actually spent, NOT the requested window — callers must report the
+    real figure or the history store records a measurement that never
+    happened at that length.
+    """
+    ceiling = max(float(seconds), 1.0)
+    floor = max(0.0, min(float(min_seconds), ceiling))
+    per_stream_bps = limit_bps / streams if limit_bps else None
+
+    started = time.monotonic()
+    deadline = started + ceiling
+    grand_total = 0
+    rates: list[float] = []
+    stable_streak = 0
+    stopped_early = False
+
+    while True:
+        now = time.monotonic()
+        remaining = deadline - now
+        if remaining <= 0:
+            break
+        slice_cap = min(slice_s, remaining)
+        slice_started = now
+
+        # Each slice is a short windowed pull: a slice that drains its test
+        # file loops internally, exactly like _pull, so the rate reflects
+        # the pipe and not the file size.
+        def _one_slice(cap: float) -> int:
+            cap_deadline = time.monotonic() + cap
+            got = 0
+            problems: list[str] = []
+            while True:
+                left = cap_deadline - time.monotonic()
+                if left <= 0:
+                    break
+                chunk, hit_cap = _pull_chunk(left, per_stream_bps, problems)
+                got += chunk
+                if hit_cap:
+                    break
+                if chunk == 0 and time.monotonic() < cap_deadline:
+                    time.sleep(min(2.0, cap_deadline - time.monotonic()))
+            return got
+
+        counts = []
+        with ThreadPoolExecutor(max_workers=streams) as pool:
+            futures = [pool.submit(_one_slice, slice_cap) for _ in range(streams)]
+            for future in futures:
+                try:
+                    counts.append(future.result())
+                except NetMaxError:
+                    counts.append(0)
+        got = sum(counts)
+        grand_total += got
+
+        slice_elapsed = max(time.monotonic() - slice_started, 1e-9)
+        rates.append(got * 8 / slice_elapsed / 1e6)
+
+        # Convergence test: the last few slices must agree within the
+        # tolerance. Two in a row inside the band is the bar — one slice
+        # can agree by luck.
+        if len(rates) >= 3:
+            window = rates[-min(len(rates), stable_slices + 1):]
+            mean = sum(window) / len(window)
+            if mean > 0:
+                spread = (max(window) - min(window)) / mean
+                if spread <= tolerance_pct / 100.0:
+                    stable_streak += 1
+                else:
+                    stable_streak = 0
+
+        if stable_streak >= stable_slices and time.monotonic() - started >= floor:
+            stopped_early = True
+            break
+
+    elapsed = max(time.monotonic() - started, 1e-9)
+    if grand_total == 0:
+        raise NetMaxError(
+            "all speed endpoints failed — nothing was downloaded"
+        )
+    mbps = grand_total * 8 / elapsed / 1e6
+    detail = {
+        "stopped_early": stopped_early,
+        "requested_seconds": ceiling,
+        "elapsed_seconds": round(elapsed, 2),
+        "slice_rates_mbps": [round(r, 2) for r in rates],
+        "slices": len(rates),
+        "tolerance_pct": tolerance_pct,
+    }
+    return mbps, grand_total / 1e6, elapsed, detail
+
+
+def run_baseline(seconds: int, adaptive: bool = False) -> float:
+    if not adaptive:
+        mbps, mb = throughput(1, seconds)
+        _hr("Baseline — what ordinary apps get")
+        _print_speed("single-stream", 1, mbps, mb, seconds)
+        return mbps
+    mbps, mb, elapsed, detail = throughput_adaptive(1, seconds)
     _hr("Baseline — what ordinary apps get")
-    _print_speed("single-stream", 1, mbps, mb, seconds)
+    _print_speed("single-stream", 1, mbps, mb, round(elapsed))
+    _print_adaptive(detail)
     return mbps
+
+
+def _print_adaptive(detail: dict[str, Any]) -> None:
+    """Say plainly that the run stopped early, and how early."""
+    if not detail.get("stopped_early"):
+        print(f"{'adaptive':<14} ran the full "
+              f"{detail.get('requested_seconds', 0):.0f}s window")
+        return
+    saved = detail.get("requested_seconds", 0) - detail.get("elapsed_seconds", 0)
+    print(f"{'adaptive':<14} settled after "
+          f"{detail.get('elapsed_seconds', 0):.0f}s "
+          f"(saved {saved:.0f}s of a {detail.get('requested_seconds', 0):.0f}s window)")
 
 
 # ── plugin mode registry (W6-C2) ─────────────────────────────────────────────
@@ -555,10 +695,17 @@ def _load_plugins() -> list[str]:
     return loaded
 
 
-def run_turbo(streams: int, seconds: int) -> float:
-    mbps, mb = throughput(streams, seconds)
+def run_turbo(streams: int, seconds: int, adaptive: bool = False) -> float:
+    if not adaptive:
+        mbps, mb = throughput(streams, seconds)
+        _hr(f"Turbo — {streams} parallel streams")
+        _print_speed("multi-stream", streams, mbps, mb, seconds)
+        print(SHARE_NOTE)
+        return mbps
+    mbps, mb, elapsed, detail = throughput_adaptive(streams, seconds)
     _hr(f"Turbo — {streams} parallel streams")
-    _print_speed("multi-stream", streams, mbps, mb, seconds)
+    _print_speed("multi-stream", streams, mbps, mb, round(elapsed))
+    _print_adaptive(detail)
     print(SHARE_NOTE)
     return mbps
 
@@ -1173,6 +1320,73 @@ def run_ai_analysis(name: str, input_data: dict[str, Any],
         raise NetMaxError(f"{name} failed: {exc}") from None
 
 
+def run_plan_advice(
+    *,
+    history_path: str = "",
+    battery_spec: str = "auto",
+    seconds: int = 10,
+    interval_s: int = 30,
+    mode: str = "",
+    forced: bool = False,
+) -> dict[str, Any]:
+    """Scheduling advice: power policy first, then predictive windows.
+
+    Both halves are optional and independent — a caller with no history
+    still gets the power answer, and vice versa.
+    """
+    import netmax_schedule as sched
+
+    if battery_spec == "ac":
+        state = sched.PowerState(on_ac=True, source="ac")
+    elif battery_spec == "battery":
+        state = sched.PowerState(on_ac=False, source="battery",
+                                 percent=100.0)
+    elif battery_spec == "auto":
+        state = sched.read_power_state()
+    else:
+        try:
+            pct = float(battery_spec.rstrip("%"))
+        except ValueError:
+            raise NetMaxError(
+                f"--battery must be auto, ac, battery, or a percentage; "
+                f"got {battery_spec!r}"
+            ) from None
+        state = sched.PowerState(on_ac=False, source="battery",
+                                 percent=max(0.0, min(100.0, pct)))
+
+    policy = sched.power_policy(state, forced=forced)
+    resolved = sched.apply_policy(policy, seconds=seconds,
+                                 interval_s=interval_s, mode=mode)
+
+    out: dict[str, Any] = {
+        "power": {
+            "state": {
+                "on_ac": state.on_ac, "percent": state.percent,
+                "source": state.source,
+                "low_power_mode": state.low_power_mode,
+            },
+            "policy": policy.to_dict(),
+            "resolved": resolved,
+        },
+    }
+
+    if history_path:
+        try:
+            rows = sched.load_history(history_path)
+        except (FileNotFoundError, OSError) as exc:
+            out["schedule"] = {"verdict": "history_unreadable",
+                               "error": str(exc)[:200], "windows": []}
+        else:
+            out["schedule"] = sched.predict_windows(rows)
+    else:
+        out["schedule"] = {
+            "verdict": "no_history",
+            "windows": [],
+            "notes": ["pass --history to get recommended hours"],
+        }
+    return out
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="netmax",
@@ -1196,6 +1410,11 @@ def main(argv: list[str] | None = None) -> None:
             sp.add_argument("--seconds", type=int, default=10)
         sp.add_argument("--progress-out", default=None,
                         help="append JSONL progress heartbeat (tail -f for long runs)")
+        if mode in ("baseline", "turbo"):
+            sp.add_argument("--adaptive", action="store_true",
+                            help="stop once the measured rate has settled "
+                                 "instead of always using the full --seconds "
+                                 "window (--seconds stays the ceiling)")
 
     # v0.4 modes — separate parsers: different flag shapes than the core set.
     sp_bloat = sub.add_parser("bloat-eco", help="eco bufferbloat estimate (~100 KB)")
@@ -1253,6 +1472,28 @@ def main(argv: list[str] | None = None) -> None:
                        help="indent the JSON output")
     sp_ai.add_argument("--list-analyses", action="store_true",
                        help="print the available analysers and exit")
+
+    # P3 items 35/45: scheduling policy. Advice only — this prints what it
+    # would do and why; it never schedules or launches anything itself.
+    sp_plan = sub.add_parser(
+        "plan", help="scheduling advice: power-aware and predictive windows")
+    sp_plan.add_argument("--history", default="",
+                         help="history JSONL to derive recommended hours from")
+    sp_plan.add_argument("--battery", default="auto",
+                         help="auto (read pmset), ac, battery, or a "
+                              "percentage like '18' to reason about")
+    sp_plan.add_argument("--seconds", type=int, default=10,
+                         help="the duration you had planned, so the advice "
+                              "can be concrete (default %(default)s)")
+    sp_plan.add_argument("--interval", type=int, default=30,
+                         help="the poll interval you had planned "
+                              "(default %(default)s)")
+    sp_plan.add_argument("--mode", default="",
+                         help="the mode you had planned, to flag a skip")
+    sp_plan.add_argument("--forced", action="store_true",
+                         help="you explicitly want this run; overrides deferral")
+    sp_plan.add_argument("--pretty", action="store_true",
+                         help="indent the JSON output")
 
     # watch mode (v0.4 diagnostics; the dispatch branch at 'elif cmd == "watch"'
     # existed without this parser — register it so the mode actually runs).
@@ -1374,6 +1615,17 @@ def main(argv: list[str] | None = None) -> None:
             import netmax_export
             netmax_export.export_results(args.fmt, args.out)
             print(f"exported ({args.fmt}) → {args.out}")
+        elif cmd == "plan":
+            result = run_plan_advice(
+                history_path=args.history,
+                battery_spec=args.battery,
+                seconds=args.seconds,
+                interval_s=args.interval,
+                mode=args.mode,
+                forced=args.forced,
+            )
+            print(json.dumps(result, indent=2 if args.pretty else None,
+                             default=str))
         elif cmd == "ai":
             if args.list_analyses:
                 width = max(len(k) for k in AI_ANALYSES)
@@ -1411,7 +1663,10 @@ def main(argv: list[str] | None = None) -> None:
             if cmd == "dns":
                 runner_fn()
             elif cmd == "baseline":
-                runner_fn(seconds)
+                runner_fn(seconds, adaptive=getattr(args, "adaptive", False))
+            elif cmd == "turbo":
+                runner_fn(streams, seconds,
+                          adaptive=getattr(args, "adaptive", False))
             else:
                 runner_fn(streams, seconds)
     except KeyboardInterrupt:
