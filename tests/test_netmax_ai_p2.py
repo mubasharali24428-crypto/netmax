@@ -295,7 +295,9 @@ def test_cost_advisor_suggests_downgrade_when_heavily_overpaying():
     out = CostAdvisor().advise(500.0, 80.0, samples=samples)
     assert out["verdict"] == "downgrade_recommended"
     assert out["suggested_mbps"] < 500.0
-    assert any("risk" in n for n in out["notes"])
+    # Nothing in this history exceeded the suggested tier, so the honest
+    # statement is that there is no throttling evidence — not a warning.
+    assert any("no measurement exceeded" in n for n in out["notes"])
 
 
 def test_cost_advisor_leaves_a_fully_used_tier_alone():
@@ -430,3 +432,56 @@ def test_rule_refuses_an_absurdly_long_rule():
 def test_rule_ignores_nan_in_supplied_metrics():
     out = MetricRuleEngine().evaluate("mbps > 5", {"mbps": float("nan")})
     assert out["passed"] is False
+
+
+# ── 39. CostAdvisor currency + throttling-risk honesty ────────────────────────
+
+
+def test_cost_advisor_renders_the_currency():
+    out = CostAdvisor().advise(500.0, 80.0, currency="$",
+                               samples=[30.0] * 50 + [45.0] * 5)
+    assert out["currency"] == "$"
+    assert out["currency_known"] is True
+    assert any("$80" in n for n in out["notes"])
+    assert any("$" in n for n in out["notes"])
+
+
+def test_cost_advisor_flags_a_missing_currency():
+    out = CostAdvisor().advise(500.0, 80.0, samples=[30.0] * 50)
+    assert out["currency_known"] is False
+    assert out["currency"] is None
+    # A bare number must not be presented as if it were money.
+    assert any("bare numbers" in n for n in out["notes"])
+
+
+def test_cost_advisor_handles_non_dollar_currency():
+    out = CostAdvisor().advise(500.0, 60.0, currency="£",
+                               samples=[30.0] * 50)
+    assert any("£60" in n for n in out["notes"])
+
+
+def test_no_throttling_warning_when_nothing_exceeded():
+    """The old text warned about throttling even at 0 exceedances."""
+    out = CostAdvisor().advise(500.0, 80.0, currency="$",
+                               samples=[30.0] * 50 + [45.0] * 5)
+    assert not any("may be throttled" in n for n in out["notes"])
+    assert any("nothing in your history suggests throttling" in n
+               for n in out["notes"])
+
+
+def test_throttling_warning_when_peaks_exceeded():
+    out = CostAdvisor().advise(500.0, 80.0, currency="$",
+                               samples=[10.0] * 40 + [400.0] * 10)
+    if out["verdict"] == "downgrade_recommended":
+        assert any("may be throttled" in n for n in out["notes"])
+        assert not any("nothing in your history" in n for n in out["notes"])
+
+
+def test_cost_advice_through_the_engine_surface():
+    """The dispatch table must pass currency, not a dead history_limit."""
+    import netmax
+    out = netmax.run_ai_analysis("cost_advice", {
+        "plan_mbps": 500.0, "monthly_cost": 80.0, "currency": "$",
+        "samples": [30.0] * 50,
+    })
+    assert out["currency_known"] is True

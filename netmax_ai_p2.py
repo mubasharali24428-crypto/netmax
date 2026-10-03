@@ -709,10 +709,19 @@ class CostAdvisor:
         self,
         plan_mbps: float,
         monthly_cost: float,
-        history_limit: int = 500,
         samples: list[float] | None = None,
+        currency: str = "",
     ) -> dict[str, Any]:
-        """Recommend a tier, or explain why the current one is fine."""
+        """Recommend a tier, or explain why the current one is fine.
+
+        `currency` is a symbol ("$", "£", "€"). Without it the money figures
+        are reported as bare numbers and the result is flagged
+        `currency_known: false` — a saving quoted as "40 per month" with no
+        unit is not a claim worth showing a user.
+        """
+        def money(amount: float) -> str:
+            return f"{currency}{amount:,.0f}" if currency else f"{amount:,.0f}"
+
         values = sorted(samples or [], reverse=True)
         if plan_mbps <= 0 or monthly_cost <= 0 or not values:
             return {
@@ -738,17 +747,33 @@ class CostAdvisor:
         verdict = "current_tier_is_fine"
         if utilisation < 0.3 and suggested_mbps < plan_mbps * 0.6:
             verdict = "downgrade_recommended"
+            notes.append(
+                f"you pay {money(monthly_cost)} per month for "
+                f"{plan_mbps:g} Mbps"
+            )
             savings = monthly_cost * (1 - suggested_mbps / plan_mbps)
             notes.append(
                 f"a {suggested_mbps:.0f} Mbps tier would cover your 99th "
                 f"percentile with 15% headroom and cost about "
-                f"{monthly_cost - savings:.0f} per month"
+                f"{money(monthly_cost - savings)} per month"
             )
-            notes.append(
-                f"risk: {sum(1 for v in values if v > suggested_mbps)} of "
-                f"{len(values)} measurements exceeded it — a large update may "
-                "be throttled"
-            )
+            if not currency:
+                notes.append(
+                    "no currency supplied, so the money figures above are "
+                    "bare numbers"
+                )
+            exceeded = sum(1 for v in values if v > suggested_mbps)
+            if exceeded:
+                notes.append(
+                    f"risk: {exceeded} of {len(values)} measurements exceeded "
+                    f"{suggested_mbps:.0f} Mbps — a large update may be "
+                    "throttled"
+                )
+            else:
+                notes.append(
+                    f"no measurement exceeded {suggested_mbps:.0f} Mbps, so "
+                    "nothing in your history suggests throttling"
+                )
         elif utilisation > 0.85:
             verdict = "upgrade_may_help"
             notes.append(
@@ -757,6 +782,9 @@ class CostAdvisor:
             )
         return {
             "verdict": verdict,
+            "currency": currency or None,
+            "currency_known": bool(currency),
+            "monthly_cost": round(monthly_cost, 2),
             "suggested_mbps": round(suggested_mbps, 1),
             "p50": round(p50, 2), "p95": round(p95, 2), "p99": round(p99, 2),
             "peak": round(peak, 2),

@@ -1198,7 +1198,7 @@ AI_SIGNATURES: dict[str, tuple[str | None, dict[str, str]]] = {
     "cost_advice": (None, {"plan_mbps": "plan_mbps",
                            "monthly_cost": "monthly_cost",
                            "samples": "samples",
-                           "history_limit": "history_limit"}),
+                           "currency": "currency"}),
     "benchmark": ("mbps", {"cohort_percentiles": "cohort_percentiles",
                            "cohort_label": "cohort_label"}),
     "coach": ("goal", {"history_limit": "history_limit"}),
