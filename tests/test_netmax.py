@@ -14,10 +14,12 @@ import struct
 import subprocess
 import types
 from collections import namedtuple
+from pathlib import Path
 
 import pytest
 
 import netmax
+import netmax_upload
 
 FakeProc = namedtuple("FakeProc", "stdout stderr returncode")
 
@@ -67,11 +69,24 @@ class ManualClock:
 
 
 @pytest.fixture(autouse=True)
-def _clean_endpoint_health():
-    """Adaptive endpoint-health memory must not leak between tests."""
+def _clean_endpoint_health(tmp_path, monkeypatch):
+    """Adaptive endpoint-health memory must not leak between tests.
+
+    HOME points at tmp: breaker persistence (Wave 3) must never touch the
+    real ~/.netmax-endpoints.json during the suite.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
     netmax._reset_endpoint_health()
     yield
     netmax._reset_endpoint_health()
+
+
+@pytest.fixture(autouse=True)
+def _clean_dns_cache():
+    """DNS ranking cache must not leak between tests."""
+    netmax._reset_dns_cache()
+    yield
+    netmax._reset_dns_cache()
 
 
 # ── throughput / _pull ────────────────────────────────────────────────────────
@@ -301,6 +316,84 @@ class TestSustainedPull:
         netmax._mark_endpoint("OVH", ok=True)      # reset
         netmax._mark_endpoint("OVH", ok=False)     # streak 1 → 60 s
         assert netmax._ENDPOINT_FAIL_UNTIL["OVH"] == 60.0
+
+
+class TestBreakerPersistence:
+    """Streaks survive restarts via ~/.netmax-endpoints.json (owner-only)."""
+
+    @staticmethod
+    def _fresh_process():
+        """Simulate a new process: empty memory, disk not yet loaded."""
+        netmax._ENDPOINT_FAIL_UNTIL.clear()
+        netmax._ENDPOINT_FAIL_COUNT.clear()
+        netmax._ENDPOINT_STATE_LOADED = False
+        netmax._LAST_ENDPOINT_SAVE = 0.0
+
+    def test_fail_persists_across_restart(self, monkeypatch):
+        import os as _os
+
+        clock = ManualClock()
+        monkeypatch.setattr(netmax.time, "monotonic", clock)
+        netmax._mark_endpoint("OVH", ok=False)
+        netmax._mark_endpoint("OVH", ok=False)     # streak 2 → 300 s
+        netmax._LAST_ENDPOINT_SAVE = 0.0           # allow the write through
+        clock.advance(61.0)
+        with netmax._ENDPOINT_LOCK:
+            netmax._endpoint_state_save_locked()
+        path = netmax._endpoint_state_path()
+        assert _os.stat(path).st_mode & 0o777 == 0o600
+        saved = json.loads(open(path, encoding="utf-8").read())
+        assert saved["OVH"]["streak"] == 2
+        self._fresh_process()                      # new process boots
+        assert next(n for n, _ in netmax._ordered_endpoints()) == "Hetzner"
+
+    def test_expired_entries_dropped_on_load(self):
+        import time as _time
+
+        stale = {"OVH": {"streak": 3,
+                         "until_wall": _time.time() - 10.0}}
+        with open(netmax._endpoint_state_path(), "w",
+                  encoding="utf-8") as fh:
+            json.dump(stale, fh)
+        self._fresh_process()
+        assert next(n for n, _ in netmax._ordered_endpoints()) == "OVH"
+
+    def test_malformed_file_tolerated(self):
+        with open(netmax._endpoint_state_path(), "w",
+                  encoding="utf-8") as fh:
+            fh.write("<<not json>>")
+        self._fresh_process()
+        assert next(n for n, _ in netmax._ordered_endpoints()) == "OVH"
+
+    def test_saves_throttled_to_one_per_minute(self, monkeypatch):
+        clock = ManualClock()
+        monkeypatch.setattr(netmax.time, "monotonic", clock)
+        netmax._LAST_ENDPOINT_SAVE = -1000.0      # last write "long ago"
+        netmax._mark_endpoint("OVH", ok=False)    # writes (0 - -1000 >= 60)
+        assert netmax._LAST_ENDPOINT_SAVE == 0.0
+        clock.advance(10.0)
+        netmax._mark_endpoint("OVH", ok=False)    # throttled, no write
+        assert netmax._LAST_ENDPOINT_SAVE == 0.0
+
+    def test_concurrent_marks_stay_consistent(self):
+        import threading as _threading
+
+        errors = []
+
+        def hammer():
+            try:
+                for _ in range(10):
+                    netmax._mark_endpoint("CF", ok=False)
+            except Exception as exc:  # any escape fails the test
+                errors.append(exc)
+
+        threads = [_threading.Thread(target=hammer) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert not errors
+        assert netmax._ENDPOINT_FAIL_COUNT["CF"] == 80
 
     def test_zero_bytes_over_the_whole_window_raises(
         self, monkeypatch, fast_pull_clock
@@ -710,6 +803,31 @@ class TestDnsRanking:
         ms_values = [ms for _, ms in rows]
         assert ms_values == sorted(ms_values)
 
+    def test_second_call_within_ttl_skips_probes(self, monkeypatch):
+        """Repeat ranking inside the hour costs zero UDP probes."""
+        calls = []
+        monkeypatch.setattr(
+            netmax, "_median_rtt_ms",
+            lambda server, attempts=3: calls.append(server) or 10.0)
+        first = netmax.dns_ranking()
+        assert len(calls) == 4  # system + 3 resolvers, measured once
+        second = netmax.dns_ranking()
+        assert second == first and len(calls) == 4
+
+    def test_expired_cache_remeasures(self, monkeypatch):
+        """Past the TTL the ranking probes again (stale resolvers refresh)."""
+        clock = ManualClock()
+        monkeypatch.setattr(netmax.time, "monotonic", clock)
+        calls = []
+        monkeypatch.setattr(
+            netmax, "_median_rtt_ms",
+            lambda server, attempts=3: calls.append(server) or 10.0)
+        netmax.dns_ranking()
+        assert len(calls) == 4
+        clock.advance(netmax.DNS_CACHE_TTL_S + 1.0)
+        netmax.dns_ranking()
+        assert len(calls) == 8
+
 
 # ── validation + CLI wiring ──────────────────────────────────────────────────
 
@@ -723,6 +841,93 @@ class TestChecked:
     def test_rejects_out_of_range(self, value):
         with pytest.raises(netmax.NetMaxError, match="--seconds must be"):
             netmax._checked(value, 5, 30, "--seconds")
+
+
+class TestProgressOut:
+    """--progress-out heartbeat: JSONL start/chunk/done around real runs."""
+
+    @staticmethod
+    def _events(path):
+        return [json.loads(line) for line in Path(path).read_text().splitlines()]
+
+    def test_baseline_emits_start_chunk_done(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            subprocess, "run",
+            lambda argv, **kw: FakeProc("200 100", "", 28))
+        out = tmp_path / "prog.jsonl"
+        netmax.main(["baseline", "--seconds", "5", "--progress-out", str(out)])
+        events = self._events(out)
+        assert [e["event"] for e in events] == ["start", "chunk", "done"]
+        assert all(e["mode"] == "baseline" for e in events)
+        assert events[1]["bytes"] == 100
+
+    def test_unwritable_path_exits_nonzero(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setattr(
+            subprocess, "run",
+            lambda argv, **kw: FakeProc("200 100", "", 28))
+        bad = tmp_path / "nope" / "prog.jsonl"
+        with pytest.raises(SystemExit) as exc:
+            netmax.main(["baseline", "--seconds", "5",
+                         "--progress-out", str(bad)])
+        assert exc.value.code == 1
+        assert "progress-out" in capsys.readouterr().err
+        assert not bad.exists()
+
+    def test_done_emitted_on_failure(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(
+            subprocess, "run", lambda argv, **kw: FakeProc("429 1", "", 0))
+        out = tmp_path / "prog.jsonl"
+        with pytest.raises(SystemExit):
+            netmax.main(["baseline", "--seconds", "5",
+                         "--progress-out", str(out)])
+        assert [e["event"] for e in self._events(out)][-1] == "done"
+
+    def test_limit_governor_emits_intervals(self, monkeypatch, tmp_path):
+        clock = ManualClock()
+        monkeypatch.setattr(netmax.time, "monotonic", clock)
+
+        def fake_pull(seconds, limit_bps=None):
+            clock.advance(1.0)
+            return int((limit_bps or 0) * 1.0)
+
+        monkeypatch.setattr(netmax, "_pull", fake_pull)
+        out = tmp_path / "prog.jsonl"
+        netmax.main(["limit", "--streams", "1", "--seconds", "5",
+                     "--mbps", "2", "--progress-out", str(out)])
+        events = self._events(out)
+        intervals = [e for e in events if e["event"] == "interval"]
+        assert len(intervals) >= 2
+        assert all(e["mode"] == "limit" for e in events)
+
+    def test_upload_attempt_emitted(self, monkeypatch, tmp_path):
+        from io import BytesIO
+
+        class FakeHead:
+            def __init__(self, argv, **kw):
+                self.stdout = BytesIO(b"x")
+
+            def terminate(self):
+                pass
+
+            def wait(self, timeout=None):
+                return 0
+
+            def kill(self):
+                pass
+
+        monkeypatch.setattr(subprocess, "Popen", FakeHead)
+        monkeypatch.setattr(
+            subprocess, "run", lambda argv, **kw: FakeProc("200 100000 1.0", "", 0))
+        out = tmp_path / "u.jsonl"
+        netmax._PROGRESS_FH = open(out, "w", encoding="utf-8")
+        netmax._PROGRESS_MODE = "upload"
+        try:
+            netmax_upload.upload_probe(seconds=2.0)
+        finally:
+            netmax._progress_end()
+        attempts = [e for e in self._events(out) if e["event"] == "attempt"]
+        assert len(attempts) == 1
+        assert attempts[0]["endpoint"] in netmax_upload.ENDPOINTS_VERIFIED
 
 
 class TestCli:

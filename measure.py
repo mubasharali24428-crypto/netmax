@@ -12,20 +12,27 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import netmax
 
-try:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    HAVE_MPL = True
-except ImportError:  # optional chart extra (pyproject [project.optional-dependencies] charts)
-    plt = None
-    HAVE_MPL = False
-
 HEADER, ACCENT, MUTED, CARD = "#1F2635", "#7C5A9B", "#8A93A6", "#FFFFFF"
 SECONDS = 8
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 HISTORY_FILE = RESULTS_DIR / "history.json"
+
+
+def _mpl_plt():
+    """Import pyplot lazily (optional chart extra: netmax[charts]).
+
+    A top-level import runs fc-list at import time — a real subprocess
+    that breaks the offline suite and slows every CLI start whether or
+    not a chart is ever drawn. Returns None when unavailable.
+    """
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return None
+    return plt
 
 
 def _quarantine_corrupt(path: Path) -> None:
@@ -108,7 +115,8 @@ def main() -> None:
     with open(out_dir / "results.json", "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
 
-    if not HAVE_MPL:
+    plt = _mpl_plt()
+    if plt is None:
         # No chart extra installed — the measurement itself is complete;
         # results.json + history carry everything. Skip the PNG honestly.
         append_history("full", data)

@@ -212,3 +212,40 @@ class TestHold:
         assert seen[-1] == (_sig.SIGTERM, "PREV")  # restored
         with pytest.raises(SystemExit):
             seen[0][1](_sig.SIGTERM, None)  # the guard itself raises
+
+
+class TestIntegrity:
+    """Root must never execute group/world-writable engine files."""
+
+    def test_clean_tree_passes(self, tmp_path):
+        (tmp_path / "a.py").write_text("x = 1\n")
+        assert netmax_shape.engine_integrity_error(str(tmp_path)) is None
+
+    def test_group_writable_file_fails(self, tmp_path):
+        target = tmp_path / "evil.py"
+        target.write_text("x = 1\n")
+        target.chmod(0o664)
+        err = netmax_shape.engine_integrity_error(str(tmp_path))
+        assert err is not None and "evil.py" in err
+
+    def test_group_writable_dir_fails(self, tmp_path):
+        tmp_path.chmod(0o775)
+        err = netmax_shape.engine_integrity_error(str(tmp_path))
+        assert err is not None and "dir" in err
+
+    def test_missing_dir_fails_closed(self, tmp_path):
+        assert netmax_shape.engine_integrity_error(
+            str(tmp_path / "gone")) is not None
+
+    def test_apply_refuses_before_touching_pf(self, as_root, monkeypatch,
+                                              tmp_path):
+        eng = tmp_path / "eng"
+        eng.mkdir()
+        mod = eng / "netmax_shape.py"
+        mod.write_text("x = 1\n")
+        mod.chmod(0o664)
+        monkeypatch.setattr(netmax_shape, "__file__", str(mod))
+        runner = FakeRunner()
+        with pytest.raises(netmax_shape.ShapeError, match="group/world-writable"):
+            netmax_shape.apply(2.0, run=runner)
+        assert runner.calls == []  # no pf/dnctl command was issued

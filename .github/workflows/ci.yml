@@ -37,7 +37,7 @@ jobs:
         run: python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot"
 
       - name: Run engine + bridge suite
-        run: python -m pytest -q
+        run: python -m pytest -q -n auto
 
       - name: Bridge offline selftest
         run: python desktop/bridge/engine_bridge.py selftest
@@ -45,7 +45,7 @@ jobs:
       # W18 / audit F20: the SQLite layer is adopted (opt-in migration) and
       # its 38 tests run standalone — keep them green in CI forever.
       - name: engine_store suite (SQLite layer, F20)
-        run: python -m pytest desktop/engine_store/test_store.py -q
+        run: python -m pytest desktop/engine_store/test_store.py -q -n auto
 
       # Wave-1 (audit items 4/76): the three in-repo version pins must agree —
       # server.json drifted to 1.0.6 silently once already. (Homebrew cask lives

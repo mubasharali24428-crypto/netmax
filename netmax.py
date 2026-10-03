@@ -12,6 +12,7 @@ CANNOT: exceed the bandwidth your ISP provisions. No software can — the cap is
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import random
 import re
@@ -21,6 +22,7 @@ import string
 import struct
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -46,6 +48,61 @@ RESOLVERS = {
 
 class NetMaxError(RuntimeError):
     """A measurement could not be completed."""
+
+
+# ── progress heartbeat ──────────────────────────────────────────────────────
+# Long runs (6 h surveillance, strict holds) are otherwise silent until the
+# window ends — a hung CDN looks identical to a slow one from outside.
+# --progress-out PATH appends one JSON object per line (start/chunk/
+# interval/attempt/done) so operators (tail -f) and future watchdogs can
+# tell "working" from "stuck". "done" fires on completion OR failure —
+# run health comes from the exit code, not the log. Zero cost when unset.
+_PROGRESS_LOCK = threading.Lock()
+_PROGRESS_FH = None
+_PROGRESS_MODE = ""
+
+
+def _progress_emit(event: dict) -> None:
+    fh = _PROGRESS_FH
+    if fh is None:
+        return
+    payload = {"ts": time.time(), "mode": _PROGRESS_MODE}
+    payload.update(event)
+    line = json.dumps(payload) + "\n"
+    with _PROGRESS_LOCK:
+        try:
+            fh.write(line)
+            fh.flush()
+        except OSError:
+            pass
+
+
+def _progress_begin(mode: str, path: str | None) -> None:
+    """Open the progress log and emit start. No-op when path is None."""
+    global _PROGRESS_FH, _PROGRESS_MODE
+    if not path:
+        return
+    try:
+        fh = open(path, "w", encoding="utf-8")
+    except OSError as exc:
+        raise NetMaxError(f"cannot open --progress-out {path}: {exc}") from exc
+    _PROGRESS_FH, _PROGRESS_MODE = fh, mode
+    _progress_emit({"event": "start"})
+
+
+def _progress_end() -> None:
+    """Emit done, close, restore. Never raises — safe in a finally block."""
+    global _PROGRESS_FH, _PROGRESS_MODE
+    if _PROGRESS_FH is None:
+        return
+    try:
+        _progress_emit({"event": "done"})
+    finally:
+        try:
+            _PROGRESS_FH.close()
+        except OSError:
+            pass
+        _PROGRESS_FH, _PROGRESS_MODE = None, ""
 
 
 # ── throughput ────────────────────────────────────────────────────────────────
@@ -76,30 +133,106 @@ _ENDPOINT_FAIL_UNTIL: dict[str, float] = {}
 _ENDPOINT_FAIL_COUNT: dict[str, int] = {}
 ENDPOINT_COOLDOWN_S = 60.0
 ENDPOINT_COOLDOWN_STEPS = (60.0, 300.0, 3600.0)
+# Cross-run breaker memory: yesterday's 429s must still count after a
+# restart, or every fresh CLI run re-hammers a throttled CDN from zero.
+# Wall-clock file (monotonic dies with the process); owner-only, best
+# effort — a missing/unreadable file degrades to memory-only, never an
+# error. Writes throttled: cooldowns last minutes, losing <60 s is noise.
+_ENDPOINT_STATE_NAME = ".netmax-endpoints.json"
+_ENDPOINT_SAVE_MIN_INTERVAL_S = 60.0
+_ENDPOINT_LOCK = threading.Lock()
+_ENDPOINT_STATE_LOADED = False
+_LAST_ENDPOINT_SAVE = 0.0
 
 
 def _reset_endpoint_health() -> None:
-    _ENDPOINT_FAIL_UNTIL.clear()
-    _ENDPOINT_FAIL_COUNT.clear()
+    with _ENDPOINT_LOCK:
+        _ENDPOINT_FAIL_UNTIL.clear()
+        _ENDPOINT_FAIL_COUNT.clear()
+        global _ENDPOINT_STATE_LOADED, _LAST_ENDPOINT_SAVE
+        _ENDPOINT_STATE_LOADED = True  # forget disk too — clean slate
+        _LAST_ENDPOINT_SAVE = 0.0
+    try:
+        os.unlink(_endpoint_state_path())
+    except OSError:
+        pass
+
+
+def _endpoint_state_path() -> str:
+    return os.path.join(os.path.expanduser("~"), _ENDPOINT_STATE_NAME)
+
+
+def _endpoint_state_load_locked() -> None:
+    """One-time load of persisted streaks; caller holds _ENDPOINT_LOCK."""
+    global _ENDPOINT_STATE_LOADED
+    if _ENDPOINT_STATE_LOADED:
+        return
+    _ENDPOINT_STATE_LOADED = True
+    try:
+        with open(_endpoint_state_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict):
+        return
+    now_wall, now_mono = time.time(), time.monotonic()
+    for name, entry in data.items():
+        if not isinstance(name, str) or not isinstance(entry, dict):
+            continue
+        try:
+            streak = int(entry["streak"])
+            remaining = float(entry["until_wall"]) - now_wall
+        except (KeyError, TypeError, ValueError):
+            continue
+        if streak >= 1 and remaining > 0:
+            _ENDPOINT_FAIL_COUNT[name] = streak
+            wait = ENDPOINT_COOLDOWN_STEPS[min(streak, len(ENDPOINT_COOLDOWN_STEPS)) - 1]
+            _ENDPOINT_FAIL_UNTIL[name] = now_mono + min(remaining, wait)
+
+
+def _endpoint_state_save_locked() -> None:
+    """Persist live streaks (throttled); caller holds _ENDPOINT_LOCK."""
+    global _LAST_ENDPOINT_SAVE
+    now_mono = time.monotonic()
+    if now_mono - _LAST_ENDPOINT_SAVE < _ENDPOINT_SAVE_MIN_INTERVAL_S:
+        return
+    _LAST_ENDPOINT_SAVE = now_mono
+    payload = {
+        name: {"streak": _ENDPOINT_FAIL_COUNT[name],
+               "until_wall": time.time() + max(0.0, until - now_mono)}
+        for name, until in _ENDPOINT_FAIL_UNTIL.items()
+        if name in _ENDPOINT_FAIL_COUNT and until > now_mono
+    }
+    try:
+        path = _endpoint_state_path()
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+    except OSError:
+        pass  # best effort — memory still protects this run
 
 
 def _ordered_endpoints() -> list[tuple[str, str]]:
     """Healthy endpoints first, cooled-down ones last (still tried)."""
-    now = time.monotonic()
-    healthy = [e for e in ENDPOINTS if _ENDPOINT_FAIL_UNTIL.get(e[0], 0.0) <= now]
-    skipped = [e for e in ENDPOINTS if _ENDPOINT_FAIL_UNTIL.get(e[0], 0.0) > now]
-    return healthy + skipped
+    with _ENDPOINT_LOCK:
+        _endpoint_state_load_locked()
+        now = time.monotonic()
+        healthy = [e for e in ENDPOINTS if _ENDPOINT_FAIL_UNTIL.get(e[0], 0.0) <= now]
+        skipped = [e for e in ENDPOINTS if _ENDPOINT_FAIL_UNTIL.get(e[0], 0.0) > now]
+        return healthy + skipped
 
 
 def _mark_endpoint(name: str, ok: bool) -> None:
-    if ok:
-        _ENDPOINT_FAIL_UNTIL.pop(name, None)
-        _ENDPOINT_FAIL_COUNT.pop(name, None)
-    else:
-        streak = _ENDPOINT_FAIL_COUNT.get(name, 0) + 1
-        _ENDPOINT_FAIL_COUNT[name] = streak
-        wait = ENDPOINT_COOLDOWN_STEPS[min(streak, len(ENDPOINT_COOLDOWN_STEPS)) - 1]
-        _ENDPOINT_FAIL_UNTIL[name] = time.monotonic() + wait
+    with _ENDPOINT_LOCK:
+        if ok:
+            _ENDPOINT_FAIL_UNTIL.pop(name, None)
+            _ENDPOINT_FAIL_COUNT.pop(name, None)
+        else:
+            streak = _ENDPOINT_FAIL_COUNT.get(name, 0) + 1
+            _ENDPOINT_FAIL_COUNT[name] = streak
+            wait = ENDPOINT_COOLDOWN_STEPS[min(streak, len(ENDPOINT_COOLDOWN_STEPS)) - 1]
+            _ENDPOINT_FAIL_UNTIL[name] = time.monotonic() + wait
+        _endpoint_state_save_locked()
 
 
 def _pull_chunk(seconds: float, limit_bps: float | None,
@@ -157,9 +290,13 @@ def _pull_chunk(seconds: float, limit_bps: float | None,
             continue
         if received > 0:
             _mark_endpoint(name, ok=True)
+            _progress_emit({"event": "chunk", "endpoint": name,
+                            "bytes": received,
+                            "hit_cap": proc.returncode == 28})
             return received, proc.returncode == 28
         problems.append(f"{name}: 2xx but empty body ({proc.stdout.strip()[:60]!r})")
         _mark_endpoint(name, ok=False)
+    _progress_emit({"event": "chunk", "endpoint": None, "bytes": 0})
     return 0, False
 
 
@@ -307,8 +444,26 @@ def _median_rtt_ms(server: str | None, attempts: int = 3) -> float:
     return statistics.median(samples)
 
 
+# DNS ranking cache: resolver latency barely moves within the hour, and a
+# full ranking costs seconds of UDP probes — serve repeats from memory.
+DNS_CACHE_TTL_S = 3600.0
+_DNS_CACHE: dict = {"at": float("-inf"), "rows": None}
+
+
+def _reset_dns_cache() -> None:
+    _DNS_CACHE["at"] = float("-inf")
+    _DNS_CACHE["rows"] = None
+
+
 def dns_ranking() -> list[tuple[str, float]]:
-    """Rank resolvers by median RTT; unfit resolvers are skipped, not fatal."""
+    """Rank resolvers by median RTT; unfit resolvers are skipped, not fatal.
+
+    Results are cached for DNS_CACHE_TTL_S — resolver latency barely moves
+    within the hour, and a full ranking costs seconds of UDP probes.
+    """
+    now = time.monotonic()
+    if _DNS_CACHE["rows"] is not None and now - _DNS_CACHE["at"] < DNS_CACHE_TTL_S:
+        return [tuple(r) for r in _DNS_CACHE["rows"]]
     rows: list[tuple[str, float]] = []
     try:
         rows.append(("System default", _median_rtt_ms(None)))
@@ -321,7 +476,10 @@ def dns_ranking() -> list[tuple[str, float]]:
             print(f"   ({label} skipped — {exc})")
     if not rows:
         raise NetMaxError("no DNS resolver reachable")
-    return sorted(rows, key=lambda row: row[1])
+    rows = sorted(rows, key=lambda row: row[1])
+    _DNS_CACHE["at"] = now
+    _DNS_CACHE["rows"] = rows
+    return [tuple(r) for r in rows]
 
 
 # ── reporting ─────────────────────────────────────────────────────────────────
@@ -593,6 +751,7 @@ def _limit_governor(streams: int, seconds: float,
         total += got
         achieved_bytes_s = got / slice_elapsed          # same unit as target_bps
         rates.append(achieved_bytes_s * 8 / 1e6)        # Mbps for the report
+        _progress_emit({"event": "interval", "mbps": rates[-1]})
         dead_streak = dead_streak + 1 if got == 0 else 0
         if dead_streak >= LIMIT_DEAD_INTERVALS:
             raise NetMaxError(
@@ -737,15 +896,21 @@ def main(argv: list[str] | None = None) -> None:
             sp.add_argument("--streams", type=int, default=8)
         if mode != "dns":
             sp.add_argument("--seconds", type=int, default=10)
+        sp.add_argument("--progress-out", default=None,
+                        help="append JSONL progress heartbeat (tail -f for long runs)")
 
     # v0.4 modes — separate parsers: different flag shapes than the core set.
     sp_bloat = sub.add_parser("bloat-eco", help="eco bufferbloat estimate (~100 KB)")
     sp_up = sub.add_parser("upload", help="upload-speed probe (Mbps up)")
     sp_up.add_argument("--seconds", type=int, default=10)
+    sp_up.add_argument("--progress-out", default=None,
+                       help="append JSONL progress heartbeat (tail -f for long runs)")
     # Speed-cap mode: hold a fixed download rate for the whole window.
     sp_lim = sub.add_parser("limit", help="hold a fixed download rate (Mbps cap)")
     sp_lim.add_argument("--streams", type=int, default=1)
     sp_lim.add_argument("--seconds", type=int, default=10)
+    sp_lim.add_argument("--progress-out", default=None,
+                        help="append JSONL progress heartbeat (tail -f for long runs)")
     sp_lim.add_argument("--mbps", type=float, required=True,
                         help="target download rate in Mbps (0.5..10000)")
     sp_lim.add_argument("--strict", action="store_true",
@@ -794,6 +959,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     try:
         cmd = args.cmd
+        _progress_begin(cmd, getattr(args, "progress_out", None))
         if cmd in PLUGIN_MODES:
             entry = PLUGIN_MODES[cmd]
             runner = entry.get("fn")
@@ -920,6 +1086,8 @@ def main(argv: list[str] | None = None) -> None:
     except NetMaxError as exc:
         print(f"netmax: {exc}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        _progress_end()
 
 
 MODE_HELP = {

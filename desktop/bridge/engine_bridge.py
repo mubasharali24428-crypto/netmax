@@ -78,6 +78,7 @@ MODE_FLAGS: dict[str, tuple[str, ...]] = {
     "bloat": ("streams", "seconds"),
     "full": ("streams", "seconds"),
     "upload": ("seconds",),
+    "bloat-eco": (),
     "limit": ("streams", "seconds", "mbps", "strict"),
     "loss": ("count",),
     "jitter": ("count",),
@@ -420,6 +421,8 @@ def _check_arg_mapping() -> None:
             ["strict"],
         ),
         ((("wifi", {}), [fixed_py, engine, "wifi"], [])),
+        # bloat-eco takes no flags — plain mode word, still enveloped.
+        ((("bloat-eco", {}), [fixed_py, engine, "bloat-eco"], [])),
         # Unsupported flag for the mode is never forwarded — but surfaced.
         ((("turbo", {"count": 99}), [fixed_py, engine, "turbo"], ["count"])),
     ]

@@ -459,7 +459,10 @@ function buildServer() {
     "eco_bloat",
     "Quick eco-friendly bufferbloat estimate using only ~100 KB of data. Less accurate than the full test but uses negligible bandwidth.",
     {},
-    async () => runTool("eco_bloat", () => runEngineDirect(["bloat-eco"]))
+    // Via the bridge (bloat-eco takes no flags) so range validation and the
+    // C1 envelope apply uniformly. download_file stays direct: fetch takes
+    // positional url/out args the bridge's flag-only contract can't express.
+    async () => runTool("eco_bloat", () => runViaBridge("bloat-eco", []))
   );
 
   // ── Tool: diagnostic_summary ───────────────────────────────────────────────
@@ -510,12 +513,17 @@ function buildServer() {
       }
       lines.push("");
 
-      return {
-        content: [{
-          type: "text",
-          text: lines.join("\n"),
-        }],
-      };
+      const text = lines.join("\n");
+      const anyOk = speedEnv.success || dnsEnv.success || bloatResult.success;
+      if (!anyOk) {
+        return failResult("diagnostic_summary",
+          "all three probes failed: " +
+          [speedEnv.error, dnsEnv.error, bloatResult.error]
+            .filter(Boolean).map((e) => String(e).slice(0, 120)).join("; "));
+      }
+      return okResult("diagnostic_summary", text,
+        { speedOk: !!speedEnv.success, dnsOk: !!dnsEnv.success,
+          bloatOk: !!bloatResult.success });
     }
   );
 
@@ -673,12 +681,23 @@ function buildServer() {
         if (includeWifi) lines.push("WiFi info was gathered in parallel with network tests.");
       }
 
-      return {
-        content: [{
-          type: "text",
-          text: lines.join("\n"),
-        }],
+      // A sub-test fails either as a thrown error OR a failure envelope
+      // (direct-mode engine failures resolve, not reject — checking only
+      // r.error would report STATUS: OK when every probe actually failed).
+      const subFailed = (r) => {
+        if (r.error) return true;
+        if (r.name === "bloat") return !(r.result && r.result.success);
+        return !(r.envelope && r.envelope.success);
       };
+      const failed = results.filter(subFailed).length;
+      const text = lines.join("\n");
+      if (failed === results.length) {
+        return failResult("parallel_diagnostics",
+          `all ${results.length} sub-tests failed: ` +
+          results.map((r) => `${r.name}: ${r.error}`.slice(0, 120)).join("; "));
+      }
+      return okResult("parallel_diagnostics", text,
+        { elapsedSeconds: Number(elapsed), ran: results.length, failed });
     }
   );
 

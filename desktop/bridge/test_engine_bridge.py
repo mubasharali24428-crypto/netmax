@@ -26,7 +26,7 @@ import engine_bridge as eb
 PY = "/opt/fake/bin/python"
 MODES = (
     "baseline", "turbo", "boost", "dns", "bloat", "full",
-    "upload", "limit", "loss", "jitter", "wifi",
+    "upload", "bloat-eco", "limit", "loss", "jitter", "wifi",
 )
 
 
@@ -90,6 +90,7 @@ def test_build_command_uses_resolved_interpreter():
          ["--streams", "8", "--seconds", "30"]),
         ("dns", {}, []),
         ("upload", {"seconds": 15}, ["--seconds", "15"]),
+        ("bloat-eco", {}, []),
         ("limit", {"streams": 2, "seconds": 30, "mbps": 2.5},
          ["--streams", "2", "--seconds", "30", "--mbps", "2.5"]),
         ("loss", {"count": 25}, ["--count", "25"]),

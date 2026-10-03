@@ -21,6 +21,14 @@ def fake_run(stdout="", stderr="", returncode=0):
     return _run
 
 
+@pytest.fixture(autouse=True)
+def _clean_wifi_cache():
+    """Wi-Fi scan cache must not leak between tests."""
+    netmetrics._reset_wifi_cache()
+    yield
+    netmetrics._reset_wifi_cache()
+
+
 # ── packet_loss ──────────────────────────────────────────────────────────────
 
 LOSS_OK = (
@@ -135,6 +143,19 @@ def test_wifi_info_offline_raises(monkeypatch):
     monkeypatch.setattr(subprocess, "run", fake_run(stdout="{}"))
     with pytest.raises(netmax.NetMaxError):
         netmetrics.wifi_info()
+
+
+def test_wifi_info_second_call_within_ttl_spawns_nothing(monkeypatch):
+    """Repeat scan inside 10 s costs zero system_profiler spawns."""
+    calls = []
+    monkeypatch.setattr(
+        subprocess, "run",
+        lambda cmd, **kw: (calls.append(cmd),
+                           subprocess.CompletedProcess(cmd, 0, WIFI_JSON, ""))[1])
+    first = netmetrics.wifi_info()
+    assert len(calls) == 1  # JSON path succeeds on first spawn
+    second = netmetrics.wifi_info()
+    assert second == first and len(calls) == 1
 
 
 def test_wifi_info_profiler_failure_raises(monkeypatch):

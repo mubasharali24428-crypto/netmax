@@ -8,6 +8,7 @@ needs (a later monkeypatch.setattr wins, disarming that one tripwire).
 import socket
 import subprocess
 import sys
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -28,9 +29,45 @@ def _tripwire(seam):
 @pytest.fixture(autouse=True)
 def offline_guarantee(monkeypatch):
     monkeypatch.setattr(subprocess, "run", _tripwire("subprocess.run"))
+    monkeypatch.setattr(subprocess, "Popen", _tripwire("subprocess.Popen"))
     monkeypatch.setattr(socket, "getaddrinfo", _tripwire("socket.getaddrinfo"))
     monkeypatch.setattr(socket, "create_connection", _tripwire("socket.create_connection"))
     monkeypatch.setattr(socket, "socket", _tripwire("socket.socket"))
+
+
+@pytest.fixture(autouse=True)
+def fake_head(monkeypatch):
+    """Default `head` stand-in: records spawns, reaps cleanly, moves no bytes."""
+    made = []
+
+    class FakeHead:
+        def __init__(self, argv, **kw):
+            self.argv = argv
+            self.kwargs = kw
+            self.stdout = BytesIO(b"x" * 64)
+            self.terminated = False
+            self.waited = False
+            made.append(self)
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, timeout=None):
+            self.waited = True
+            return 0
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(subprocess, "Popen", FakeHead)
+    return made
+
+
+def _no_head(monkeypatch):
+    """Force the staged-tempfile fallback (no `head` on PATH)."""
+    def raising(argv, **kw):
+        raise OSError("no head")
+    monkeypatch.setattr(subprocess, "Popen", raising)
 
 
 def _fake_run(stdout="", returncode=0):
@@ -143,7 +180,77 @@ def test_invalid_seconds_raises_valueerror():
         netmax_upload.upload_probe(seconds=0)
 
 
+def test_streams_by_default_and_stages_nothing(monkeypatch, fake_head, tmp_path):
+    """Pipe-first: curl reads `@-` from head's stdout; no temp file exists."""
+    staged = []
+    monkeypatch.setattr(
+        netmax_upload.tempfile, "NamedTemporaryFile",
+        lambda **kw: (_ for _ in ()).throw(
+            AssertionError("staging must not happen on the stream path")))
+    fake = _fake_run("200 100000 1.0")
+    monkeypatch.setattr(subprocess, "run", fake)
+    netmax_upload.upload_probe(seconds=1.0)
+    cmd, kwargs = fake.calls[0]
+    assert cmd[cmd.index("--data-binary") + 1] == "@-"
+    assert kwargs.get("stdin") is fake_head[0].stdout
+    assert fake_head[0].argv[:3] == ["head", "-c", "1250000"]  # 10e6*1s/8
+    assert staged == []
+
+
+def test_stream_reaped_on_success(monkeypatch, fake_head):
+    """The head child is terminated + waited (no zombies) after a good POST."""
+    monkeypatch.setattr(subprocess, "run", _fake_run("200 100000 1.0"))
+    netmax_upload.upload_probe(seconds=1.0)
+    assert len(fake_head) == 1
+    assert fake_head[0].terminated and fake_head[0].waited
+
+
+def test_failover_reopens_stream_per_endpoint(monkeypatch, fake_head):
+    """A half-consumed pipe must never feed the next POST — one stream each."""
+    ok = _fake_run("200 800000 1.0")
+
+    def flaky_first(cmd, **kwargs):
+        if netmax_upload.ENDPOINTS_VERIFIED[0] in cmd:
+            return SimpleNamespace(stdout="403 0 0.1", stderr="", returncode=0)
+        return ok(cmd, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", flaky_first)
+    netmax_upload.upload_probe(seconds=3.0)
+    assert len(fake_head) == 2
+    assert all(h.terminated and h.waited for h in fake_head)
+
+
+def test_fallback_stages_file_when_pipe_fails(monkeypatch, tmp_path, fake_head):
+    """No `head` on PATH: classic staged tempfile, same Mbps math, unlinked."""
+    _no_head(monkeypatch)
+    created = []
+
+    class FakeTF:
+        def __init__(self, **kw):
+            self.name = str(tmp_path / "payload.bin")
+            created.append(self.name)
+
+        def write(self, data):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(netmax_upload.tempfile, "NamedTemporaryFile", FakeTF)
+    fake = _fake_run("200 100000 1.0")
+    monkeypatch.setattr(subprocess, "run", fake)
+    mbps, _mb = netmax_upload.upload_probe(seconds=1.0)
+    assert fake.calls[0][0][fake.calls[0][0].index("--data-binary") + 1].startswith("@/")
+    assert fake.calls[0][1].get("stdin") is None
+    assert mbps == pytest.approx(0.8)
+    assert created and not __import__("os").path.exists(created[0])
+
+
 def test_payload_tempfile_cleaned_up(monkeypatch, tmp_path):
+    _no_head(monkeypatch)
     created = []
 
     class FakeTF:
@@ -171,6 +278,7 @@ def test_payload_cleaned_up_when_write_fails(monkeypatch, tmp_path):
     """C3: a failed payload write (disk full) must still unlink the temp file."""
     import os
 
+    _no_head(monkeypatch)
     created = []
 
     class FakeTF:

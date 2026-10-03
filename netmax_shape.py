@@ -23,6 +23,7 @@ import signal
 import subprocess
 import tempfile
 import time as _time
+from pathlib import Path
 
 PIPE_NO = 10
 ANCHOR = "netmax"
@@ -99,9 +100,36 @@ def require_root(mbps: float) -> None:
         )
 
 
+def engine_integrity_error(engine_dir: str | None = None) -> str | None:
+    """Fail-closed integrity check on the engine root will execute.
+
+    The privileged python imports its SIBLINGS (netmax, netmetrics, …) as
+    root — a group/world-writable engine file (or directory, which allows
+    replacing files and planting __pycache__) turns the next strict hold
+    into arbitrary root code execution for anyone else on the machine.
+    Returns an error string when anything is off, else None.
+    """
+    root = Path(engine_dir) if engine_dir is not None else Path(__file__).resolve().parent
+    try:
+        if root.stat().st_mode & 0o022:
+            return f"engine dir is group/world-writable: {root}"
+        offenders = sorted(
+            child.name for child in root.iterdir()
+            if child.suffix == ".py" and child.stat().st_mode & 0o022)
+    except OSError as exc:
+        return f"cannot inspect engine dir {root}: {exc}"
+    if offenders:
+        return ("engine files are group/world-writable "
+                f"({', '.join(offenders)}); fix with chmod 755/644")
+    return None
+
+
 def apply(mbps: float, run=None, write=None) -> dict:
     """Install the cap; returns state needed by remove(). Raises if not root."""
     require_root(mbps)
+    bad = engine_integrity_error()
+    if bad is not None:
+        raise ShapeError(bad)
     run = run or _run
     write = write or _write_temp
     rate = kbit_str(mbps)

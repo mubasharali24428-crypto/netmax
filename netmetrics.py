@@ -11,6 +11,7 @@ import json
 import re
 import statistics
 import subprocess
+import time
 
 from netmax import NetMaxError
 
@@ -61,6 +62,17 @@ def jitter_ms(host: str = "1.1.1.1", count: int = 10, interval: float = 0.3) -> 
     return statistics.fmean(deltas)
 
 
+# Wi-Fi scan cache: system_profiler takes seconds per spawn and the radio
+# barely moves within 10 s — serve repeats from memory.
+WIFI_CACHE_TTL_S = 10.0
+_WIFI_CACHE: dict = {"at": float("-inf"), "info": None}
+
+
+def _reset_wifi_cache() -> None:
+    _WIFI_CACHE["at"] = float("-inf")
+    _WIFI_CACHE["info"] = None
+
+
 def wifi_info(iface_hint: str | None = None) -> dict:
     """Current Wi-Fi network info: {'rssi_dbm', 'noise_dbm', 'channel', ...}.
 
@@ -68,6 +80,16 @@ def wifi_info(iface_hint: str | None = None) -> dict:
     in modern macOS). Prefers -json; falls back to plain-text regexes.
     """
     del iface_hint  # reserved; system_profiler reports all interfaces
+    now = time.monotonic()
+    if _WIFI_CACHE["info"] is not None and now - _WIFI_CACHE["at"] < WIFI_CACHE_TTL_S:
+        return dict(_WIFI_CACHE["info"])
+    info = _wifi_info_uncached()
+    _WIFI_CACHE["at"] = now
+    _WIFI_CACHE["info"] = info
+    return dict(info)
+
+
+def _wifi_info_uncached() -> dict:
     proc = _run(["system_profiler", "SPAirPortDataType", "-json"], timeout=30)
     if proc.returncode != 0:
         raise NetMaxError(
