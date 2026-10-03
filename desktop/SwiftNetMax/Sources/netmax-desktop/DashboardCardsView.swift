@@ -66,6 +66,8 @@ struct DashboardCardsView: View {
                         speedTrendSection
                         // W13B UB-3 (S-029): hour-of-day coverage strip.
                         coverageStripSection
+                        // P3: AI analysis over the same extracted metrics.
+                        aiInsightSection
                     }
                         .padding(.vertical, 2)
                 }
@@ -220,6 +222,18 @@ struct DashboardCardsView: View {
     /// the sparkline — one cell per LOCAL hour, opacity by sample count, so
     /// "when do I actually test?" is answerable at a glance. Hidden entirely
     /// while there is no history (never an empty decoration).
+    /// P3: AI analysis cards fed the SAME extracted metrics the cards above use,
+    /// so an insight can never contradict the number printed beside it. Hidden
+    /// when there is nothing measured yet rather than showing cards that
+    /// would all come back inconclusive.
+    @ViewBuilder
+    private var aiInsightSection: some View {
+        let bundle = AIAnalysis.metricsBundle(from: metrics)
+        if !AIAnalysis.isEmpty(bundle) {
+            AIInsightSection(input: bundle)
+        }
+    }
+
     private var coverageStripSection: some View {
         let buckets = DashboardMetrics.hourCoverage(from: records)
         let peak = buckets.max() ?? 0

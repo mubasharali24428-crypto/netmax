@@ -64,6 +64,22 @@ enum Theme {
     /// only ≈ 4:1 even on black and glows harshly next to dark UI).
     static let gradeF = dynamicColor(light: 0xC01B2E, dark: 0xFF7061)
 
+    // MARK: - Severity
+
+    /// Map an analyser's severity word onto the existing bufferbloat grade
+    /// ramp. The ramp already encodes "how bad" in a palette the app uses
+    /// everywhere else, so reusing it keeps the AI section visually
+    /// consistent with the bufferbloat story rather than inventing a
+    /// second red/amber/green scale that means something different.
+    static func severityColor(_ severity: String) -> Color {
+        switch severity.lowercased() {
+        case "critical": return gradeF
+        case "high": return gradeD
+        case "medium": return gradeC
+        default: return secondaryText
+        }
+    }
+
     // MARK: - Surfaces & text (system pass-throughs)
 
     // Aliases over Apple's system colors, which already adapt to the

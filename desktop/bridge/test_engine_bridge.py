@@ -26,7 +26,7 @@ import engine_bridge as eb
 PY = "/opt/fake/bin/python"
 MODES = (
     "baseline", "turbo", "boost", "dns", "bloat", "full",
-    "upload", "bloat-eco", "limit", "loss", "jitter", "wifi",
+    "upload", "bloat-eco", "limit", "loss", "jitter", "wifi", "ai",
 )
 
 
@@ -96,6 +96,8 @@ def test_build_command_uses_resolved_interpreter():
         ("loss", {"count": 25}, ["--count", "25"]),
         ("jitter", {"count": 5}, ["--count", "5"]),
         ("wifi", {}, []),
+        ("ai", {"analysis": "root_cause", "input_json": "{}"},
+         ["--analysis", "root_cause", "--input", "{}"]),
     ],
     ids=MODES,
 )
@@ -491,3 +493,88 @@ def test_selftest_reports_and_fails_on_broken_check(capsys):
     captured = capsys.readouterr()
     assert rc == 1
     assert "FAIL arg_mapping_per_mode: seeded failure" in captured.out
+
+
+# ── ai mode (P3: the app's route to the analysis layer) ───────────────────────
+
+
+def test_ai_builds_string_flags_verbatim():
+    cmd, dropped = eb.build_command(
+        "ai", analysis="root_cause", input_json='{"mbps": 40}',
+        python=PY, bundled=False)
+    assert cmd[-4:] == ["--analysis", "root_cause",
+                        "--input", '{"mbps": 40}']
+    assert dropped == []
+
+
+def test_ai_json_payload_survives_verbatim():
+    """Floats, unicode and nesting must not be reformatted en route."""
+    payload = '{"mbps": 2.5, "note": "5 GHz \\u2014 ok", "nested": {"a": [1, 2]}}'
+    cmd, _ = eb.build_command("ai", analysis="explain", input_json=payload,
+                              python=PY, bundled=False)
+    assert cmd[-1] == payload
+
+
+def test_ai_rejects_an_unknown_analysis():
+    err = eb.validate_ai_flags("not_a_real_analysis", None)
+    assert err is not None and "not_a_real_analysis" in err
+
+
+def test_ai_requires_an_analysis_name():
+    err = eb.validate_ai_flags(None, None)
+    assert err is not None and "required" in err
+
+
+def test_ai_accepts_every_declared_analysis():
+    for name in eb.ALLOWED_ANALYSES:
+        assert eb.validate_ai_flags(name, None) is None, name
+
+
+def test_ai_allowlist_matches_the_engine():
+    """The bridge copy of the list must not drift from netmax.py."""
+    import netmax
+    assert eb.ALLOWED_ANALYSES == frozenset(netmax.AI_ANALYSES)
+
+
+def test_ai_rejects_unparseable_payload():
+    err = eb.validate_ai_flags("root_cause", "{nope")
+    assert err is not None and "not valid JSON" in err
+
+
+def test_ai_rejects_non_object_payload():
+    err = eb.validate_ai_flags("root_cause", "[1,2,3]")
+    assert err is not None and "JSON object" in err
+
+
+def test_ai_rejects_an_oversized_payload():
+    err = eb.validate_ai_flags("root_cause", '{"x": "' + "y" * 300_000 + '"}')
+    assert err is not None and "at most" in err
+
+
+def test_ai_missing_analysis_lands_in_the_envelope(tmp_path):
+    out = tmp_path / "env.json"
+    code = eb.run_engine("ai", None, None, None, str(out), runner=None)
+    envelope = json.loads(out.read_text(encoding="utf-8"))
+    assert code == 1
+    assert envelope["success"] is False
+    assert "analysis" in envelope["error"]
+
+
+def test_ai_unknown_analysis_lands_in_the_envelope(tmp_path):
+    out = tmp_path / "env.json"
+    code = eb.run_engine("ai", None, None, None, str(out), analysis="bogus",
+                         runner=None)
+    envelope = json.loads(out.read_text(encoding="utf-8"))
+    assert code == 1
+    assert envelope["success"] is False
+    assert "bogus" in envelope["error"]
+
+
+def test_ai_bad_payload_lands_in_the_envelope(tmp_path):
+    out = tmp_path / "env.json"
+    code = eb.run_engine("ai", None, None, None, str(out),
+                         analysis="root_cause", input_json="{oops",
+                         runner=None)
+    envelope = json.loads(out.read_text(encoding="utf-8"))
+    assert code == 1
+    assert envelope["success"] is False

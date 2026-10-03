@@ -83,11 +83,33 @@ MODE_FLAGS: dict[str, tuple[str, ...]] = {
     "loss": ("count",),
     "jitter": ("count",),
     "wifi": (),
+    # `ai` carries two STRING flags: an analysis name and a JSON payload.
+    # It is here rather than MCP-direct because the app shells out through
+    # this bridge and would otherwise have no route to the AI layer.
+    "ai": ("analysis", "input"),
 }
 ALLOWED_MODES: tuple[str, ...] = tuple(MODE_FLAGS)
 
 _FLAG_SPELLING = {"streams": "--streams", "seconds": "--seconds",
-                   "count": "--count", "mbps": "--mbps", "strict": "--strict"}
+                   "count": "--count", "mbps": "--mbps", "strict": "--strict",
+                   "analysis": "--analysis", "input": "--input"}
+
+# Mirror of netmax.py's AI_ANALYSES. Validated here so an unknown name lands
+# in the C1 envelope instead of spawning an engine that will only argparse-
+# complain. Keep in sync with `netmax ai --list-analyses`.
+ALLOWED_ANALYSES: frozenset[str] = frozenset({
+    "root_cause", "chunk_size", "allocate_streams", "optimize",
+    "isp_profile", "wifi_advice", "dns_strategy", "loss_pattern",
+    "jitter_attribution", "nl_command",
+    "explain", "wizard", "wizard_next", "wizard_conclude", "narrate",
+    "forecast", "hardware_health", "throttle_signature", "cost_advice",
+    "benchmark", "coach", "metric_rule",
+})
+
+# The payload is measurement JSON handed over by the UI. macOS caps argv well
+# above this; the limit exists so a runaway payload fails in the envelope
+# with a clear message rather than at exec.
+AI_INPUT_MAX_BYTES = 200_000
 
 # W7-4 (F2): inclusive bridge-side bounds mirroring netmax.py's argparse.
 # Enforced here so a bad UI value lands in the envelope instead of spawning
@@ -121,6 +143,8 @@ def build_command(
     count: int | None = None,
     mbps: float | None = None,
     strict: bool | None = None,
+    analysis: str | None = None,
+    input_json: str | None = None,
     *,
     python: str | None = None,
     bundled: bool | None = None,
@@ -141,6 +165,10 @@ def build_command(
         "count": count,
         "mbps": mbps,
         "strict": strict,
+        # `input` would shadow nothing here (the parameter is input_json) but
+        # the mode's flag name is --input, so map it explicitly.
+        "analysis": analysis,
+        "input": input_json,
     }
     supported = MODE_FLAGS[mode]
     # False behaves as absent (only an explicit True travels); anything set
@@ -164,8 +192,15 @@ def build_command(
             cmd += [_FLAG_SPELLING[key]]
             continue
         # Ints stay ints; floats (--mbps) print without trailing .0 —
-        # int() here would truncate a 2.5 Mbps cap to 2.
-        text = str(value) if isinstance(value, int) else f"{value:g}"
+        # int() here would truncate a 2.5 Mbps cap to 2. Strings
+        # (--analysis/--input) pass through verbatim: `{value:g}` would
+        # raise on them.
+        if isinstance(value, str):
+            text = value
+        elif isinstance(value, int):
+            text = str(value)
+        else:
+            text = f"{value:g}"
         cmd += [_FLAG_SPELLING[key], text]
     return cmd, dropped
 
@@ -244,6 +279,33 @@ def write_envelope(
     return payload
 
 
+def validate_ai_flags(analysis: str | None, input_json: str | None) -> str | None:
+    """Bridge-side check for `ai` mode, BEFORE any subprocess spawn.
+
+    Same contract as validate_ranges: None when acceptable, otherwise a
+    netmax-style message naming the accepted values. Keeps an unknown
+    analysis name or an unparseable payload inside the C1 envelope.
+    """
+    if analysis is None:
+        return ("netmax: --analysis is required for mode 'ai'; run "
+                "'netmax ai --list-analyses' to see the options")
+    if analysis not in ALLOWED_ANALYSES:
+        return (f"netmax: --analysis must be one of the known analyses, "
+                f"got {analysis!r}")
+    if input_json is not None:
+        encoded = len(input_json.encode("utf-8"))
+        if encoded > AI_INPUT_MAX_BYTES:
+            return (f"netmax: --input must be at most {AI_INPUT_MAX_BYTES} "
+                    f"bytes, got {encoded}")
+        try:
+            parsed = json.loads(input_json)
+        except (json.JSONDecodeError, ValueError) as exc:
+            return f"netmax: --input is not valid JSON: {exc}"
+        if not isinstance(parsed, dict):
+            return "netmax: --input must be a JSON object"
+    return None
+
+
 def parse_engine_stdout(stdout: str) -> Any:
     """Valid JSON stdout -> parsed object; otherwise {'raw': stdout}."""
     try:
@@ -276,6 +338,8 @@ def run_engine(
     json_out: str,
     mbps: float | None = None,
     strict: bool | None = None,
+    analysis: str | None = None,
+    input_json: str | None = None,
     *,
     runner=None,
     env: Mapping[str, str] | None = None,
@@ -293,6 +357,8 @@ def run_engine(
         return 1
     # W7-4/F2: reject out-of-range values BEFORE spawning anything.
     range_error = validate_ranges(streams, seconds, count, mbps)
+    if range_error is None and mode == "ai":
+        range_error = validate_ai_flags(analysis, input_json)
     if timeout_s is None:
         timeout_s = effective_timeout(seconds)
     if range_error:
@@ -307,6 +373,7 @@ def run_engine(
         return 1
     command, dropped_flags = build_command(
         mode, streams, seconds, count, mbps=mbps, strict=strict,
+        analysis=analysis, input_json=input_json,
         python=resolve_interpreter(env)
     )
     # W11-A-075 fix: forward NETMAX_PLUGIN so GUI-launched engine runs can
@@ -584,6 +651,11 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--count", type=int, default=None)
     run_parser.add_argument("--mbps", type=float, default=None)
     run_parser.add_argument("--strict", action="store_true", default=None)
+    run_parser.add_argument("--analysis", default=None,
+                            help="ai mode: analyser name (see "
+                                 "'netmax ai --list-analyses')")
+    run_parser.add_argument("--input", dest="input_json", default=None,
+                            help="ai mode: JSON object of measurements")
     run_parser.add_argument("--json-out", dest="json_out", required=True)
 
     sub.add_parser("selftest", help="offline self-checks (no network, no engine)")
@@ -616,6 +688,7 @@ def main(argv: list[str] | None = None) -> int:
     return run_engine(
         args.mode, args.streams, args.seconds, args.count, args.json_out,
         mbps=args.mbps, strict=args.strict or None,
+        analysis=args.analysis, input_json=args.input_json,
     )
 
 
