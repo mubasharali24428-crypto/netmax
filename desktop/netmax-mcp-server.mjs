@@ -308,6 +308,12 @@ async function runTool(mode, fn) {
   return okResult(mode, text, envelope.data ?? raw);
 }
 
+/** Minimal HTML escaping (peer dashboard bodies are remote content). */
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 /** Aggregate peer dashboards for GET /fleet (see handler above). */
 async function fleetStatus() {
   const peers = String(process.env.NETMAX_FLEET || "")
@@ -854,6 +860,27 @@ async function main() {
     if (req.method === "GET" && req.url === "/fleet") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(await fleetStatus());
+      return;
+    }
+    // Fleet board: server-rendered status page over the same data (auto-
+    // refreshes every 30 s, no client JS). Empty fleet explains the env var.
+    if (req.method === "GET" && req.url === "/fleet/board") {
+      const { peers } = JSON.parse(await fleetStatus());
+      const rows = peers.map((p) =>
+        `<tr><td><span style="color:${p.ok ? '#3fb950' : '#f85149'}">●</span> ` +
+        `<b>${escHtml(p.name)}</b></td><td>${escHtml(p.status)}</td></tr>`).join('\n');
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(`<!DOCTYPE html><html><head><meta charset="utf-8">` +
+        `<meta http-equiv="refresh" content="30">` +
+        `<style>body{font-family:system-ui;background:#0d1117;color:#e6edf3;padding:20px}` +
+        `table{border-collapse:collapse}td{border:1px solid #30363d;padding:8px 12px}` +
+        `.hint{color:#8b949e}</style></head><body>` +
+        `<h1>NetMax fleet (${peers.length} peer${peers.length === 1 ? '' : 's'})</h1>` +
+        (peers.length
+          ? `<table>${rows}</table>`
+          : `<p class="hint">No peers configured — set NETMAX_FLEET=` +
+            `"desk=http://host:8808,mini=http://host:8808".</p>`) +
+        `</body></html>`);
       return;
     }
     if (req.method === "GET" && (req.url === "/" || req.url === "/status")) {

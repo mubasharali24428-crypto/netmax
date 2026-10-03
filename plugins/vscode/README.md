@@ -1,7 +1,8 @@
-# NetMax Trends — VS Code extension (v1, read-only)
+# NetMax Trends — VS Code extension (v1, read-only + one runner)
 
-`NetMax: Show Trends` opens a static webview with an SVG Mbps-over-time
-chart plus the latest runs. Zero dependencies (no `node_modules`).
+Two commands: `NetMax: Show Trends` (history webview) and
+`NetMax: Run Quick Check` (8 s baseline, result panel, not saved to
+history). Zero dependencies (no `node_modules`).
 
 ## Data sources (first hit wins)
 
@@ -10,7 +11,10 @@ chart plus the latest runs. Zero dependencies (no `node_modules`).
 2. Same dir `history.jsonl` fallback (malformed lines skipped)
 3. Otherwise an empty state naming what to run first
 
-v1 never spawns the engine and never touches the network.
+v1 never spawns the engine except through Run Quick Check, and never
+touches the network itself. The runner needs an engine location:
+`netmax.engineRoot` setting (folder holding `netmax.py`) or `NETMAX_ROOT`,
+plus optional `netmax.pythonPath` / `NETMAX_PYTHON`.
 
 ## Install (local, no marketplace)
 

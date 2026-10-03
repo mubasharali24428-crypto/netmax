@@ -54,14 +54,42 @@ function loadRuns() {
 }
 
 function activate(context) {
-  const cmd = vscode.commands.registerCommand('netmax.showTrends', () => {
+  const show = vscode.commands.registerCommand('netmax.showTrends', () => {
     const panel = vscode.window.createWebviewPanel(
       'netmaxTrends', 'NetMax Trends', vscode.ViewColumn.One,
       { enableScripts: false });
     const { rows, source } = loadRuns();
     panel.webview.html = trends.renderPage(rows, source);
   });
-  context.subscriptions.push(cmd);
+  const check = vscode.commands.registerCommand('netmax.runCheck', async () => {
+    const cfg = vscode.workspace.getConfiguration('netmax');
+    const root = cfg.get('engineRoot', '') || process.env.NETMAX_ROOT || '';
+    const python = cfg.get('pythonPath', '') || process.env.NETMAX_PYTHON || '/usr/bin/python3';
+    if (!root) {
+      vscode.window.showErrorMessage(
+        'NetMax: set netmax.engineRoot (folder holding netmax.py) or NETMAX_ROOT first.');
+      return;
+    }
+    const script = require('path').join(root, 'netmax.py');
+    const run = (args) => new Promise((resolve) => {
+      require('child_process').execFile(
+        python, [script, ...args], { timeout: 120000 },
+        (error, stdout, stderr) => resolve({ error, stdout: String(stdout || ''), stderr: String(stderr || '') }));
+    });
+    const panel = vscode.window.createWebviewPanel(
+      'netmaxCheck', 'NetMax Check Result', vscode.ViewColumn.One,
+      { enableScripts: false });
+    panel.webview.html = trends.renderPage([], 'measuring…');
+    const base = await run(['baseline', '--seconds', '8']);
+    if (base.error) {
+      panel.webview.html = trends.renderPage([],
+        'baseline failed: ' + (base.stderr || base.error.message || 'unknown').slice(0, 200));
+      return;
+    }
+    const row = trends.rowFromEngineOutput(base.stdout, 'baseline');
+    panel.webview.html = trends.renderPage([row], 'live run just now (not saved to history)');
+  });
+  context.subscriptions.push(show, check);
 }
 
 function deactivate() {}

@@ -76,6 +76,8 @@ Client config (Claude / Cursor / DSH remote MCP):
   the call itself never fails because one box is down.
 - Optional `NETMAX_FLEET_TOKEN` is sent as Bearer to every peer (use one
   shared team token). Peer URLs are operator config, not user input.
+- `GET /fleet/board` renders the same data as a self-refreshing status
+  page (no client JS); empty fleet explains the env var instead of 404ing.
 
 ## Failure alerts: Slack webhook
 

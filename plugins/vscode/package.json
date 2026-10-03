@@ -20,8 +20,27 @@
       {
         "command": "netmax.showTrends",
         "title": "NetMax: Show Trends"
+      },
+      {
+        "command": "netmax.runCheck",
+        "title": "NetMax: Run Quick Check"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "NetMax",
+      "properties": {
+        "netmax.engineRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Folder holding netmax.py (or set NETMAX_ROOT)"
+        },
+        "netmax.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Python interpreter (or set NETMAX_PYTHON)"
+        }
+      }
+    }
   },
   "scripts": {
     "test": "node --test test/"

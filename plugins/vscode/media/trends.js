@@ -117,4 +117,9 @@ function renderPage(rows, sourceLabel) {
     `</body></html>`;
 }
 
-module.exports = { toEpochMs, extractMbps, parseSwiftJsonl, escapeHtml, svgChart, renderPage };
+/** Build a run row from engine CLI stdout (Run command results). */
+function rowFromEngineOutput(text, mode) {
+  return { t: Date.now(), mode, mbps: extractMbps(text) };
+}
+
+module.exports = { toEpochMs, extractMbps, parseSwiftJsonl, escapeHtml, svgChart, renderPage, rowFromEngineOutput };

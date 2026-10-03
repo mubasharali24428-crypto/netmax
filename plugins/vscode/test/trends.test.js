@@ -75,4 +75,25 @@ describe('renderPage', () => {
     assert.ok(html.includes('history.db (1 rows)'));
     assert.ok(html.includes('9.4 Mbps'));
   });
+
+  it('scripts stay disabled (static page contract)', () => {
+    const html = trends.renderPage([], 'empty');
+    assert.ok(!html.includes('<script'));
+  });
+});
+
+describe('rowFromEngineOutput', () => {
+  it('builds a timestamped row from CLI stdout', () => {
+    const before = Date.now();
+    const row = trends.rowFromEngineOutput(
+      'single-stream   1 stream(s)      9.4 Mbps   (9 MB in 8s)', 'baseline');
+    assert.equal(row.mode, 'baseline');
+    assert.equal(row.mbps, 9.4);
+    assert.ok(row.t >= before && row.t <= Date.now());
+  });
+
+  it('unparseable output still yields a dateless-Mbps row', () => {
+    const row = trends.rowFromEngineOutput('engine exploded', 'dns');
+    assert.equal(row.mbps, null);
+  });
 });

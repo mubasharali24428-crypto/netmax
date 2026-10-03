@@ -44,6 +44,8 @@ def test_vscode_manifest_valid_and_version_synced():
     assert manifest["engines"]["vscode"].startswith("^1.")
     cmds = [c["command"] for c in manifest["contributes"]["commands"]]
     assert "netmax.showTrends" in cmds
+    assert "netmax.runCheck" in cmds
+    assert "netmax.engineRoot" in manifest["contributes"]["configuration"]["properties"]
     assert manifest["main"] == "./extension.js"
     pkg = json.loads((REPO / "desktop" / "package.json").read_text())
     assert manifest["version"] == pkg["version"], (

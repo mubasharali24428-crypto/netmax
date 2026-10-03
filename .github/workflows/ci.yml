@@ -124,6 +124,7 @@ jobs:
           sleep 2
           curl -s http://127.0.0.1:8817/fleet | tee /tmp/fleet.json | grep -q '"ok": true'
           grep -q '"desk"' /tmp/fleet.json && grep -q '"mini"' /tmp/fleet.json
+          curl -s http://127.0.0.1:8817/fleet/board | grep -q 'NetMax fleet (2 peers)'
           STATUS=$?
           kill $SRV $P1 $P2 2>/dev/null
           exit $STATUS
