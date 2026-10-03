@@ -17,6 +17,17 @@
 import AppKit
 import SwiftUI
 
+// MARK: - Phase 5: Color-blind Friendly Palette
+
+/// Color-blind friendly palette: blue/orange instead of red/green.
+extension Color {
+    static let badgeSafe = Color(hex: 0x3882d8)     // Blue
+    static let badgeWarning = Color(hex: 0xd9730d)  // Orange
+    static let badgeDanger = Color(hex: 0xda3633)   // Red (errors only)
+    static let badgeInfo = Color(hex: 0x5e6ad2)     // Lavender-purple (universal)
+    static let badgeSuccess = Color(hex: 0x00d4aa)  // Emerald (NetMax brand)
+}
+
 // MARK: - Section anchors (W12 T4-a, audit 150)
 
 /// Jump targets for the settings section picker. `id` doubles as the
@@ -85,6 +96,12 @@ struct SettingsView: View {
                 onboardingReset
                 licenseSection
                 about
+                // Phase 5: New sections
+                testimonialsSection
+                analyticsSection
+                changelogSection
+                backupSection
+                subscriptionSection
             }
             .formStyle(.grouped)
             .frame(minWidth: 420, idealWidth: 460, minHeight: 520)
@@ -830,6 +847,56 @@ struct SettingsView: View {
                 .accessibilityLabel(Text("Honest limits: results reflect current conditions, vary with the network, and don't guarantee peak speed."))
         }
         .id(SettingsSection.about.id) // T4-a anchor
+    }
+    
+    // Phase 5: Testimonials
+    @ViewBuilder
+    private var testimonialsSection: some View {
+        Section {
+            TestimonialsView()
+        } header: {
+            Label("Testimonials", systemImage: "bubble.left")
+        }
+    }
+    
+    // Phase 5: Analytics Dashboard
+    @ViewBuilder
+    private var analyticsSection: some View {
+        Section {
+            AnalyticsDashboard()
+        } header: {
+            Label("Analytics", systemImage: "chart.bar")
+        }
+    }
+    
+    // Phase 5: Changelog
+    @ViewBuilder
+    private var changelogSection: some View {
+        Section {
+            ChangelogView()
+        } header: {
+            Label("What's New", systemImage: "doc.text")
+        }
+    }
+    
+    // Phase 5: Backup & Recovery
+    @ViewBuilder
+    private var backupSection: some View {
+        Section {
+            BackupRecoveryView()
+        } header: {
+            Label("Backup & Recovery", systemImage: "externaldrive")
+        }
+    }
+    
+    // Phase 5: Subscription Management
+    @ViewBuilder
+    private var subscriptionSection: some View {
+        Section {
+            SubscriptionView()
+        } header: {
+            Label("Subscription", systemImage: "cart")
+        }
     }
 }
 

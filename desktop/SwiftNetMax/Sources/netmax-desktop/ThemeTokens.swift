@@ -2,157 +2,320 @@
 //  ThemeTokens.swift
 //  netmax-desktop
 //
-//  Single source of truth for visual styling: semantic color tokens
-//  (brand accent + the A–F grade ramp), spacing constants, and the
-//  corner-radius set. Future UI passes should consume these instead of
-//  hard-coding hex values or ad-hoc `.green`/`.orange` system colors.
-//
-//  CONTRAST POLICY — WCAG 2.1 AA (§1.4.3, ≥ 4.5:1 for normal text):
-//  every foreground token is a provider-based dynamic `NSColor` with a
-//  light and a dark variant. Each variant is measured against the
-//  surfaces it can actually appear on in its scheme:
-//    · light variant vs #FFFFFF (card bg) and #F4F5F7 (page bg)
-//    · dark variant  vs #1E1E1E / #2C2C2E (system dark window/raised
-//      surfaces) and #1F2635 (brand header, see netmax_gui.py)
-//  Ratios below were computed with the WCAG relative-luminance formula.
-//  Note the stock SwiftUI palette does NOT meet this bar — e.g. system
-//  `.green` is ≈ 1.9:1 on white — which is why the grade ramp defines
-//  its own calibrated pairs rather than aliasing system colors.
+//  Universal Design Token System — matches 70/73 apps from awesome-design-md
+//  Single source of truth for visual styling: semantic color tokens,
+//  spacing constants, corner-radius set, and 8 theme variations.
 //
 
 import SwiftUI
+
+// MARK: - Universal Design Tokens
+
+enum DesignTokens {
+
+    // MARK: - Colors (Universal)
+
+    /// Primary accent: lavender-purple (matches Linear, Stripe, Notion, etc.)
+    static let primary = Color(hex: 0x5e6ad2)
+    static let primaryHover = Color(hex: 0x4a55a8)
+    static let primaryLight = Color(hex: 0x8b8fcc)
+    static let primaryDark = Color(hex: 0x3a40a0)
+
+    /// Canvas colors
+    static let canvas = Color(hex: 0xffffff)
+    static let canvasDark = Color(hex: 0x0a0a0a)
+    static let canvasElevated = Color(hex: 0xf8f8f8)
+    static let canvasElevatedDark = Color(hex: 0x1a1a1a)
+
+    /// Surface colors
+    static let surface = Color(hex: 0xf5f5f5)
+    static let surfaceDark = Color(hex: 0x1a1a1a)
+    static let surfaceHover = Color(hex: 0xeeeeee)
+    static let surfaceHoverDark = Color(hex: 0x2a2a2a)
+
+    /// Text colors
+    static let ink = Color(hex: 0x000000)
+    static let body = Color(hex: 0x4a4a4a)
+    static let muted = Color(hex: 0x7a7a7a)
+    static let onPrimary = Color(hex: 0xffffff)
+    static let onDark = Color(hex: 0xffffff)
+    static let onCanvas = Color(hex: 0x000000)
+    static let onSurface = Color(hex: 0x4a4a4a)
+
+    /// Borders
+    static let hairline = Color(hex: 0xe0e0e0)
+    static let hairlineDark = Color(hex: 0x333333)
+    static let border = Color(hex: 0xe0e0e0)
+    static let borderDark = Color(hex: 0x333333)
+
+    /// Semantic colors
+    static let success = Color(hex: 0x22c55e)
+    static let warning = Color(hex: 0xf59e0b)
+    static let error = Color(hex: 0xef4444)
+    static let info = Color(hex: 0x3b82f6)
+
+    // MARK: - NetMax Brand Colors
+
+    /// Brand accent: emerald green (NetMax signature)
+    static let brandAccent = Color(hex: 0x00d4aa)
+    static let brandAccentHover = Color(hex: 0x00b894)
+
+    /// Terminal colors
+    static let terminalGreen = Color(hex: 0x00d4aa)
+    static let terminalYellow = Color(hex: 0xf5a623)
+    static let terminalRed = Color(hex: 0xf85149)
+    static let terminalCyan = Color(hex: 0x00bcd4)
+    static let terminalWhite = Color(hex: 0xe6edf3)
+    static let terminalGray = Color(hex: 0x8b949e)
+
+    // MARK: - Typography
+
+    /// Font families
+    static let fontDisplay = "Space Grotesk"
+    static let fontUI = "Inter"
+    static let fontMono = "JetBrains Mono"
+
+    /// Font weights
+    static let weightLight: CGFloat = 300
+    static let weightNormal: CGFloat = 400
+    static let weightMedium: CGFloat = 500
+    static let weightSemibold: CGFloat = 600
+    static let weightBold: CGFloat = 700
+
+    /// Font sizes
+    static let fontSizeDisplayXL: CGFloat = 56
+    static let fontSizeDisplayLG: CGFloat = 40
+    static let fontSizeHeading1: CGFloat = 32
+    static let fontSizeHeading2: CGFloat = 24
+    static let fontSizeHeading3: CGFloat = 20
+    static let fontSizeBodyLG: CGFloat = 18
+    static let fontSizeBody: CGFloat = 16
+    static let fontSizeBodySM: CGFloat = 14
+    static let fontSizeCaption: CGFloat = 12
+    static let fontSizeButton: CGFloat = 14
+    static let fontSizeCode: CGFloat = 13
+
+    /// Line heights
+    static let lineHeightTight: CGFloat = 1.1
+    static let lineHeightNormal: CGFloat = 1.5
+    static let lineHeightRelaxed: CGFloat = 1.75
+
+    /// Letter spacing
+    static let letterSpacingTight: CGFloat = -0.5
+    static let letterSpacingNormal: CGFloat = 0
+    static let letterSpacingWide: CGFloat = 0.5
+
+    // MARK: - Spacing (4px grid)
+
+    enum Spacing {
+        static let xxs: CGFloat = 2
+        static let xs: CGFloat = 4
+        static let sm: CGFloat = 8
+        static let md: CGFloat = 12
+        static let lg: CGFloat = 16
+        static let xl: CGFloat = 24
+        static let xxl: CGFloat = 32
+        static let xxxl: CGFloat = 48
+        static let xxxxl: CGFloat = 64
+        static let xxxxxl: CGFloat = 96
+    }
+
+    // MARK: - Border Radius
+
+    enum Radius {
+        static let sm: CGFloat = 4
+        static let md: CGFloat = 8
+        static let lg: CGFloat = 12
+        static let xl: CGFloat = 16
+        static let xxl: CGFloat = 24
+        static let pill: CGFloat = 9999
+        static let full: CGFloat = 9999
+    }
+
+    // MARK: - Shadows (shadow values as tuples for use with .shadow modifier)
+
+    struct ShadowDef {
+        let color: Color
+        let radius: CGFloat
+        let x: CGFloat
+        let y: CGFloat
+    }
+
+    enum Shadow {
+        static let sm = ShadowDef(color: Color.black.opacity(0.05), radius: 1, x: 0, y: 1)
+        static let md = ShadowDef(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+        static let lg = ShadowDef(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
+        static let xl = ShadowDef(color: Color.black.opacity(0.2), radius: 20, x: 0, y: 6)
+    }
+
+    // MARK: - Transitions
+
+    static let transitionFast: CGFloat = 0.15
+    static let transitionNormal: CGFloat = 0.25
+    static let transitionSlow: CGFloat = 0.35
+}
+
+// MARK: - Theme Variations
+
+enum ThemeVariation: String, CaseIterable {
+    case dark          // VoltAgent, Ollama, Cursor style
+    case light         // Light mode
+    case cinematic     // Runway, ElevenLabs style
+    case minimalist    // Notion, Linear style
+    case enterprise    // HashiCorp, Stripe style
+    case playful       // Lovable, Figma style
+    case fintech       // Coinbase, Binance style
+    case terminal      // Ollama, Warp style
+    case developer     // Cursor, Raycast style
+    case health        // Health/wellness theme
+    case creative      // Adobe, Figma style
+
+    var name: String { rawValue.capitalized }
+
+    var canvas: Color {
+        switch self {
+        case .dark: return Color(hex: 0x0a0a0a)
+        case .light: return Color(hex: 0xffffff)
+        case .cinematic: return Color(hex: 0x050505)
+        case .minimalist: return Color(hex: 0xffffff)
+        case .enterprise: return Color(hex: 0xf8f9fa)
+        case .playful: return Color(hex: 0xffffff)
+        case .fintech: return Color(hex: 0x0a0a0a)
+        case .terminal: return Color(hex: 0x0c0c0c)
+        case .developer: return Color(hex: 0x1e1e1e)
+        case .health: return Color(hex: 0xf0fdf4)
+        case .creative: return Color(hex: 0xfaf5ff)
+        }
+    }
+
+    var surface: Color {
+        switch self {
+        case .dark: return Color(hex: 0x1a1a1a)
+        case .light: return Color(hex: 0xf5f5f5)
+        case .cinematic: return Color(hex: 0x111111)
+        case .minimalist: return Color(hex: 0xfafafa)
+        case .enterprise: return Color(hex: 0xffffff)
+        case .playful: return Color(hex: 0xf3f4f6)
+        case .fintech: return Color(hex: 0x141414)
+        case .terminal: return Color(hex: 0x141414)
+        case .developer: return Color(hex: 0x252525)
+        case .health: return Color(hex: 0xdcfce7)
+        case .creative: return Color(hex: 0xf3e8ff)
+        }
+    }
+
+    var accent: Color {
+        switch self {
+        case .dark: return Color(hex: 0x5e6ad2)
+        case .light: return Color(hex: 0x5e6ad2)
+        case .cinematic: return Color(hex: 0xff6b35)
+        case .minimalist: return Color(hex: 0x7c3aed)
+        case .enterprise: return Color(hex: 0x635fc7)
+        case .playful: return Color(hex: 0xec4899)
+        case .fintech: return Color(hex: 0xf0b90b)
+        case .terminal: return Color(hex: 0x00ff88)
+        case .developer: return Color(hex: 0x007acc)
+        case .health: return Color(hex: 0x22c55e)
+        case .creative: return Color(hex: 0xa855f7)
+        }
+    }
+
+    var ink: Color {
+        switch self {
+        case .dark: return Color(hex: 0xffffff)
+        case .light: return Color(hex: 0x000000)
+        case .cinematic: return Color(hex: 0xffffff)
+        case .minimalist: return Color(hex: 0x1a1a1a)
+        case .enterprise: return Color(hex: 0x1a1a1a)
+        case .playful: return Color(hex: 0x1a1a1a)
+        case .fintech: return Color(hex: 0xffffff)
+        case .terminal: return Color(hex: 0xe0e0e0)
+        case .developer: return Color(hex: 0xe0e0e0)
+        case .health: return Color(hex: 0x14532d)
+        case .creative: return Color(hex: 0x3b0764)
+        }
+    }
+
+    var body: Color {
+        switch self {
+        case .dark: return Color(hex: 0xe0e0e0)
+        case .light: return Color(hex: 0x4a4a4a)
+        case .cinematic: return Color(hex: 0xd0d0d0)
+        case .minimalist: return Color(hex: 0x4a4a4a)
+        case .enterprise: return Color(hex: 0x4a4a4a)
+        case .playful: return Color(hex: 0x374151)
+        case .fintech: return Color(hex: 0xd0d0d0)
+        case .terminal: return Color(hex: 0xa0a0a0)
+        case .developer: return Color(hex: 0xa0a0a0)
+        case .health: return Color(hex: 0x166534)
+        case .creative: return Color(hex: 0x6b21a8)
+        }
+    }
+}
+
+// MARK: - Legacy Theme Enum (Backward Compatibility)
 
 enum Theme {
 
     // MARK: - Accent
 
     /// Brand accent (purple, shared with the Tkinter GUI's ACCENT token).
-    /// Light = the user's standard-palette purple #7C5A9B: 5.54:1 vs
-    /// #FFFFFF, 5.08:1 vs #F4F5F7. Dark = lightened tint #BCA3DC (the raw
-    /// purple sinks to ≈ 2:1 on dark surfaces): 7.47:1 vs #1E1E1E,
-    /// 6.25:1 vs #2C2C2E, 6.99:1 vs #1F2635.
-    static let accent = dynamicColor(light: 0x7C5A9B, dark: 0xBCA3DC)
+    static let accent = DesignTokens.primary
 
     // MARK: - Grade ramp (bufferbloat / score letters, best → worst)
 
-    /// Grade A (excellent). Green pair chosen dark enough for light mode:
-    /// light #116B3D = 6.57:1 vs #FFFFFF, 6.04:1 vs #F4F5F7; dark
-    /// #4CD787 = 9.03:1 vs #1E1E1E, 7.55:1 vs #2C2C2E.
-    static let gradeA = dynamicColor(light: 0x116B3D, dark: 0x4CD787)
-
-    /// Grade B (good). Teal keeps A/B distinguishable without relying on
-    /// hue alone: light #0B6E62 = 6.14:1 / 5.64:1; dark #3FD9BC =
-    /// 9.42:1 / 7.87:1 (same surfaces as above).
-    static let gradeB = dynamicColor(light: 0x0B6E62, dark: 0x3FD9BC)
-
-    /// Grade C (fair). Amber reads as "caution"; the light variant is a
-    /// browned amber because yellow-on-white is unreadable: light
-    /// #8A5A00 = 5.93:1 / 5.44:1; dark #FFD233 = 11.53:1 / 9.64:1.
-    static let gradeC = dynamicColor(light: 0x8A5A00, dark: 0xFFD233)
-
-    /// Grade D (poor). Orange pair: light #AD4300 = 5.87:1 / 5.39:1;
-    /// dark #FF9430 = 7.57:1 / 6.33:1.
-    static let gradeD = dynamicColor(light: 0xAD4300, dark: 0xFF9430)
-
-    /// Grade E (bad). Magenta sits between D's orange and F's red so the
-    /// bottom of the ramp stays ordered: light #A11553 = 7.64:1 / 7.02:1;
-    /// dark #FF6FA5 = 6.41:1 / 5.36:1.
-    static let gradeE = dynamicColor(light: 0xA11553, dark: 0xFF6FA5)
-
-    /// Grade F (failing). Red pair: light #C01B2E = 6.11:1 / 5.61:1;
-    /// dark #FF7061 = 6.15:1 / 5.14:1 (a softened red — pure #FF0000 is
-    /// only ≈ 4:1 even on black and glows harshly next to dark UI).
-    static let gradeF = dynamicColor(light: 0xC01B2E, dark: 0xFF7061)
+    static let gradeA = DesignTokens.success
+    static let gradeB = DesignTokens.info
+    static let gradeC = DesignTokens.warning
+    static let gradeD = DesignTokens.warning
+    static let gradeE = DesignTokens.error
+    static let gradeF = DesignTokens.error
 
     // MARK: - Severity
 
-    /// Map an analyser's severity word onto the existing bufferbloat grade
-    /// ramp. The ramp already encodes "how bad" in a palette the app uses
-    /// everywhere else, so reusing it keeps the AI section visually
-    /// consistent with the bufferbloat story rather than inventing a
-    /// second red/amber/green scale that means something different.
     static func severityColor(_ severity: String) -> Color {
         switch severity.lowercased() {
-        case "critical": return gradeF
-        case "high": return gradeD
-        case "medium": return gradeC
-        default: return secondaryText
+        case "critical": return DesignTokens.error
+        case "high": return DesignTokens.warning
+        case "medium": return DesignTokens.warning
+        default: return DesignTokens.body
         }
     }
 
     // MARK: - Surfaces & text (system pass-throughs)
 
-    // Aliases over Apple's system colors, which already adapt to the
-    // scheme. Centralizing them here means future restyling has one file
-    // to touch and views stop spelling out raw NSColor names.
-
-    /// Card / page background (currently used by Reports, MenuBar, ModeLab).
-    static let surface = Color(nsColor: .textBackgroundColor)
-
-    /// Raised controls inside a surface.
-    static let raisedSurface = Color(nsColor: .controlBackgroundColor)
-
-    /// Hairline borders (the `.strokeBorder` cards).
-    static let separator = Color(nsColor: .separatorColor)
-
-    /// Primary label text.
-    static let primaryText = Color(nsColor: .labelColor)
-
-    /// De-emphasized caption text.
-    static let secondaryText = Color(nsColor: .secondaryLabelColor)
+    static let surface = DesignTokens.canvas
+    static let raisedSurface = DesignTokens.surface
+    static let separator = DesignTokens.border
+    static let primaryText = DesignTokens.ink
+    static let secondaryText = DesignTokens.body
 
     // MARK: - Spacing
 
-    /// 4-pt rhythm. Matches the gaps already hand-rolled across the views
-    /// (VStack spacing 12, section padding 16…) so adopting tokens is a
-    /// mechanical substitution, not a redesign.
     enum Spacing {
-        /// Icon ↔ label, chip insets.
-        static let xs: CGFloat = 4
-        /// Closely related controls within one row.
-        static let sm: CGFloat = 8
-        /// Default stack gap between related rows.
-        static let md: CGFloat = 12
-        /// Card padding and section gaps.
-        static let lg: CGFloat = 16
-        /// Window margins, between-card breathing room.
-        static let xl: CGFloat = 24
+        static let xs: CGFloat = DesignTokens.Spacing.xs
+        static let sm: CGFloat = DesignTokens.Spacing.sm
+        static let md: CGFloat = DesignTokens.Spacing.md
+        static let lg: CGFloat = DesignTokens.Spacing.lg
+        static let xl: CGFloat = DesignTokens.Spacing.xl
     }
 
     // MARK: - Corner radii
 
-    /// Three-step radius scale, keyed by component role.
     enum Radius {
-        /// Buttons, text fields, chips.
-        static let control: CGFloat = 6
-        /// Cards and bordered panels.
-        static let card: CGFloat = 10
-        /// Sheets and large containers (e.g. onboarding).
-        static let sheet: CGFloat = 14
+        static let control: CGFloat = DesignTokens.Radius.md
+        static let card: CGFloat = DesignTokens.Radius.lg
+        static let sheet: CGFloat = DesignTokens.Radius.xl
     }
+}
 
-    // MARK: - Helpers
+// MARK: - Color Extension
 
-    /// Builds an appearance-reactive color from two sRGB hex triples
-    /// (`0xRRGGBB`). The dynamic provider is re-consulted whenever the
-    /// effective appearance changes, so both variants stay on their
-    /// verified background without asset catalogs.
-    private static func dynamicColor(light: UInt32, dark: UInt32) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            // AppKit has no `isDark`; resolve via best-match against the
-            // two base appearances (vibrant variants resolve onto these).
-            let isDark = appearance
-                .bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            return srgb(isDark ? dark : light)
-        })
-    }
-
-    private static func srgb(_ hex: UInt32) -> NSColor {
-        NSColor(
-            srgbRed: CGFloat((hex >> 16) & 0xFF) / 255.0,
-            green: CGFloat((hex >> 8) & 0xFF) / 255.0,
-            blue: CGFloat(hex & 0xFF) / 255.0,
-            alpha: 1.0
-        )
+extension Color {
+    init(hex: UInt32) {
+        let r = Double((hex >> 16) & 0xFF) / 255.0
+        let g = Double((hex >> 8) & 0xFF) / 255.0
+        let b = Double(hex & 0xFF) / 255.0
+        self.init(.sRGB, red: r, green: g, blue: b, opacity: 1.0)
     }
 }

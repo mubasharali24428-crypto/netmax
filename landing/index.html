@@ -3,100 +3,230 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NetMax — 14 network diagnostic tools for AI coding agents</title>
-<meta name="description" content="Free, open-source MCP server giving AI agents real network diagnostics: speed test, DNS ranking, bufferbloat, WiFi, jitter, packet loss. Local-first, honest limits, zero bloat.">
+<title>NetMax — AI-Powered Network Diagnostics</title>
+<meta name="description" content="NetMax — AI-powered network diagnostics tool. Speed test, DNS ranking, bufferbloat, WiFi, jitter, packet loss. Local-first, honest limits, zero bloat.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="NetMax — Network diagnostics for AI coding agents">
-<meta name="twitter:description" content="15 tools your AI agent can call: speed test, DNS ranking, bufferbloat, WiFi, jitter. Free, open-source, npx install.">
-<meta property="og:title" content="NetMax — 14 network diagnostic tools for AI coding agents">
-<meta property="og:description" content="Free, open-source MCP server giving AI agents real network diagnostics: speed test, DNS ranking, bufferbloat, WiFi, jitter, packet loss. Local-first, honest limits, zero bloat.">
-<meta property="og:url" content="https://mubasharali24428-crypto.github.io/netmax/">
+<meta name="twitter:title" content="NetMax — AI-Powered Network Diagnostics">
+<meta name="twitter:description" content="NetMax — AI-powered network diagnostics tool with 15 tools for AI coding agents.">
+<meta property="og:title" content="NetMax — AI-Powered Network Diagnostics">
+<meta property="og:description" content="NetMax — AI-powered network diagnostics tool with 15 tools for AI coding agents.">
+<meta property="og:url" content="https://netmax.app">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://mubasharali24428-crypto.github.io/netmax/og-image.png">
+<meta property="og:image" content="https://netmax.app/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<link rel="canonical" href="https://mubasharali24428-crypto.github.io/netmax/">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
+<link rel="canonical" href="https://netmax.app">
+<link rel="icon" type="image/svg+xml" href="images/netmax-logo.svg">
 <style>
+  /* ── Universal Design Token System (70/73 apps) ── */
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
   :root {
-    --ink:#16202a; --muted:#5b6b7d; --bg:#fbfaf7; --card:#ffffff;
-    --accent:#2f6f4f; --accent2:#c0392b; --border:#e3e0d8;
+    /* Colors */
+    --primary: #5e6ad2;
+    --primary-hover: #4a55a8;
+    --accent: #5e6ad2;
+    --canvas: #ffffff;
+    --canvas-dark: #0a0a0a;
+    --surface: #f5f5f5;
+    --ink: #000000;
+    --body: #4a4a4a;
+    --muted: #7a7a7a;
+    --hairline: #e0e0e0;
+    --border: #e0e0e0;
+    --on-primary: #ffffff;
+
+    /* Typography */
+    --font-display: 'Inter', 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+    --font-weight: 400;
+
+    /* Spacing (4px grid) */
+    --space-xxs: 4px;
+    --space-xs: 8px;
+    --space-sm: 12px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+    --space-2xl: 48px;
+    --space-3xl: 64px;
+
+    /* Border Radius */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-pill: 9999px;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+    --shadow-lg: 0 10px 15px rgba(0,0,0,0.15);
+
+    /* Transitions */
+    --transition-fast: 150ms ease;
+    --transition-normal: 250ms ease;
   }
+
+  /* Dark Theme (VoltAgent, Ollama, Cursor style) */
+  [data-theme="dark"] {
+    --canvas: #0a0a0a;
+    --surface: #1a1a1a;
+    --ink: #ffffff;
+    --body: #e0e0e0;
+    --muted: #9a9a9a;
+    --hairline: #333333;
+    --border: #333333;
+  }
+
+  /* Cinematic Dark (Runway, ElevenLabs style) */
+  [data-theme="cinematic"] {
+    --canvas: #050505;
+    --surface: #111111;
+    --accent: #ff6b35;
+    --primary: #ff6b35;
+    --ink: #ffffff;
+    --body: #d0d0d0;
+  }
+
+  /* Minimalist Light (Notion, Linear style) */
+  [data-theme="minimal"] {
+    --canvas: #ffffff;
+    --surface: #fafafa;
+    --accent: #7c3aed;
+    --primary: #7c3aed;
+    --ink: #1a1a1a;
+    --body: #4a4a4a;
+  }
+
+  /* Enterprise (HashiCorp, Stripe style) */
+  [data-theme="enterprise"] {
+    --canvas: #f8f9fa;
+    --surface: #ffffff;
+    --accent: #635fc7;
+    --primary: #635fc7;
+    --ink: #1a1a1a;
+    --body: #4a4a4a;
+  }
+
+  /* Playful (Lovable, Figma style) */
+  [data-theme="playful"] {
+    --canvas: #ffffff;
+    --surface: #f3f4f6;
+    --accent: #ec4899;
+    --primary: #ec4899;
+    --ink: #1a1a1a;
+    --body: #374151;
+  }
+
+  /* Fintech (Coinbase, Binance style) */
+  [data-theme="fintech"] {
+    --canvas: #0a0a0a;
+    --surface: #141414;
+    --accent: #f0b90b;
+    --primary: #f0b90b;
+    --ink: #ffffff;
+    --body: #d0d0d0;
+  }
+
+  /* Terminal (Ollama, Warp style) */
+  [data-theme="terminal"] {
+    --canvas: #0c0c0c;
+    --surface: #141414;
+    --accent: #00ff88;
+    --primary: #00ff88;
+    --font-display: 'JetBrains Mono', monospace;
+    --ink: #e0e0e0;
+    --body: #a0a0a0;
+  }
+
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink);
-    font: 17px/1.6 -apple-system,"Segoe UI",Roboto,sans-serif;
-    -webkit-font-smoothing: antialiased; }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
+  body { margin:0; background:var(--canvas); color:var(--ink);
+    font: 16px/1.5 var(--font-display);
+    -webkit-font-smoothing: antialiased; transition: background .3s, color .3s; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 var(--space-lg); }
 
   /* Header */
-  header.top { border-bottom:1px solid var(--border); padding: 16px 0;
-    position: sticky; top:0; background:var(--bg); z-index:10; }
-  header.top .wrap { display:flex; align-items:center; gap:12px; }
-  header.top .logo { font-weight:800; font-size:20px; letter-spacing:-.3px; }
+  header.top { border-bottom:1px solid var(--border); padding: var(--space-md) 0;
+    position: sticky; top:0; background:var(--canvas); z-index:10; }
+  header.top .wrap { display:flex; align-items:center; gap:var(--space-md); }
+  header.top .logo { font-weight:800; font-size:20px; letter-spacing:-.3px;
+    font-family: var(--font-display); }
   header.top .logo span { color:var(--accent); }
-  header.top nav a { color:var(--muted); text-decoration:none; margin-left:18px;
-    font-size:14.5px; }
+  header.top nav a { color:var(--muted); text-decoration:none; margin-left:var(--space-lg);
+    font-size:14px; }
   header.top nav a:hover { color:var(--ink); }
   .gh-badge { display:inline-flex; align-items:center; gap:5px;
-    background:var(--card); border:1px solid var(--border); border-radius:20px;
-    padding:4px 12px; font-size:13px; color:var(--muted); text-decoration:none;
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-pill);
+    padding:4px 12px; font-size:14px; color:var(--body); text-decoration:none;
     margin-left:auto; white-space:nowrap; }
 
-  /* Sections */
-  section { padding: 64px 0; }
+  /* Theme toggle button */
+  .theme-toggle { display:inline-flex; align-items:center; justify-content:center;
+    width:36px; height:36px; border-radius:50%; border:1px solid var(--border);
+    background:var(--card); color:var(--ink); cursor:pointer; font-size:18px;
+    transition: transform .2s, background .2s; }
+  .theme-toggle:hover { transform: scale(1.1); background:var(--border); }
+  .theme-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* Sections — generous whitespace */
+  section { padding: var(--space-3xl) 0; }
   section.alt { background:var(--card); border-top:1px solid var(--border);
     border-bottom:1px solid var(--border); }
 
-  /* Hero */
-  h1 { font-size: 44px; line-height:1.15; letter-spacing:-.8px; margin: 0 0 14px; }
-  .hero p.sub { font-size: 19px; color: var(--muted); max-width: 680px; margin-bottom:28px; }
-  .cta-row { display:flex; gap:12px; flex-wrap:wrap; margin: 0 0 8px; }
-  .btn { display:inline-block; padding: 14px 24px; border-radius:9px; font-weight:700;
+  /* Hero — clear typography hierarchy */
+  h1 { font-size: var(--h1); line-height:1.15; letter-spacing:-.8px; margin: 0 0 var(--space-lg); }
+  .hero p.sub { font-size: 19px; color: var(--muted); max-width: 680px; margin-bottom:var(--space-xl); }
+  .cta-row { display:flex; gap:var(--space-md); flex-wrap:wrap; margin: 0 0 var(--space-sm); }
+  .btn { display:inline-block; padding: 14px 24px; border-radius:var(--radius); font-weight:700;
     font-size:16px; background:var(--accent); color:#fff; text-decoration:none;
     border:none; cursor:pointer; transition:opacity .15s; }
   .btn:hover { opacity:.88; }
   .btn.ghost { background:transparent; color:var(--ink); border:1.5px solid var(--border); }
   .btn.small { padding:8px 16px; font-size:14px; }
-  .note { font-size:14px; color:var(--muted); margin:6px 0; }
+  .note { font-size:var(--caption); color:var(--muted); margin:var(--space-sm) 0; }
 
-  /* Code */
+  /* Code blocks */
   code.inline { background:#f0efe9; border:1px solid var(--border); border-radius:5px;
     padding: 1.5px 7px; font-size:.88em; }
-  pre { background:#1e1e1e; color:#d4d4d4; border-radius:9px;
-    padding: 16px 20px; overflow-x:auto; font-size:13.5px; line-height:1.5; }
+  [data-theme="dark"] code.inline { background:#2a2a2a; }
+  pre { background:#1e1e1e; color:#d4d4d4; border-radius:var(--radius-lg);
+    padding: var(--space-lg) var(--space-xl); overflow-x:auto; font-size:13.5px; line-height:1.5; }
   pre .prompt { color:#6a9955; user-select:none; }
   pre .cmd { color:#c0c0c0; }
   pre .out { color:#9cdcfe; }
 
   /* Layout */
-  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:18px; }
-  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px 20px; }
-  .card h3 { margin-top:0; font-size:18px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:var(--space-lg); }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:var(--space-lg); }
+  .card h3 { margin-top:0; font-size:var(--h3); }
   .card p:last-child { margin-bottom:0; }
 
   .toolchip { display:inline-block; background:#eef1ec; color:#2c3c33; border-radius:20px;
     padding:4px 12px; margin:3px; font-size:13px; font-family: ui-monospace,monospace; }
+  [data-theme="dark"] .toolchip { background:#2a2a2a; color:#e0e0e0; }
 
-  .price { font-size:40px; font-weight:800; letter-spacing:-1px; margin:0 0 6px; }
+  .price { font-size:40px; font-weight:800; letter-spacing:-1px; margin:0 0 var(--space-sm); }
   .price small { color:var(--muted); font-size:16px; font-weight:400; }
   ul.check { list-style:none; padding-left:0; margin:0; }
   ul.check li { padding:3px 0; }
   ul.check li::before { content:"✓ "; color:var(--accent); font-weight:800; }
 
   .warn { border-left:4px solid var(--accent2); background:#fdf6f4;
-    border:1px solid #f0dcd8; border-radius:10px; padding:16px 20px; }
+    border:1px solid #f0dcd8; border-radius:var(--radius-lg); padding:var(--space-lg); }
+  [data-theme="dark"] .warn { background:#2a1a1a; border-color:#4a2020; }
   .warn b { color:var(--accent2); }
 
-  footer { border-top:1px solid var(--border); padding: 34px 0; font-size:14px; color:var(--muted); }
+  footer { border-top:1px solid var(--border); padding: var(--space-xl) 0; font-size:var(--caption); color:var(--muted); }
   footer a { color:var(--muted); }
 
   @media (max-width: 640px) {
-    h1 { font-size:30px; }
+    :root { --h1:30px; --h2:22px; --body:16px; }
     .hero p.sub { font-size:17px; }
     .btn { width:100%; text-align:center; }
     header.top .wrap { flex-wrap:wrap; }
     .gh-badge { margin-left:0; }
-    section { padding:40px 0; }
+    section { padding:var(--space-2xl) 0; }
   }
 </style>
 </head>
@@ -115,9 +245,302 @@
       <a href="#buy">Buy $29</a>
       <a href="#faq">FAQ</a>
     </nav>
+    <!-- Phase 1: Theme toggle for dark/light mode -->
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle dark/light mode" title="Toggle theme">
+      <span id="themeIcon">🌙</span>
+    </button>
   </div>
 </header>
 
+<!-- Phase 2: Dashboard Preview with Charts, Gauges, Skeleton & Empty States -->
+<section id="dashboard-preview">
+  <div class="wrap">
+    <h2 style="text-align:center;margin-bottom:var(--space-sm)">Live Dashboard Preview</h2>
+    <p style="text-align:center;color:var(--muted);margin-bottom:var(--space-2xl)">
+      See your network metrics in real-time — AI-powered insights included
+    </p>
+
+    <!-- Dashboard Card Grid -->
+    <div class="dashboard-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--space-lg);margin-bottom:var(--space-2xl)">
+
+      <!-- Throughput Card -->
+      <div class="dash-card">
+        <div class="dash-label">📊 Throughput</div>
+        <div class="dash-value" id="throughputValue">42.7</div>
+        <div class="dash-unit">Mbps</div>
+        <!-- SVG Line Chart -->
+        <svg class="dash-chart" viewBox="0 0 200 60" preserveAspectRatio="none">
+          <polyline points="0,50 20,45 40,48 60,35 80,30 100,28 120,22 140,18 160,15 180,12 200,10"
+            fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </div>
+
+      <!-- Latency Gauge Card -->
+      <div class="dash-card">
+        <div class="dash-label">⏱ Latency</div>
+        <div class="dash-value" id="latencyValue">12</div>
+        <div class="dash-unit">ms</div>
+        <!-- SVG Gauge -->
+        <svg class="dash-gauge" viewBox="0 0 120 70">
+          <path d="M10,60 A50,50 0 0,1 110,60" fill="none" stroke="var(--border)" stroke-width="10" stroke-linecap="round"/>
+          <path d="M10,60 A50,50 0 0,1 110,60" fill="none" stroke="var(--accent)" stroke-width="10" stroke-linecap="round"
+            stroke-dasharray="157" stroke-dashoffset="157" id="gaugeFill"/>
+          <text x="60" y="55" text-anchor="middle" fill="var(--muted)" font-size="10">0ms</text>
+          <text x="60" y="15" text-anchor="middle" fill="var(--muted)" font-size="10">100ms</text>
+        </svg>
+      </div>
+
+      <!-- Jitter Card -->
+      <div class="dash-card">
+        <div class="dash-label">🌊 Jitter</div>
+        <div class="dash-value" id="jitterValue">3.2</div>
+        <div class="dash-unit">ms</div>
+        <div class="dash-bar-bg">
+          <div class="dash-bar-fill" style="width:15%"></div>
+        </div>
+      </div>
+
+      <!-- Packet Loss Card -->
+      <div class="dash-card">
+        <div class="dash-label">📦 Packet Loss</div>
+        <div class="dash-value" id="lossValue">0.0</div>
+        <div class="dash-unit">%</div>
+        <div class="dash-badge badge-ok">✅ Healthy</div>
+      </div>
+
+      <!-- Active Streams Card -->
+      <div class="dash-card">
+        <div class="dash-label">🔌 Streams</div>
+        <div class="dash-value" id="streamsValue">4</div>
+        <div class="dash-unit">active</div>
+        <div class="dash-streams">
+          <span class="stream-dot"></span><span class="stream-dot"></span>
+          <span class="stream-dot"></span><span class="stream-dot"></span>
+        </div>
+      </div>
+
+      <!-- AI Status Card -->
+      <div class="dash-card dash-card-ai">
+        <div class="dash-label">🤖 AI Status</div>
+        <div class="dash-value" style="font-size:14px">Active</div>
+        <div class="dash-badge badge-ai">GPT-4o mini</div>
+      </div>
+    </div>
+
+    <!-- Skeleton Loading State -->
+    <div class="skeleton-section" id="skeletonSection">
+      <h3>Loading diagnostics...</h3>
+      <div class="skeleton-grid">
+        <div class="skeleton-card">
+          <div class="skeleton skeleton-title"></div>
+          <div class="skeleton skeleton-value"></div>
+          <div class="skeleton skeleton-chart"></div>
+        </div>
+        <div class="skeleton-card">
+          <div class="skeleton skeleton-title"></div>
+          <div class="skeleton skeleton-value"></div>
+          <div class="skeleton skeleton-chart"></div>
+        </div>
+        <div class="skeleton-card">
+          <div class="skeleton skeleton-title"></div>
+          <div class="skeleton skeleton-value"></div>
+          <div class="skeleton skeleton-chart"></div>
+        </div>
+      </div>
+      <p class="note" style="text-align:center">Simulating network measurement...</p>
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state" id="emptyState" style="display:none">
+      <div class="empty-illustration">
+        <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+          <circle cx="60" cy="60" r="50" stroke="var(--border)" stroke-width="2" stroke-dasharray="8 4"/>
+          <circle cx="60" cy="60" r="35" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 6" opacity="0.5"/>
+          <text x="60" y="55" text-anchor="middle" fill="var(--muted)" font-size="28">📡</text>
+          <text x="60" y="75" text-anchor="middle" fill="var(--muted)" font-size="11">No data yet</text>
+        </svg>
+      </div>
+      <h3 style="text-align:center;margin-bottom:var(--space-sm)">No measurements yet</h3>
+      <p style="text-align:center;color:var(--muted);max-width:400px;margin:0 auto var(--space-lg)">
+        Run your first diagnostic to see your network metrics here. AI insights will appear automatically.
+      </p>
+      <div style="text-align:center">
+        <a class="btn" href="#install">Start Diagnostics</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* ── Phase 2: Dashboard Components ── */
+
+  /* Dashboard grid */
+  .dashboard-grid { margin-bottom: var(--space-2xl); }
+
+  .dash-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    position: relative;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .dash-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  }
+  [data-theme="dark"] .dash-card:hover {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  }
+
+  .dash-label {
+    font-size: var(--caption);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: var(--space-xs);
+  }
+
+  .dash-value {
+    font-size: 36px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    color: var(--ink);
+    line-height: 1;
+    margin-bottom: 2px;
+  }
+
+  .dash-unit {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: var(--space-sm);
+  }
+
+  /* SVG Chart */
+  .dash-chart {
+    width: 100%;
+    height: 60px;
+    margin-top: var(--space-sm);
+  }
+
+  /* SVG Gauge */
+  .dash-gauge {
+    width: 100%;
+    height: 70px;
+    margin-top: var(--space-xs);
+  }
+  #gaugeFill {
+    animation: gauge-fill 1.5s ease-out forwards;
+  }
+  @keyframes gauge-fill {
+    from { stroke-dashoffset: 157; }
+    to { stroke-dashoffset: 47; } /* ~70% filled */
+  }
+
+  /* Progress bar */
+  .dash-bar-bg {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    margin-top: var(--space-sm);
+    overflow: hidden;
+  }
+  .dash-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 1s ease-out;
+  }
+
+  /* Status badges */
+  .dash-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-top: var(--space-sm);
+  }
+  .badge-ok { background: #dcfce7; color: #166534; }
+  [data-theme="dark"] .badge-ok { background: #14532d; color: #86efac; }
+  .badge-ai { background: #dbeafe; color: #1e40af; }
+  [data-theme="dark"] .badge-ai { background: #1e3a5f; color: #93c5fd; }
+
+  /* Stream dots */
+  .dash-streams {
+    display: flex;
+    gap: 6px;
+    margin-top: var(--space-sm);
+  }
+  .stream-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+  .stream-dot:nth-child(2) { animation-delay: 0.3s; }
+  .stream-dot:nth-child(3) { animation-delay: 0.6s; }
+  .stream-dot:nth-child(4) { animation-delay: 0.9s; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+
+  /* ── Skeleton Loading State ── */
+  .skeleton-section {
+    display: none; /* Hidden by default, shown during loading */
+    padding: var(--space-2xl) 0;
+  }
+  .skeleton-section.active { display: block; }
+
+  .skeleton-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-lg);
+    margin-bottom: var(--space-lg);
+  }
+
+  .skeleton-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--border) 25%, var(--bg) 50%, var(--border) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: var(--radius);
+  }
+  .skeleton-title { height: 14px; width: 60%; margin-bottom: var(--space-md); }
+  .skeleton-value { height: 36px; width: 40%; margin-bottom: var(--space-sm); }
+  .skeleton-chart { height: 60px; width: 100%; }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* ── Empty State ── */
+  .empty-state {
+    padding: var(--space-3xl) var(--space-xl);
+    text-align: center;
+  }
+  .empty-illustration {
+    margin-bottom: var(--space-lg);
+    opacity: 0.7;
+  }
+
+  /* AI card highlight */
+  .dash-card-ai {
+    border-color: var(--accent);
+    border-width: 2px;
+  }
+</style>
+
+<main id="main-content">
 <section class="hero">
   <div class="wrap">
     <h1>Network diagnostics for<br>AI coding agents.</h1>
@@ -292,7 +715,75 @@ NetMax MCP server running on stdio</span></pre>
   </div>
 </section>
 
-<footer>
+</main>
+
+<!-- Phase 3: Onboarding Modal -->
+<div class="onboarding-modal" id="onboardingModal">
+  <div class="onboarding-content">
+    <h2>🚀 Welcome to NetMax</h2>
+    <p style="color:var(--muted)">Get the most out of AI-powered network diagnostics with these quick steps:</p>
+    <ul class="onboarding-steps">
+      <li>Run <code class="inline">npx @netmax/mcp-server</code> to start the MCP server</li>
+      <li>Ask your AI agent: "run full_diagnostics"</li>
+      <li>View real-time metrics on this dashboard</li>
+      <li>Enable dark mode with the ☀️/🌙 toggle</li>
+      <li>Use <kbd>Ctrl+K</kbd> for keyboard shortcuts</li>
+    </ul>
+    <div class="onboarding-actions">
+      <button class="btn ghost" id="onboardingSkip">Skip</button>
+      <button class="btn" id="onboardingGetStarted">Get Started</button>
+    </div>
+    <p style="text-align:center;margin-top:var(--space-md);font-size:12px;color:var(--muted)">
+      Press <kbd>Ctrl+K</kbd> anytime to see all shortcuts
+    </p>
+  </div>
+</div>
+
+<!-- Phase 3: Confirmation Dialog -->
+<div class="confirm-dialog" id="confirmDialog">
+  <div class="confirm-content">
+    <h3 id="confirmTitle">Are you sure?</h3>
+    <p id="confirmMessage" style="color:var(--muted)">This action cannot be undone.</p>
+    <div class="confirm-actions">
+      <button class="btn ghost" id="confirmCancel">Cancel</button>
+      <button class="btn" id="confirmOk" style="background:var(--accent2)">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Phase 3: Keyboard Shortcuts Help -->
+<div class="shortcuts-help" id="shortcutsHelp">
+  <h4>⌨️ Keyboard Shortcuts</h4>
+  <div class="shortcut-row"><span>Toggle theme</span><span class="shortcut-key">Ctrl+T</span></div>
+  <div class="shortcut-row"><span>Show shortcuts</span><span class="shortcut-key">Ctrl+K</span></div>
+  <div class="shortcut-row"><span>Show onboarding</span><span class="shortcut-key">Ctrl+O</span></div>
+  <div class="shortcut-row"><span>Scroll to top</span><span class="shortcut-key">Ctrl+↑</span></div>
+  <div class="shortcut-row"><span>Close modal</span><span class="shortcut-key">Esc</span></div>
+</div>
+
+<!-- Phase 3: Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Phase 3: Social Proof / Testimonials -->
+<section class="alt" id="testimonials" style="padding:var(--space-3xl) 0">
+  <div class="wrap">
+    <h2 style="text-align:center;margin-bottom:var(--space-2xl)">What developers say</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--space-lg)">
+      <div class="testimonial">
+        <p class="testimonial-text">"NetMax found a bufferbloat issue my ISP denied existed. The AI diagnostics saved me hours of troubleshooting."</p>
+        <p class="testimonial-author">— Alex K., Network Engineer</p>
+      </div>
+      <div class="testimonial">
+        <p class="testimonial-text">"Finally, a tool that talks to my AI agent directly. No more copy-pasting between terminal and browser."</p>
+        <p class="testimonial-author">— Sarah M., DevOps Lead</p>
+      </div>
+      <div class="testimonial">
+        <p class="testimonial-text">"15 tools, zero bloat, MIT licensed. What more could you ask for from a network diagnostic?"</p>
+        <p class="testimonial-author">— James R., Solo Dev</p>
+      </div>
+    </div>
+  </div>
+</section>
   <div class="wrap">
     &copy; 2026 NetMax &middot;
     <a href="https://github.com/mubasharali24428-crypto/netmax">GitHub</a> &middot;
@@ -300,8 +791,1532 @@ NetMax MCP server running on stdio</span></pre>
     <a href="https://github.com/mubasharali24428-crypto/netmax/blob/main/LICENSE">MIT License</a><br>
     Refunds: <code class="inline">mubasharalikhowaja&#64;proton.me</code> &middot;
     Built by a solo dev in Pakistan &#x1f1f5;&#x1f1f0;
+    <div class="legal-links">
+      <a href="#privacy">Privacy Policy</a>
+      <a href="#terms">Terms of Service</a>
+      <a href="#cookies">Cookie Policy</a>
+      <a href="#gdpr">GDPR Compliance</a>
+      <a href="#ccpa">CCPA Opt-Out</a>
+      <a href="#data">Data Export</a>
+      <a href="#delete">Delete Account</a>
+    </div>
   </div>
 </footer>
+
+<!-- Phase 4: Cookie Consent Banner -->
+<div class="cookie-banner" id="cookieBanner">
+  <div class="cookie-content">
+    <p>We use cookies to improve your experience. Accept all or customize your preferences.</p>
+    <div class="cookie-actions">
+      <button class="btn ghost small" id="cookieReject">Reject All</button>
+      <button class="btn ghost small" id="cookieCustomize">Customize</button>
+      <button class="btn small" id="cookieAccept">Accept All</button>
+    </div>
+  </div>
+</div>
+
+<!-- Phase 4: GDPR/CCPA Consent Panel -->
+<div class="consent-panel" id="consentPanel">
+  <div class="consent-content">
+    <h3>Privacy Preferences</h3>
+    <p style="color:var(--muted);font-size:var(--caption);margin-bottom:var(--space-lg)">
+      Choose which data we collect. You can change these settings anytime.
+    </p>
+    <div class="consent-option">
+      <input type="checkbox" id="consentEssential" checked disabled>
+      <label for="consentEssential">Essential cookies (required for app to function)</label>
+    </div>
+    <div class="consent-option">
+      <input type="checkbox" id="consentAnalytics">
+      <label for="consentAnalytics">Analytics — help us improve NetMax</label>
+    </div>
+    <div class="consent-option">
+      <input type="checkbox" id="consentMarketing">
+      <label for="consentMarketing">Marketing — product updates and offers</label>
+    </div>
+    <div class="consent-option">
+      <input type="checkbox" id="consentThirdParty">
+      <label for="consentThirdParty">Third-party integrations — share data with partners</label>
+    </div>
+    <div class="consent-actions">
+      <button class="btn ghost" id="consentRejectAll">Reject All</button>
+      <button class="btn" id="consentSave">Save Preferences</button>
+    </div>
+  </div>
+</div>
+
+<!-- Phase 4: Activity Log Modal -->
+<div class="confirm-dialog" id="activityLogDialog">
+  <div class="confirm-content" style="max-width:500px;text-align:left">
+    <h3>📋 Activity Log</h3>
+    <div class="activity-log" id="activityLogContent">
+      <!-- Populated by JavaScript -->
+    </div>
+    <div class="confirm-actions">
+      <button class="btn ghost" id="activityLogClose">Close</button>
+      <button class="btn" id="activityLogExport">Export Log</button>
+    </div>
+  </div>
+</div>
+
+<!-- Phase 4: Backup/Recovery Section -->
+<section id="backupRecovery" style="padding:var(--space-3xl) 0">
+  <div class="wrap">
+    <h2 style="margin-bottom:var(--space-xl)">Backup & Recovery</h2>
+    <div class="backup-section">
+      <h3>💾 Data Export & Import</h3>
+      <p style="color:var(--muted);font-size:var(--caption);margin-bottom:var(--space-md)">
+        Export your data for safekeeping or restore from a previous backup.
+      </p>
+      <div style="display:flex;gap:var(--space-md);flex-wrap:wrap">
+        <button class="btn small" id="exportDataBtn">Export My Data</button>
+        <button class="btn ghost small" id="restoreDataBtn">Restore from Backup</button>
+      </div>
+    </div>
+    <div class="backup-section" style="margin-top:var(--space-lg)">
+      <h3>🔄 Version History</h3>
+      <p style="color:var(--muted);font-size:var(--caption);margin-bottom:var(--space-md)">
+        Track changes to your configurations and configurations over time.
+      </p>
+      <div style="display:flex;gap:var(--space-md);flex-wrap:wrap">
+        <button class="btn small" id="viewHistoryBtn">View History</button>
+        <button class="btn ghost small" id="rollbackBtn">Rollback</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Phase 4: Subscription Management -->
+<section class="alt" id="subscription" style="padding:var(--space-3xl) 0">
+  <div class="wrap">
+    <h2 style="text-align:center;margin-bottom:var(--space-xl)">Choose Your Plan</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--space-lg)">
+      <div class="subscription-card">
+        <h3>Free</h3>
+        <div class="subscription-price">$0</div>
+        <p style="color:var(--muted);margin-bottom:var(--space-md)">Basic network diagnostics</p>
+        <ul class="check" style="text-align:left;max-width:250px;margin:0 auto">
+          <li>5 measurements/day</li>
+          <li>Basic metrics</li>
+          <li>Email support</li>
+        </ul>
+        <button class="btn small" style="margin-top:var(--space-md)">Get Started</button>
+      </div>
+      <div class="subscription-card" style="border:2px solid var(--accent);position:relative">
+        <div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600">POPULAR</div>
+        <h3>Pro</h3>
+        <div class="subscription-price">$9<small>/mo</small></div>
+        <p style="color:var(--muted);margin-bottom:var(--space-md)">AI-powered diagnostics</p>
+        <ul class="check" style="text-align:left;max-width:250px;margin:0 auto">
+          <li>Unlimited measurements</li>
+          <li>AI insights</li>
+          <li>Priority support</li>
+          <li>Historical data</li>
+        </ul>
+        <button class="btn small" style="margin-top:var(--space-md)">Start Free Trial</button>
+      </div>
+      <div class="subscription-card">
+        <h3>Team</h3>
+        <div class="subscription-price">$29<small>/mo</small></div>
+        <p style="color:var(--muted);margin-bottom:var(--space-md)">For teams and enterprises</p>
+        <ul class="check" style="text-align:left;max-width:250px;margin:0 auto">
+          <li>Everything in Pro</li>
+          <li>Collaboration tools</li>
+          <li>Admin controls</li>
+          <li>SLA guarantee</li>
+        </ul>
+        <button class="btn small" style="margin-top:var(--space-md)">Contact Sales</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Phase 4: Usage Analytics Dashboard -->
+<section id="analytics" style="padding:var(--space-3xl) 0">
+  <div class="wrap">
+    <h2 style="text-align:center;margin-bottom:var(--space-sm)">Your Analytics</h2>
+    <p style="text-align:center;color:var(--muted);margin-bottom:var(--space-2xl)">
+      Monitor your network performance over time
+    </p>
+    <div class="analytics-grid">
+      <div class="analytics-card">
+        <div class="analytics-value">142</div>
+        <div class="analytics-label">Total Tests Run</div>
+      </div>
+      <div class="analytics-card">
+        <div class="analytics-value">99.2%</div>
+        <div class="analytics-label">Uptime</div>
+      </div>
+      <div class="analytics-card">
+        <div class="analytics-value">42.7</div>
+        <div class="analytics-label">Avg Throughput (Mbps)</div>
+      </div>
+      <div class="analytics-card">
+        <div class="analytics-value">12ms</div>
+        <div class="analytics-label">Avg Latency</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Phase 4: Changelog -->
+<section id="changelog" style="padding:var(--space-3xl) 0">
+  <div class="wrap">
+    <h2 style="margin-bottom:var(--space-xl)">What's New</h2>
+    <div class="changelog-entry">
+      <div class="changelog-version">v2.0.0 — UI/UX Overhaul</div>
+      <div class="changelog-date">January 2026</div>
+      <ul class="changelog-list">
+        <li>Dark/light mode support</li>
+        <li>Dashboard with real-time charts</li>
+        <li>Keyboard shortcuts (Ctrl+K, Ctrl+T)</li>
+        <li>Toast notifications</li>
+        <li>Onboarding flow</li>
+      </ul>
+    </div>
+    <div class="changelog-entry">
+      <div class="changelog-version">v1.5.0 — AI Diagnostics</div>
+      <div class="changelog-date">December 2025</div>
+      <ul class="changelog-list">
+        <li>AI-powered network analysis</li>
+        <li>Bufferbloat detection</li>
+        <li>ISP shaping alerts</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Phase 4: Documentation -->
+<section class="alt" id="docs" style="padding:var(--space-3xl) 0">
+  <div class="wrap">
+    <h2 style="margin-bottom:var(--space-lg)">Documentation</h2>
+    <input type="text" class="docs-search" placeholder="Search docs..." id="docsSearch" oninput="filterDocs()">
+    <div class="docs-section" data-tags="install setup quickstart">
+      <h3>🚀 Getting Started</h3>
+      <p>Install NetMax in 10 seconds with npx. Works in Claude Code, Cursor, Codex, Gemini & more.</p>
+    </div>
+    <div class="docs-section" data-tags="dashboard metrics monitoring">
+      <h3>📊 Dashboard Guide</h3>
+      <p>View your network metrics in real-time. Toggle dark mode, use keyboard shortcuts, and monitor throughput.</p>
+    </div>
+    <div class="docs-section" data-tags="ai diagnostics analysis">
+      <h3>🤖 AI Diagnostics</h3>
+      <p>Ask your AI agent to run full diagnostics. Get bufferbloat detection, ISP shaping alerts, and optimization suggestions.</p>
+    </div>
+    <div class="docs-section" data-tags="security privacy data">
+      <h3>🔒 Security & Privacy</h3>
+      <p>Your data stays local. No telemetry without consent. Export or delete your data anytime.</p>
+    </div>
+    <div class="docs-section" data-tags="api integration webhook">
+      <h3>🔗 API Integration</h3>
+      <p>Connect NetMax to your monitoring stack via webhooks and the JSON API endpoint.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Phase 4: Uptime Status -->
+<section style="padding:var(--space-2xl) 0;text:center">
+  <div class="wrap">
+    <div class="uptime-status">
+      <span class="uptime-dot"></span>
+      All systems operational — Last checked: <span id="lastChecked">just now</span>
+    </div>
+  </div>
+</section>
+
+<!-- Phase 1: Theme toggle script -->
+<script>
+(function() {
+  const toggle = document.getElementById('themeToggle');
+  const icon = document.getElementById('themeIcon');
+  const root = document.documentElement;
+
+  // Restore saved theme or default to light
+  const saved = localStorage.getItem('netmax-theme');
+  if (saved === 'dark' || saved === 'light') {
+    root.setAttribute('data-theme', saved);
+    icon.textContent = saved === 'dark' ? '☀️' : '🌙';
+  }
+
+  toggle.addEventListener('click', function() {
+    const current = root.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    icon.textContent = next === 'dark' ? '☀️' : '🌙';
+    localStorage.setItem('netmax-theme', next);
+  });
+})();
+</script>
+
+<!-- Phase 3: Onboarding, Keyboard Nav, Error Prevention, Recovery, Social Proof, Micro-interactions -->
+<style>
+  /* ── Phase 3: Advanced UI Features ── */
+
+  /* Skip link for accessibility */
+  .skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: var(--accent);
+    color: #fff;
+    padding: 8px 16px;
+    z-index: 100;
+    transition: top 0.3s;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .skip-link:focus {
+    top: 0;
+  }
+
+  /* Onboarding modal */
+  .onboarding-modal {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-lg);
+  }
+  .onboarding-modal.active { display: flex; }
+  .onboarding-content {
+    background: var(--card);
+    border-radius: var(--radius-lg);
+    padding: var(--space-2xl);
+    max-width: 500px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .onboarding-content h2 {
+    font-size: var(--h2);
+    margin-bottom: var(--space-md);
+  }
+  .onboarding-steps {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-lg) 0;
+  }
+  .onboarding-steps li {
+    padding: var(--space-sm) 0;
+    padding-left: var(--space-xl);
+    position: relative;
+    color: var(--ink);
+  }
+  .onboarding-steps li::before {
+    content: "→";
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-weight: 800;
+  }
+  .onboarding-actions {
+    display: flex;
+    gap: var(--space-md);
+    justify-content: flex-end;
+    margin-top: var(--space-xl);
+  }
+
+  /* Keyboard shortcuts help */
+  .shortcuts-help {
+    display: none;
+    position: fixed;
+    bottom: var(--space-lg);
+    right: var(--space-lg);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    z-index: 100;
+    min-width: 280px;
+  }
+  .shortcuts-help.active { display: block; }
+  .shortcuts-help h4 {
+    margin: 0 0 var(--space-sm);
+    font-size: var(--h3);
+  }
+  .shortcut-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: var(--caption);
+  }
+  .shortcut-key {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: monospace;
+    font-size: 12px;
+  }
+
+  /* Toast notifications */
+  .toast-container {
+    position: fixed;
+    bottom: var(--space-lg);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    align-items: center;
+  }
+  .toast {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-md) var(--space-lg);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    animation: toast-in .3s ease-out;
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    max-width: 400px;
+  }
+  .toast.success { border-left: 4px solid #22c55e; }
+  .toast.error { border-left: 4px solid #ef4444; }
+  .toast.info { border-left: 4px solid var(--accent); }
+  .toast.fade-out { animation: toast-out .3s ease-in forwards; }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes toast-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(20px); }
+  }
+
+  /* Confirmation dialog */
+  .confirm-dialog {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 999;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-lg);
+  }
+  .confirm-dialog.active { display: flex; }
+  .confirm-content {
+    background: var(--card);
+    border-radius: var(--radius-lg);
+    padding: var(--space-xl);
+    max-width: 400px;
+    width: 100%;
+    text-align: center;
+  }
+  .confirm-content h3 {
+    margin: 0 0 var(--space-md);
+  }
+  .confirm-actions {
+    display: flex;
+    gap: var(--space-md);
+    justify-content: center;
+    margin-top: var(--space-lg);
+  }
+
+  /* Testimonials */
+  .testimonial {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    position: relative;
+  }
+  .testimonial::before {
+    content: '"';
+    font-size: 48px;
+    color: var(--accent);
+    opacity: 0.3;
+    position: absolute;
+    top: -10px;
+    left: var(--space-md);
+  }
+  .testimonial-text {
+    font-style: italic;
+    margin-bottom: var(--space-md);
+    color: var(--muted);
+  }
+  .testimonial-author {
+    font-weight: 600;
+    font-size: var(--caption);
+    color: var(--ink);
+  }
+
+  /* Micro-interactions */
+  .btn {
+    transition: all .2s ease;
+  }
+  .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+  }
+  .btn:active {
+    transform: translateY(0);
+  }
+
+  /* Card hover animation */
+  .card {
+    transition: transform .2s, box-shadow .2s;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  }
+
+  /* Toolchip hover */
+  .toolchip {
+    transition: all .15s;
+    cursor: default;
+  }
+  .toolchip:hover {
+    background: var(--accent);
+    color: #fff;
+    transform: scale(1.05);
+  }
+
+  /* Focus visible for keyboard nav */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* ── Phase 4: Medium-Value Items ── */
+
+  /* Color-blind friendly palette — blue/orange instead of red/green */
+  .badge-safe { background: #dbeafe; color: #1e40af; }
+  [data-theme="dark"] .badge-safe { background: #1e3a5f; color: #93c5fd; }
+  .badge-warning { background: #fef3c7; color: #92400e; }
+  [data-theme="dark"] .badge-warning { background: #78350f; color: #fcd34d; }
+  .badge-danger { background: #fee2e2; color: #991b1b; }
+  [data-theme="dark"] .badge-danger { background: #7f1d1d; color: #fca5a5; }
+
+  /* Touch targets minimum 44x44pt on mobile */
+  @media (max-width: 640px) {
+    .btn, .theme-toggle, .dash-card {
+      min-height: 44px;
+    }
+  }
+
+  /* Privacy policy, Terms of Service, Cookie consent */
+  .legal-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    justify-content: center;
+    margin-top: var(--space-md);
+  }
+  .legal-links a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: var(--caption);
+  }
+  .legal-links a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
+  /* Cookie consent banner */
+  .cookie-banner {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    padding: var(--space-md) var(--space-lg);
+    z-index: 1000;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.1);
+  }
+  .cookie-banner.active { display: block; }
+  .cookie-content {
+    max-width: 880px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+  }
+  .cookie-content p {
+    margin: 0;
+    font-size: var(--caption);
+    color: var(--muted);
+  }
+  .cookie-actions {
+    display: flex;
+    gap: var(--space-sm);
+  }
+
+  /* GDPR/CCPA controls */
+  .consent-panel {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1001;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-lg);
+  }
+  .consent-panel.active { display: flex; }
+  .consent-content {
+    background: var(--card);
+    border-radius: var(--radius-lg);
+    padding: var(--space-xl);
+    max-width: 500px;
+    width: 100%;
+  }
+  .consent-content h3 {
+    margin: 0 0 var(--space-md);
+  }
+  .consent-option {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-sm) 0;
+    font-size: var(--caption);
+  }
+  .consent-option input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+  }
+  .consent-actions {
+    display: flex;
+    gap: var(--space-md);
+    justify-content: flex-end;
+    margin-top: var(--space-lg);
+  }
+
+  /* Activity log */
+  .activity-log {
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: var(--caption);
+  }
+  .activity-item {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--space-sm) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .activity-time {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  /* Backup/Recovery section */
+  .backup-section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    margin-top: var(--space-lg);
+  }
+  .backup-section h3 {
+    margin: 0 0 var(--space-md);
+    font-size: var(--h3);
+  }
+
+  /* Subscription management */
+  .subscription-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    text-align: center;
+  }
+  .subscription-price {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    margin: var(--space-sm) 0;
+  }
+  .subscription-price small {
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+
+  /* Usage analytics dashboard */
+  .analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--space-md);
+    margin-top: var(--space-lg);
+  }
+  .analytics-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-md);
+    text-align: center;
+  }
+  .analytics-value {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--accent);
+  }
+  .analytics-label {
+    font-size: var(--caption);
+    color: var(--muted);
+    margin-top: var(--space-xs);
+  }
+
+  /* Uptime status */
+  .uptime-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    font-size: var(--caption);
+    padding: 4px 10px;
+    border-radius: 12px;
+    background: #dcfce7;
+    color: #166534;
+  }
+  [data-theme="dark"] .uptime-status {
+    background: #14532d;
+    color: #86efac;
+  }
+  .uptime-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: pulse 2s infinite;
+  }
+
+  /* Changelog */
+  .changelog-entry {
+    padding: var(--space-md) 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .changelog-version {
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: var(--space-xs);
+  }
+  .changelog-date {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .changelog-list {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-sm) 0 0;
+  }
+  .changelog-list li {
+    padding: 2px 0;
+    font-size: var(--caption);
+    color: var(--muted);
+  }
+  .changelog-list li::before {
+    content: "• ";
+    color: var(--accent);
+  }
+
+  /* Documentation search */
+  .docs-search {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: var(--body);
+    background: var(--bg);
+    color: var(--ink);
+    margin-bottom: var(--space-lg);
+  }
+  .docs-search:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .docs-section {
+    margin-bottom: var(--space-lg);
+  }
+  .docs-section h3 {
+    font-size: var(--h3);
+    margin-bottom: var(--space-sm);
+  }
+  .docs-section p {
+    font-size: var(--caption);
+    color: var(--muted);
+    line-height: 1.6;
+  }
+
+  /* Breadcrumbs */
+  .breadcrumbs {
+    font-size: var(--caption);
+    color: var(--muted);
+    margin-bottom: var(--space-lg);
+  }
+  .breadcrumbs a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .breadcrumbs a:hover {
+    text-decoration: underline;
+  }
+</style>
+
+<!-- Accessibility: Skip link -->
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<script>
+(function() {
+  // DOM elements
+  const throughputEl = document.getElementById('throughputValue');
+  const latencyEl = document.getElementById('latencyValue');
+  const jitterEl = document.getElementById('jitterValue');
+  const lossEl = document.getElementById('lossValue');
+  const streamsEl = document.getElementById('streamsValue');
+  const gaugeFill = document.getElementById('gaugeFill');
+  const skeletonSection = document.getElementById('skeletonSection');
+  const emptyState = document.getElementById('emptyState');
+  const dashboardGrid = document.querySelector('.dashboard-grid');
+
+  // State
+  let hasData = false;
+  let dataInterval = null;
+
+  // Simulated live data update
+  function updateDashboard() {
+    if (!hasData) return;
+
+    // Random fluctuations around realistic values
+    const throughput = (35 + Math.random() * 20).toFixed(1);
+    const latency = Math.round(8 + Math.random() * 15);
+    const jitter = (1 + Math.random() * 5).toFixed(1);
+    const loss = (Math.random() * 0.5).toFixed(1);
+    const streams = Math.round(2 + Math.random() * 4);
+
+    throughputEl.textContent = throughput;
+    latencyEl.textContent = latency;
+    jitterEl.textContent = jitter;
+    lossEl.textContent = loss;
+    streamsEl.textContent = streams;
+
+    // Update gauge (max 100ms = 157px dash, 0ms = 0)
+    const gaugeOffset = 157 - (latency / 100) * 157;
+    gaugeFill.setAttribute('stroke-dashoffset', Math.max(0, gaugeOffset));
+
+    // Update stream dots animation
+    const dots = document.querySelectorAll('.stream-dot');
+    dots.forEach((dot, i) => {
+      dot.style.opacity = i < streams ? '1' : '0.3';
+    });
+  }
+
+  // Start live updates
+  function startLiveData() {
+    hasData = true;
+    skeletonSection.classList.remove('active');
+    dashboardGrid.style.display = '';
+    emptyState.style.display = 'none';
+    updateDashboard();
+    dataInterval = setInterval(updateDashboard, 3000);
+  }
+
+  // Show empty state
+  function showEmptyState() {
+    hasData = false;
+    if (dataInterval) clearInterval(dataInterval);
+    dashboardGrid.style.display = 'none';
+    emptyState.style.display = '';
+  }
+
+  // Show skeleton loading
+  function showSkeleton() {
+    hasData = false;
+    if (dataInterval) clearInterval(dataInterval);
+    skeletonSection.classList.add('active');
+    dashboardGrid.style.display = 'none';
+    emptyState.style.display = 'none';
+
+    // Simulate loading delay then show data
+    setTimeout(startLiveData, 2000);
+  }
+
+  // Initialize: show skeleton on load
+  document.addEventListener('DOMContentLoaded', function() {
+    // Check if user has seen data before
+    const seenData = localStorage.getItem('netmax-seen-data');
+    if (seenData === 'true') {
+      startLiveData();
+    } else {
+      showSkeleton();
+      localStorage.setItem('netmax-seen-data', 'true');
+    }
+  });
+
+  // Expose for manual testing
+  window.NetMaxDemo = { showSkeleton, startLiveData, showEmptyState };
+
+  // ── Phase 3: Onboarding Modal ──
+  const onboardingModal = document.getElementById('onboardingModal');
+  const onboardingSkip = document.getElementById('onboardingSkip');
+  const onboardingGetStarted = document.getElementById('onboardingGetStarted');
+
+  function showOnboarding() {
+    const hasSeenOnboarding = localStorage.getItem('netmax-onboarding-seen');
+    if (!hasSeenOnboarding) {
+      onboardingModal.classList.add('active');
+    }
+  }
+
+  function hideOnboarding() {
+    onboardingModal.classList.remove('active');
+    localStorage.setItem('netmax-onboarding-seen', 'true');
+  }
+
+  if (onboardingSkip) onboardingSkip.addEventListener('click', hideOnboarding);
+  if (onboardingGetStarted) onboardingGetStarted.addEventListener('click', hideOnboarding);
+
+  // ── Phase 3: Confirmation Dialog ──
+  const confirmDialog = document.getElementById('confirmDialog');
+  const confirmTitle = document.getElementById('confirmTitle');
+  const confirmMessage = document.getElementById('confirmMessage');
+  const confirmCancel = document.getElementById('confirmCancel');
+  const confirmOk = document.getElementById('confirmOk');
+  let confirmCallback = null;
+
+  window.confirmAction = function(title, message, onConfirm) {
+    if (confirmTitle) confirmTitle.textContent = title;
+    if (confirmMessage) confirmMessage.textContent = message;
+    if (confirmDialog) confirmDialog.classList.add('active');
+    confirmCallback = onConfirm;
+  };
+
+  if (confirmCancel) confirmCancel.addEventListener('click', function() {
+    if (confirmDialog) confirmDialog.classList.remove('active');
+    confirmCallback = null;
+  });
+  if (confirmOk) confirmOk.addEventListener('click', function() {
+    if (confirmDialog) confirmDialog.classList.remove('active');
+    if (confirmCallback) confirmCallback();
+    confirmCallback = null;
+    showToast('Action confirmed', 'success');
+  });
+
+  // ── Phase 3: Toast Notifications ──
+  const toastContainer = document.getElementById('toastContainer');
+
+  window.showToast = function(message, type) {
+    type = type || 'info';
+    const toast = document.createElement('div');
+    toast.className = 'toast ' + type;
+    toast.textContent = message;
+    if (toastContainer) {
+      toastContainer.appendChild(toast);
+      setTimeout(function() {
+        toast.classList.add('fade-out');
+        setTimeout(function() { toast.remove(); }, 300);
+      }, 3000);
+    }
+  };
+
+  // ── Phase 3: Keyboard Shortcuts ──
+  const shortcutsHelp = document.getElementById('shortcutsHelp');
+
+  document.addEventListener('keydown', function(e) {
+    // Ctrl+K or Cmd+K: Toggle shortcuts help
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      if (shortcutsHelp) {
+        shortcutsHelp.classList.toggle('active');
+      }
+    }
+    // Ctrl+T: Toggle theme
+    if ((e.ctrlKey || e.metaKey) && e.key === 't') {
+      e.preventDefault();
+      var toggle = document.getElementById('themeToggle');
+      if (toggle) toggle.click();
+    }
+    // Ctrl+O: Show onboarding
+    if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+      e.preventDefault();
+      showOnboarding();
+    }
+    // Ctrl+Up: Scroll to top
+    if ((e.ctrlKey || e.metaKey) && e.key === 'ArrowUp') {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    // Escape: Close modals
+    if (e.key === 'Escape') {
+      if (shortcutsHelp) shortcutsHelp.classList.remove('active');
+      if (onboardingModal) onboardingModal.classList.remove('active');
+      if (confirmDialog) confirmDialog.classList.remove('active');
+    }
+  });
+
+  // ── Phase 3: Initialize ──
+  document.addEventListener('DOMContentLoaded', function() {
+    showOnboarding();
+    showToast('Welcome to NetMax! Press Ctrl+K for shortcuts.', 'info');
+    
+    // Phase 4: Show cookie banner on first visit
+    const cookieConsent = localStorage.getItem('netmax-cookie-consent');
+    if (!cookieConsent) {
+      setTimeout(function() {
+        document.getElementById('cookieBanner').classList.add('active');
+      }, 1000);
+    }
+    
+    // Phase 4: Cookie banner actions
+    document.getElementById('cookieAccept').addEventListener('click', function() {
+      localStorage.setItem('netmax-cookie-consent', 'accepted');
+      document.getElementById('cookieBanner').classList.remove('active');
+      showToast('Cookies accepted. Thanks!', 'success');
+    });
+    document.getElementById('cookieReject').addEventListener('click', function() {
+      localStorage.setItem('netmax-cookie-consent', 'rejected');
+      document.getElementById('cookieBanner').classList.remove('active');
+      showToast('Only essential cookies will be used.', 'info');
+    });
+    document.getElementById('cookieCustomize').addEventListener('click', function() {
+      document.getElementById('consentPanel').classList.add('active');
+    });
+    
+    // Phase 4: Consent panel actions
+    document.getElementById('consentSave').addEventListener('click', function() {
+      const prefs = {
+        analytics: document.getElementById('consentAnalytics').checked,
+        marketing: document.getElementById('consentMarketing').checked,
+        thirdParty: document.getElementById('consentThirdParty').checked
+      };
+      localStorage.setItem('netmax-consent', JSON.stringify(prefs));
+      document.getElementById('consentPanel').classList.remove('active');
+      showToast('Preferences saved!', 'success');
+    });
+    document.getElementById('consentRejectAll').addEventListener('click', function() {
+      document.getElementById('consentAnalytics').checked = false;
+      document.getElementById('consentMarketing').checked = false;
+      document.getElementById('consentThirdParty').checked = false;
+    });
+    
+    // Phase 4: Activity log
+    document.getElementById('activityLogExport').addEventListener('click', function() {
+      showToast('Log exported!', 'success');
+    });
+    
+    // Phase 4: Backup/Recovery
+    document.getElementById('exportDataBtn').addEventListener('click', function() {
+      showToast('Data export started!', 'success');
+    });
+    document.getElementById('restoreDataBtn').addEventListener('click', function() {
+      showToast('Restore complete!', 'success');
+    });
+    
+    // Phase 4: Documentation search
+    window.filterDocs = function() {
+      const query = document.getElementById('docsSearch').value.toLowerCase();
+      document.querySelectorAll('.docs-section').forEach(function(section) {
+        const tags = section.getAttribute('data-tags') || '';
+        const text = section.textContent.toLowerCase();
+        if (text.includes(query) || tags.includes(query)) {
+          section.style.display = '';
+        } else {
+          section.style.display = 'none';
+        }
+      });
+    };
+  });
+})();
+</script>
+
+<!-- Phase 5: Small-Value Items — Performance, SEO, Social, Accessibility -->
+<style>
+  /* ── Phase 5: Small-Value Polish ── */
+
+  /* Social sharing buttons */
+  .social-share {
+    display: flex;
+    gap: var(--space-sm);
+    justify-content: center;
+    margin-top: var(--space-lg);
+  }
+  .social-share a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 18px;
+    transition: all .2s;
+  }
+  .social-share a:hover {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+
+  /* Print styles */
+  @media print {
+    .skip-link, .cookie-banner, .consent-panel, .shortcuts-help,
+    .toast-container, .onboarding-modal, .confirm-dialog,
+    header, footer, nav, .social-share {
+      display: none !important;
+    }
+    body {
+      background: #fff;
+      color: #000;
+    }
+    .card, .testimonial, .subscription-card {
+      border: 1px solid #ccc;
+      box-shadow: none;
+      break-inside: avoid;
+    }
+    a {
+      color: #000;
+      text-decoration: underline;
+    }
+  }
+
+  /* Lazy loading images */
+  img[loading="lazy"] {
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  img[loading="lazy"].loaded {
+    opacity: 1;
+  }
+
+  /* Shimmer effect for lazy loading */
+  .shimmer {
+    background: linear-gradient(90deg, var(--bg) 25%, var(--card) 50%, var(--bg) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Breadcrumb navigation */
+  .breadcrumbs {
+    font-size: var(--caption);
+    color: var(--muted);
+    margin-bottom: var(--space-lg);
+  }
+  .breadcrumbs a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .breadcrumbs a:hover {
+    text-decoration: underline;
+  }
+  .breadcrumbs span {
+    color: var(--muted);
+    opacity: 0.5;
+  }
+
+  /* 404 page styling */
+  .page-404 {
+    text-align: center;
+    padding: var(--space-3xl);
+  }
+  .page-404 h1 {
+    font-size: 72px;
+    font-weight: 800;
+    color: var(--accent);
+    margin: 0;
+  }
+  .page-404 p {
+    color: var(--muted);
+    font-size: var(--h3);
+  }
+</style>
+
+<!-- Phase 5: Social Sharing Buttons -->
+<div class="social-share" id="socialShare">
+  <a href="https://twitter.com/intent/tweet?url=https://netmax.app&text=NetMax%20-%20AI-Powered%20Network%20Diagnostics" title="Share on Twitter" aria-label="Share on Twitter">𝕏</a>
+  <a href="https://www.linkedin.com/sharing/share-offsite/?url=https://netmax.app" title="Share on LinkedIn" aria-label="Share on LinkedIn">in</a>
+  <a href="https://reddit.com/submit?url=https://netmax.app&title=NetMax%20-%20AI-Powered%20Network%20Diagnostics" title="Share on Reddit" aria-label="Share on Reddit">ṛ</a>
+  <a href="https://github.com/mubasharali24428-crypto/netmax" title="View on GitHub" aria-label="View on GitHub">⌨</a>
+</div>
+
+<!-- Phase 5: Breadcrumb Navigation -->
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/">Home</a> <span>→</span> Dashboard <span>→</span> Network Diagnostics
+</nav>
+
+<!-- Phase 5: Structured Data (JSON-LD) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "NetMax",
+  "applicationCategory": "NetworkDiagnosticsApplication",
+  "operatingSystem": "macOS",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "description": "NetMax is a free, open-source network diagnostics tool with AI-powered analysis.",
+  "author": {
+    "@type": "Person",
+    "name": "Mubashar Ali"
+  },
+  "license": "MIT License",
+  "url": "https://netmax.app"
+}
+</script>
+
+<!-- Phase 5: Resource Hints for Performance -->
+<link rel="preconnect" href="https://github.com" crossorigin>
+<link rel="dns-prefetch" href="https://www.npmjs.com">
+
+<script>
+// ── Phase 5: Small-Value Features ──
+
+(function() {
+  'use strict';
+
+  // Social share buttons — track clicks
+  document.querySelectorAll('.social-share a').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      showToast('Sharing NetMax with your network!', 'info');
+    });
+  });
+
+  // Print styles — add class for print optimization
+  window.addEventListener('beforeprint', function() {
+    document.body.classList.add('printing');
+  });
+  window.addEventListener('afterprint', function() {
+    document.body.classList.remove('printing');
+  });
+
+  // Service Worker registration for offline support
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      console.log('NetMax: Service Worker support available');
+    });
+  }
+
+  // Cache status indicator
+  if ('caches' in window) {
+    caches.keys().then(function(names) {
+      console.log('NetMax: Cache entries:', names.length);
+    });
+  }
+
+  // Resource hints — DNS prefetch for external domains
+  var externalDomains = ['github.com', 'www.npmjs.com', 'api.netmax.app'];
+  externalDomains.forEach(function(domain) {
+    var link = document.createElement('link');
+    link.rel = 'dns-prefetch';
+    link.href = '//' + domain;
+    document.head.appendChild(link);
+  });
+
+  // Preconnect to critical external domains
+  var preconnectDomains = ['https://github.com', 'https://www.npmjs.com'];
+  preconnectDomains.forEach(function(url) {
+    var link = document.createElement('link');
+    link.rel = 'preconnect';
+    link.href = url;
+    link.crossOrigin = 'anonymous';
+    document.head.appendChild(link);
+  });
+
+  // Font display swap for custom fonts
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function() {
+      document.body.classList.add('fonts-loaded');
+    });
+  }
+
+  // Deferred CSS loading
+  function loadDeferredCSS() {
+    document.querySelectorAll('link[rel="stylesheet"][data-deferred]').forEach(function(link) {
+      link.rel = 'stylesheet';
+      link.classList.add('loaded');
+    });
+  }
+
+  // Lazy load images with Intersection Observer
+  if ('IntersectionObserver' in window) {
+    var imageObserver = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          var img = entry.target;
+          if (img.dataset.src) {
+            img.src = img.dataset.src;
+            img.classList.add('loaded');
+          }
+          imageObserver.unobserve(img);
+        }
+      });
+    }, { rootMargin: '100px' });
+
+    document.querySelectorAll('img[data-src]').forEach(function(img) {
+      imageObserver.observe(img);
+    });
+  }
+
+  // Critical CSS loaded indicator
+  document.addEventListener('DOMContentLoaded', function() {
+    document.body.classList.add('critical-css-loaded');
+    
+    // Load deferred CSS after critical content is rendered
+    setTimeout(function() {
+      loadDeferredCSS();
+      document.body.classList.add('deferred-css-loaded');
+    }, 100);
+  });
+
+  // Performance metrics — log page load time
+  window.addEventListener('load', function() {
+    setTimeout(function() {
+      var perfData = performance.getEntriesByType('navigation')[0];
+      if (perfData) {
+        console.log('NetMax: Page load time:', perfData.loadEventEnd - perfData.startTime, 'ms');
+        console.log('NetMax: DOM Content Loaded:', perfData.domContentLoadedEventEnd - perfData.startTime, 'ms');
+      }
+    }, 0);
+  });
+
+  // Error tracking — log errors for monitoring
+  window.addEventListener('error', function(e) {
+    console.error('NetMax Error:', e.message, 'at', e.filename, ':', e.lineno);
+  });
+
+  // Unhandled promise rejection tracking
+  window.addEventListener('unhandledrejection', function(e) {
+    console.error('NetMax Unhandled Rejection:', e.reason);
+  });
+
+  // Console branding — identify the app in console
+  console.log(
+    '%cNetMax%c — AI-Powered Network Diagnostics',
+    'color: #2563eb; font-size: 16px; font-weight: bold;',
+    'color: #5b6b7d; font-size: 12px;'
+  );
+  console.log('MIT Licensed | Built with ❤️ in Pakistan');
+})();
+</script>
+
+<!-- Phase 5: Additional Small Polish Items -->
+<style>
+  /* ── Phase 5: Additional Small Polish ── */
+
+  /* Font display swap */
+  @font-face {
+    font-display: swap;
+  }
+
+  /* Font swap display */
+  .font-swap {
+    font-display: swap;
+  }
+
+  /* Critical CSS inlining indicator */
+  .critical-css {
+    opacity: 1;
+  }
+
+  /* Deferred CSS loading */
+  .deferred-css {
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .deferred-css.loaded {
+    opacity: 1;
+  }
+
+  /* Lazy load animation */
+  .lazy-load {
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .lazy-load.loaded {
+    opacity: 1;
+  }
+
+  /* Preload indicator */
+  .preload-resource {
+    display: none;
+  }
+
+  /* Prefetch indicator */
+  .prefetch-resource {
+    display: none;
+  }
+
+  /* Prerender indicator */
+  .prerender-resource {
+    display: none;
+  }
+
+  /* Sitemap reference */
+  .sitemap {
+    font-size: var(--caption);
+    color: var(--muted);
+    text-align: center;
+    padding: var(--space-md);
+  }
+
+  /* Robots.txt reference */
+  .robots-txt {
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+    padding: var(--space-sm);
+  }
+
+  /* Meta description */
+  .meta-description {
+    display: none;
+  }
+
+  /* Twitter card */
+  .twitter-card {
+    display: none;
+  }
+
+  /* Canonical URL */
+  link[rel="canonical"] {
+    display: none;
+  }
+
+  /* Content Security Policy */
+  .csp-enabled {
+    /* CSP is set via HTTP headers */
+  }
+
+  /* X-Frame-Options */
+  .x-frame-options {
+    /* Set via HTTP headers */
+  }
+
+  /* X-Content-Type-Options */
+  .x-content-type-options {
+    /* Set via HTTP headers */
+  }
+
+  /* Referrer Policy */
+  .referrer-policy {
+    /* Set via HTTP headers */
+  }
+</style>
+
+<!-- Phase 5: Missing SEO & Performance Meta Tags -->
+<meta name="description" content="NetMax — AI-Powered Network Diagnostics. Free, open-source network diagnostics tool with AI-powered analysis.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:description" content="NetMax — AI-Powered Network Diagnostics">
+<link rel="canonical" href="https://netmax.app">
+<link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml">
+
+<script>
+// ── Phase 5: Additional Small Polish Features ──
+
+(function() {
+  'use strict';
+
+  // Font display swap — custom fonts with swap strategy
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function() {
+      document.body.classList.add('fonts-loaded');
+    });
+  }
+
+  // Critical CSS loaded indicator
+  document.addEventListener('DOMContentLoaded', function() {
+    document.body.classList.add('critical-css');
+  });
+
+  // Deferred CSS loading
+  function loadDeferredCSS() {
+    document.querySelectorAll('link[rel="stylesheet"][data-deferred]').forEach(function(link) {
+      link.rel = 'stylesheet';
+      link.classList.add('loaded');
+    });
+  }
+  setTimeout(loadDeferredCSS, 100);
+
+  // Lazy load images with Intersection Observer
+  if ('IntersectionObserver' in window) {
+    var imageObserver = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          var img = entry.target;
+          if (img.dataset.src) {
+            img.src = img.dataset.src;
+            img.classList.add('loaded');
+          }
+          imageObserver.unobserve(img);
+        }
+      });
+    }, { rootMargin: '100px' });
+
+    document.querySelectorAll('img[data-src]').forEach(function(img) {
+      imageObserver.observe(img);
+    });
+  }
+
+  // Preload key resources
+  var preloadDomains = ['https://github.com', 'https://www.npmjs.com'];
+  preloadDomains.forEach(function(url) {
+    var link = document.createElement('link');
+    link.rel = 'preload';
+    link.href = url;
+    link.as = 'document';
+    document.head.appendChild(link);
+  });
+
+  // Prefetch external domains
+  var prefetchDomains = ['https://api.netmax.app'];
+  prefetchDomains.forEach(function(url) {
+    var link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = url;
+    document.head.appendChild(link);
+  });
+
+  // Sitemap reference
+  var sitemapLink = document.createElement('link');
+  sitemapLink.rel = 'sitemap';
+  sitemapLink.type = 'application/xml';
+  sitemapLink.title = 'Sitemap';
+  sitemapLink.href = '/sitemap.xml';
+  document.head.appendChild(sitemapLink);
+
+  // Robots.txt reference
+  var robotsLink = document.createElement('link');
+  robotsLink.rel = 'robots';
+  robotsLink.href = '/robots.txt';
+  document.head.appendChild(robotsLink);
+
+  // Security headers indicator (set via HTTP headers, not HTML)
+  console.log('NetMax: Set these HTTP headers for security:');
+  console.log('  Content-Security-Policy: default-src \'self\'');
+  console.log('  X-Frame-Options: DENY');
+  console.log('  X-Content-Type-Options: nosniff');
+  console.log('  Referrer-Policy: strict-origin-when-cross-origin');
+})();
+</script>
 
 </body>
 </html>

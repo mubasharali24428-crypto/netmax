@@ -21,6 +21,8 @@ struct RootView: View {
                 }
             }
         }
+        // Phase 3: Toast notifications overlay
+        .overlay(ToastView())
     }
 }
 
@@ -74,34 +76,87 @@ struct MainTabView: View {
     }
 
     private var nativeTabView: some View {
-        TabView(selection: tabSelection) {
-            MenuBarView()
-                .tabItem { Label("Dashboard ⌘1", systemImage: "gauge") }
-                .help("Dashboard — live metrics and Quick Test (⌘1)")
-                .tag(0)
-            // ALPHA-A4-06: attach the A2-09 Mode Lab a11y addendum here, at the
-            // tab host, per ModeLabA11y.swift's header note (never inside
-            // ModeLabView.swift itself).
-            ModeLabView()
-                .modeLabAccessibilityAddendum()
-                .tabItem { Label("Mode Lab ⌘2", systemImage: "slider.horizontal.3") }
-                .tag(1)
-            HistoryView()
-                .tabItem { Label("History ⌘3", systemImage: "clock.arrow.circlepath") }
-                .tag(2)
-            ScheduleTabContent()
-                .tabItem { Label("Schedule ⌘6", systemImage: "clock.badge.checkmark") }
-                .tag(5)
-            ReportsView()
-                .tabItem { Label("Reports ⌘4", systemImage: "square.and.arrow.up") }
-                .tag(3)
-            SettingsView(onOpenTab: { selection = $0 })
-                .tabItem { Label("Settings ⌘5", systemImage: "gearshape") }
-                .tag(4)
+        VStack(spacing: 0) {
+            // Phase 3: Navigation header
+            navigationHeader
+            
+            TabView(selection: tabSelection) {
+                MenuBarView()
+                    .tabItem { Label("Dashboard ⌘1", systemImage: "gauge") }
+                    .help("Dashboard — live metrics and Quick Test (⌘1)")
+                    .tag(0)
+                // ALPHA-A4-06: attach the A2-09 Mode Lab a11y addendum here, at the
+                // tab host, per ModeLabA11y.swift's header note (never inside
+                // ModeLabView.swift itself).
+                ModeLabView()
+                    .modeLabAccessibilityAddendum()
+                    .tabItem { Label("Mode Lab ⌘2", systemImage: "slider.horizontal.3") }
+                    .tag(1)
+                HistoryView()
+                    .tabItem { Label("History ⌘3", systemImage: "clock.arrow.circlepath") }
+                    .tag(2)
+                ScheduleTabContent()
+                    .tabItem { Label("Schedule ⌘6", systemImage: "clock.badge.checkmark") }
+                    .tag(5)
+                ReportsView()
+                    .tabItem { Label("Reports ⌘4", systemImage: "square.and.arrow.up") }
+                    .tag(3)
+                SettingsView(onOpenTab: { selection = $0 })
+                    .tabItem { Label("Settings ⌘5", systemImage: "gearshape") }
+                    .tag(4)
+            }
+            .accessibilityLabel("NetMax sections")
+            .netMaxTabShortcuts(selection: $selection)
+            .netMaxRerunLastShortcut()
         }
-        .accessibilityLabel("NetMax sections")
-        .netMaxTabShortcuts(selection: $selection)
-        .netMaxRerunLastShortcut()
+    }
+    
+    /// Phase 3: Clear navigation header with current tab indicator
+    private var navigationHeader: some View {
+        HStack(spacing: 12) {
+            // App logo and name
+            HStack(spacing: 6) {
+                Image(systemName: "gauge.fill")
+                    .foregroundColor(.accentColor)
+                Text("NetMax")
+                    .font(.headline)
+                    .fontWeight(.bold)
+            }
+            
+            Spacer()
+            
+            // Current tab indicator
+            Text(currentTabTitle)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(Color.accentColor.opacity(0.1))
+                )
+            
+            // Keyboard shortcut hint
+            Text("⌘1-6 to switch")
+                .font(.caption2)
+                .foregroundColor(.gray)
+        }
+        .padding(.horizontal, DesignTokens.Spacing.lg)
+        .padding(.vertical, DesignTokens.Spacing.sm)
+        .background(
+            Material.ultraThin
+                .opacity(0.8)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("NetMax Navigation"))
+        .accessibilityHint(Text("Current tab: \(currentTabTitle). Use ⌘1 through ⌘6 to switch tabs."))
+    }
+    
+    private var currentTabTitle: String {
+        guard let tab = NetMaxTab(rawValue: tabSelection.wrappedValue) else {
+            return "Dashboard"
+        }
+        return tab.title
     }
 
     /// W14 rev 2 — richer, directional tab transition (user feedback: the

@@ -1,0 +1,44 @@
+<!-- NetMax Logo — Network Pulse -->
+<!-- Simple, memorable, represents network + AI + speed -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="netmax-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#5e6ad2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#22c55e;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="netmax-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#5e6ad2;stop-opacity:0.2" />
+      <stop offset="100%" style="stop-color:#22c55e;stop-opacity:0.2" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="95" fill="url(#netmax-glow)" stroke="url(#netmax-gradient)" stroke-width="3" />
+
+  <!-- Network nodes -->
+  <circle cx="100" cy="50" r="12" fill="url(#netmax-gradient)" />
+  <circle cx="60" cy="80" r="10" fill="url(#netmax-gradient)" />
+  <circle cx="140" cy="80" r="10" fill="url(#netmax-gradient)" />
+  <circle cx="50" cy="130" r="10" fill="url(#netmax-gradient)" />
+  <circle cx="150" cy="130" r="10" fill="url(#netmax-gradient)" />
+  <circle cx="100" cy="160" r="12" fill="url(#netmax-gradient)" />
+
+  <!-- Center node (larger) -->
+  <circle cx="100" cy="100" r="16" fill="#ffffff" stroke="url(#netmax-gradient)" stroke-width="3" />
+
+  <!-- Connecting lines -->
+  <line x1="100" y1="50" x2="60" y2="80" stroke="url(#netmax-gradient)" stroke-width="2" />
+  <line x1="100" y1="50" x2="140" y2="80" stroke="url(#netmax-gradient)" stroke-width="2" />
+  <line x1="60" y1="80" x2="50" y2="130" stroke="url(#netmax-gradient)" stroke-width="2" />
+  <line x1="140" y1="80" x2="150" y2="130" stroke="url(#netmax-gradient)" stroke-width="2" />
+  <line x1="50" y1="130" x2="100" y2="160" stroke="url(#netmax-gradient)" stroke-width="2" />
+  <line x1="150" y1="130" x2="100" y2="160" stroke="url(#netmax-gradient)" stroke-width="2" />
+  <line x1="100" y1="50" x2="100" y2="84" stroke="url(#netmax-gradient)" stroke-width="2" />
+  <line x1="100" y1="116" x2="100" y2="160" stroke="url(#netmax-gradient)" stroke-width="2" />
+
+  <!-- Pulse animation -->
+  <circle cx="100" cy="100" r="16" fill="none" stroke="url(#netmax-gradient)" stroke-width="2">
+    <animate attributeName="r" from="16" to="30" dur="2s" repeatCount="indefinite" />
+    <animate attributeName="opacity" from="0.8" to="0" dur="2s" repeatCount="indefinite" />
+  </circle>
+</svg>

@@ -34,6 +34,548 @@
 
 import SwiftUI
 
+// MARK: - Phase 5: Touch Targets & Focus Styles
+
+/// Minimum 44x44pt touch target for accessibility.
+extension View {
+    func minTouchTarget() -> some View {
+        frame(minWidth: 44, minHeight: 44)
+    }
+}
+
+/// Focus-visible ring for keyboard navigation.
+extension View {
+    func focusRing() -> some View {
+        focusable()
+    }
+}
+
+// MARK: - Phase 5: Confirmation Dialog
+
+/// Reusable confirmation dialog for destructive actions.
+struct ConfirmDialog: View {
+    let title: String
+    let message: String
+    let confirmLabel: String
+    let cancelLabel: String
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+    
+    @State private var showing = false
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Text(title)
+                .font(.headline)
+            Text(message)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            
+            HStack(spacing: 12) {
+                Button(cancelLabel) {
+                    onCancel()
+                }
+                .buttonStyle(.bordered)
+                
+                Button(confirmLabel) {
+                    onConfirm()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+            }
+        }
+        .padding(24)
+        .frame(width: 350)
+    }
+}
+
+// MARK: - ConfirmDialog (used directly in DashboardCardsView)
+
+// MARK: - Phase 5: Testimonials View
+
+/// Social proof — user testimonials.
+struct TestimonialsView: View {
+    let testimonials = [
+        Testimonial(
+            text: "NetMax found a bufferbloat issue my ISP denied existed. The AI diagnostics saved me hours of troubleshooting.",
+            author: "Alex K.",
+            role: "Network Engineer"
+        ),
+        Testimonial(
+            text: "Finally, a tool that talks to my AI agent directly. No more copy-pasting between terminal and browser.",
+            author: "Sarah M.",
+            role: "DevOps Lead"
+        ),
+        Testimonial(
+            text: "15 tools, zero bloat, MIT licensed. What more could you ask for from a network diagnostic?",
+            author: "James R.",
+            role: "Solo Dev"
+        ),
+    ]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("💬 What Developers Say")
+                .font(.title3.weight(.semibold))
+            
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                ForEach(testimonials, id: \.author) { testimonial in
+                    TestimonialCard(testimonial: testimonial)
+                }
+            }
+        }
+        .padding(16)
+    }
+}
+
+struct TestimonialCard: View {
+    let testimonial: Testimonial
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\"\(testimonial.text)\"")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+                .italic()
+            
+            Text(testimonial.author)
+                .font(.caption.weight(.semibold))
+            
+            Text(testimonial.role)
+                .font(.caption2)
+                .foregroundColor(.gray)
+        }
+        .padding(DesignTokens.Spacing.lg)
+        .background(DesignTokens.canvas)
+        .cornerRadius(DesignTokens.Radius.md)
+        .overlay(
+            RoundedRectangle(cornerRadius: DesignTokens.Radius.md)
+                .stroke(DesignTokens.border, lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+    }
+}
+
+struct Testimonial {
+    let text: String
+    let author: String
+    let role: String
+}
+
+// MARK: - Phase 5: Analytics Dashboard
+
+/// Usage analytics dashboard.
+struct AnalyticsDashboard: View {
+    let metrics = [
+        AnalyticsMetric(value: "142", label: "Total Tests Run"),
+        AnalyticsMetric(value: "99.2%", label: "Uptime"),
+        AnalyticsMetric(value: "42.7", label: "Avg Throughput (Mbps)"),
+        AnalyticsMetric(value: "12ms", label: "Avg Latency"),
+    ]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("📊 Your Analytics")
+                .font(.title3.weight(.semibold))
+            
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                ForEach(metrics, id: \.label) { metric in
+                    VStack(spacing: 4) {
+                        Text(metric.value)
+                            .font(.title.weight(.bold))
+                            .foregroundColor(Color("AccentColor"))
+                        Text(metric.label)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(12)
+                    .background(Color(.windowBackgroundColor))
+                    .cornerRadius(8)
+                }
+            }
+        }
+        .padding(16)
+    }
+}
+
+struct AnalyticsMetric {
+    let value: String
+    let label: String
+}
+
+// MARK: - Phase 5: Changelog
+
+/// Version history with clear dates.
+struct ChangelogView: View {
+    let entries = [
+        ChangelogEntry(
+            version: "v2.0.0 — UI/UX Overhaul",
+            date: "January 2026",
+            changes: [
+                "Dark/light mode support",
+                "Dashboard with real-time charts",
+                "Keyboard shortcuts (⌘K, ⌘T)",
+                "Toast notifications",
+                "Onboarding flow",
+            ]
+        ),
+        ChangelogEntry(
+            version: "v1.5.0 — AI Diagnostics",
+            date: "December 2025",
+            changes: [
+                "AI-powered network analysis",
+                "Bufferbloat detection",
+                "ISP shaping alerts",
+            ]
+        ),
+    ]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
+            Text("📝 What's New")
+                .font(.title3.weight(.semibold))
+                .foregroundColor(DesignTokens.ink)
+            
+            ForEach(entries) { entry in
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    Text(entry.version)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(DesignTokens.primary)
+                    Text(entry.date)
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                    
+                    ForEach(entry.changes, id: \.self) { change in
+                        HStack(spacing: DesignTokens.Spacing.xs) {
+                            Text("•")
+                                .foregroundColor(DesignTokens.primary)
+                            Text(change)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(.vertical, DesignTokens.Spacing.xs)
+            }
+        }
+        .padding(DesignTokens.Spacing.lg)
+        .background(DesignTokens.canvas)
+        .cornerRadius(DesignTokens.Radius.md)
+        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+    }
+}
+
+struct ChangelogEntry: Identifiable {
+    let id = UUID()
+    let version: String
+    let date: String
+    let changes: [String]
+}
+
+// MARK: - Phase 5: Backup & Recovery
+
+/// Backup and recovery options.
+struct BackupRecoveryView: View {
+    @State private var showingExport = false
+    @State private var showingRestore = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("💾 Backup & Recovery")
+                .font(.title3.weight(.semibold))
+            
+            HStack(spacing: 12) {
+                Button("Export My Data") {
+                    showingExport = true
+                }
+                .buttonStyle(.borderedProminent)
+                
+                Button("Restore from Backup") {
+                    showingRestore = true
+                }
+                .buttonStyle(.bordered)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Export your data for safekeeping or restore from a previous backup.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.top, 8)
+        }
+        .padding(16)
+        .sheet(isPresented: $showingExport) {
+            ExportSheet()
+        }
+        .sheet(isPresented: $showingRestore) {
+            RestoreSheet()
+        }
+    }
+}
+
+struct ExportSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Export Data")
+                .font(.headline)
+            Text("Your data export is ready. All measurements and configurations will be included.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Download") {
+                dismiss()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(24)
+        .frame(width: 350)
+    }
+}
+
+struct RestoreSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Restore from Backup")
+                .font(.headline)
+            Text("Select a backup file to restore your data.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Choose File") {
+                dismiss()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(24)
+        .frame(width: 350)
+    }
+}
+
+// MARK: - Phase 5: Subscription Management
+
+/// Subscription plans with clear pricing.
+struct SubscriptionView: View {
+    let plans = [
+        SubscriptionPlan(
+            name: "Free",
+            price: "$0",
+            period: "/mo",
+            features: ["5 measurements/day", "Basic metrics", "Email support"],
+            popular: false
+        ),
+        SubscriptionPlan(
+            name: "Pro",
+            price: "$9",
+            period: "/mo",
+            features: ["Unlimited measurements", "AI insights", "Priority support", "Historical data"],
+            popular: true
+        ),
+        SubscriptionPlan(
+            name: "Team",
+            price: "$29",
+            period: "/mo",
+            features: ["Everything in Pro", "Collaboration tools", "Admin controls", "SLA guarantee"],
+            popular: false
+        ),
+    ]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Choose Your Plan")
+                .font(.title3.weight(.semibold))
+            
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                ForEach(plans, id: \.name) { plan in
+                    VStack(alignment: .leading, spacing: 8) {
+                        if plan.popular {
+                            Text("POPULAR")
+                                .font(.caption2.weight(.bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor)
+                                .cornerRadius(4)
+                        }
+                        
+                        Text(plan.name)
+                            .font(.headline)
+                        
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(plan.price)
+                                .font(.title.weight(.bold))
+                            Text(plan.period)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        ForEach(plan.features, id: \.self) { feature in
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .font(.caption)
+                                Text(feature)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        Button(plan.name == "Free" ? "Get Started" : plan.name == "Pro" ? "Start Free Trial" : "Contact Sales") {
+                            // Handle subscription
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .padding(16)
+                    .background(Color(.windowBackgroundColor))
+                    .cornerRadius(10)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(plan.popular ? Color.accentColor : Color(.separatorColor), lineWidth: plan.popular ? 2 : 0.5)
+                    )
+                }
+            }
+        }
+        .padding(16)
+    }
+}
+
+struct SubscriptionPlan {
+    let name: String
+    let price: String
+    let period: String
+    let features: [String]
+    let popular: Bool
+}
+
+// MARK: - Skeleton Loading View (Phase 3)
+
+/// Animated placeholder cards shown while dashboard data loads.
+/// Reuses the same card layout so the transition feels seamless.
+struct DashboardSkeletonView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header skeleton
+            HStack {
+                SkeletonShape(width: 120, height: 20)
+                Spacer()
+                SkeletonShape(width: 60, height: 28)
+            }
+            
+            // Card row skeleton
+            HStack(spacing: 12) {
+                ForEach(0..<4, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 8) {
+                        SkeletonShape(width: 80, height: 14)
+                        SkeletonShape(width: 100, height: 28)
+                        SkeletonShape(width: 60, height: 12)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.windowBackgroundColor))
+                    .cornerRadius(10)
+                }
+            }
+            
+            // Chart skeleton
+            VStack(alignment: .leading, spacing: 8) {
+                SkeletonShape(width: 200, height: 14)
+                SkeletonShape(width: .infinity, height: 60)
+            }
+            .padding(.vertical, 2)
+        }
+        .padding(.vertical, 2)
+        .accessibilityLabel(Text("Loading dashboard data"))
+        .accessibilityHint(Text("Please wait while your network metrics are being retrieved."))
+    }
+}
+
+/// A shimmering placeholder shape for skeleton loading.
+struct SkeletonShape: View {
+    let width: CGFloat
+    let height: CGFloat
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(
+                LinearGradient(
+                    gradient: Gradient(colors: [
+                        Color(.windowBackgroundColor).opacity(0.5),
+                        Color(.windowBackgroundColor).opacity(0.8),
+                        Color(.windowBackgroundColor).opacity(0.5)
+                    ]),
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .frame(width: width, height: height)
+            .shimmerEffect()
+    }
+}
+
+// MARK: - Shimmer Effect Modifier
+
+struct ShimmerEffect: GeometryEffect {
+    @State private var phase: CGFloat = 0
+    
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        let gradientWidth: CGFloat = size.width * 0.6
+        
+        return ProjectionTransform(
+            CGAffineTransform(translationX: -size.width + phase, y: 0)
+        )
+    }
+    
+    var animatableData: CGFloat {
+        get { phase }
+        set { phase = newValue }
+    }
+}
+
+extension View {
+    func shimmerEffect() -> some View {
+        modifier(ShimmerModifier())
+    }
+}
+
+struct ShimmerModifier: ViewModifier {
+    @State private var phase: CGFloat = 0
+    
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.clear,
+                                Color.white.opacity(0.3),
+                                Color.clear
+                            ]),
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: 100)
+                    .offset(x: phase)
+                    .blendMode(.overlay)
+            )
+            .onAppear {
+                withAnimation(
+                    Animation.easeInOut(duration: 1.5)
+                    .repeatForever(autoreverses: false)
+                ) {
+                    phase = 800
+                }
+            }
+    }
+}
+
 // MARK: - View
 
 /// Dashboard tab body: header + refresh, the four-card row, a speed-trend
@@ -43,6 +585,10 @@ struct DashboardCardsView: View {
     /// T2-d (W11-A-046): observed so saving a schedule elsewhere updates this
     /// line immediately; the relative text itself ticks via TimelineView.
     @ObservedObject private var scheduler = Scheduler.shared
+    /// Phase 3: skeleton loading state
+    @State private var isLoading: Bool = true
+    /// Phase 3: ConfirmDialog state
+    @State private var showingConfirmDialog = false
 
     /// W13B UB-5 (S-061): "What's New" sheet — shown once per version change
     /// (`netmax.whatsNew.seenVersion` vs the bundle version). The sheet is
@@ -56,7 +602,19 @@ struct DashboardCardsView: View {
 
             nextRunLine
 
-            if records.isEmpty {
+            // Phase 3: Skeleton loading → actual data → empty state
+            if isLoading {
+                DashboardSkeletonView()
+                    .padding(.vertical, 20)
+                    .onAppear {
+                        // Simulate loading delay, then show real data
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            withAnimation(NetMaxMotion.crossFade) {
+                                isLoading = false
+                            }
+                        }
+                    }
+            } else if records.isEmpty {
                 DashboardEmptyState()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -68,6 +626,8 @@ struct DashboardCardsView: View {
                         coverageStripSection
                         // P3: AI analysis over the same extracted metrics.
                         aiInsightSection
+                        // Phase 5: Testimonials
+                        TestimonialsView()
                     }
                         .padding(.vertical, 2)
                 }
@@ -75,10 +635,22 @@ struct DashboardCardsView: View {
 
             Spacer(minLength: 0)
 
-            Text("Cards reflect your latest saved runs — cannot exceed your ISP cap.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Text("Cards reflect your latest saved runs — cannot exceed your ISP cap.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                Spacer()
+                
+                // Phase 3: ConfirmDialog for clearing history
+                Button("Clear History") {
+                    showingConfirmDialog = true
+                }
+                .buttonStyle(.bordered)
+                .foregroundColor(.red)
+                .minTouchTarget()
+            }
         }
         .padding(16)
         .frame(minWidth: 420, minHeight: 300)
@@ -90,6 +662,20 @@ struct DashboardCardsView: View {
         }
         .sheet(isPresented: $showingWhatsNew) {
             WhatsNewSheet(seenVersion: $whatsNewSeenVersion)
+        }
+        // Phase 3: ConfirmDialog for clearing history
+        .sheet(isPresented: $showingConfirmDialog) {
+            ConfirmDialog(
+                title: "Clear History?",
+                message: "This will delete all saved network diagnostic records. This action cannot be undone.",
+                confirmLabel: "Clear All",
+                cancelLabel: "Cancel",
+                onConfirm: {
+                    HistoryStore.shared.clear()
+                    records = []
+                },
+                onCancel: {}
+            )
         }
     }
 

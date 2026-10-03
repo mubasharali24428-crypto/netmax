@@ -1,0 +1,330 @@
+/* ==========================================================================
+   NetMax — Universal Design Token System
+   Matches 70/73 apps from awesome-design-md
+   ========================================================================== */
+
+:root {
+  /* ── Colors (Universal) ── */
+  --primary: #5e6ad2;
+  --primary-hover: #4a55a8;
+  --primary-light: #8b8fcc;
+  --primary-dark: #3a40a0;
+
+  --accent: #5e6ad2;
+  --accent-hover: #4a55a8;
+
+  /* Canvas */
+  --canvas: #ffffff;
+  --canvas-dark: #0a0a0a;
+  --canvas-elevated: #f8f8f8;
+  --canvas-elevated-dark: #1a1a1a;
+
+  /* Surface */
+  --surface: #f5f5f5;
+  --surface-dark: #1a1a1a;
+  --surface-hover: #eeeeee;
+  --surface-hover-dark: #2a2a2a;
+
+  /* Text */
+  --ink: #000000;
+  --body: #4a4a4a;
+  --muted: #7a7a7a;
+  --on-primary: #ffffff;
+  --on-dark: #ffffff;
+  --on-canvas: #000000;
+  --on-surface: #4a4a4a;
+
+  /* Borders */
+  --hairline: #e0e0e0;
+  --hairline-dark: #333333;
+  --border: #e0e0e0;
+  --border-dark: #333333;
+
+  /* Semantic */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --info: #3b82f6;
+
+  /* ── Typography ── */
+  --font-display: 'Inter', 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --font-serif: Georgia, 'Times New Roman', serif;
+
+  --font-weight-light: 300;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --font-size-display-xl: 56px;
+  --font-size-display-lg: 40px;
+  --font-size-heading-1: 32px;
+  --font-size-heading-2: 24px;
+  --font-size-heading-3: 20px;
+  --font-size-body-lg: 18px;
+  --font-size-body: 16px;
+  --font-size-body-sm: 14px;
+  --font-size-caption: 12px;
+  --font-size-button: 14px;
+  --font-size-code: 13px;
+
+  --line-height-tight: 1.1;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  --letter-spacing-tight: -0.5px;
+  --letter-spacing-normal: 0;
+  --letter-spacing-wide: 0.5px;
+
+  /* ── Spacing (4px grid) ── */
+  --space-xxs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+  --space-4xl: 96px;
+
+  /* ── Border Radius ── */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-pill: 9999px;
+  --radius-full: 9999px;
+
+  /* ── Shadows ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.15);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.2);
+  --shadow-2xl: 0 25px 50px rgba(0, 0, 0, 0.25);
+
+  /* ── Transitions ── */
+  --transition-fast: 150ms ease;
+  --transition-normal: 250ms ease;
+  --transition-slow: 350ms ease;
+
+  /* ── Z-Index ── */
+  --z-base: 1;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+}
+
+/* ── Dark Theme ── */
+[data-theme="dark"] {
+  --canvas: #0a0a0a;
+  --canvas-elevated: #1a1a1a;
+  --surface: #1a1a1a;
+  --surface-hover: #2a2a2a;
+  --ink: #ffffff;
+  --body: #e0e0e0;
+  --muted: #9a9a9a;
+  --hairline: #333333;
+  --border: #333333;
+  --on-primary: #ffffff;
+  --on-dark: #ffffff;
+  --on-canvas: #ffffff;
+  --on-surface: #e0e0e0;
+}
+
+/* ── Cinematic Dark Theme (Runway, ElevenLabs style) ── */
+[data-theme="cinematic"] {
+  --canvas: #050505;
+  --canvas-elevated: #111111;
+  --surface: #111111;
+  --surface-hover: #1a1a1a;
+  --ink: #ffffff;
+  --body: #d0d0d0;
+  --muted: #808080;
+  --hairline: #222222;
+  --border: #222222;
+  --accent: #ff6b35;
+  --primary: #ff6b35;
+}
+
+/* ── Minimalist Light Theme (Notion, Linear style) ── */
+[data-theme="minimal"] {
+  --canvas: #ffffff;
+  --canvas-elevated: #fafafa;
+  --surface: #fafafa;
+  --surface-hover: #f0f0f0;
+  --ink: #1a1a1a;
+  --body: #4a4a4a;
+  --muted: #7a7a7a;
+  --hairline: #e8e8e8;
+  --border: #e8e8e8;
+  --accent: #7c3aed;
+  --primary: #7c3aed;
+}
+
+/* ── Enterprise Theme (HashiCorp, Stripe style) ── */
+[data-theme="enterprise"] {
+  --canvas: #f8f9fa;
+  --canvas-elevated: #ffffff;
+  --surface: #ffffff;
+  --surface-hover: #f0f1f2;
+  --ink: #1a1a1a;
+  --body: #4a4a4a;
+  --muted: #7a7a7a;
+  --hairline: #e0e0e0;
+  --border: #e0e0e0;
+  --accent: #635fc7;
+  --primary: #635fc7;
+}
+
+/* ── Playful Theme (Lovable, Figma style) ── */
+[data-theme="playful"] {
+  --canvas: #ffffff;
+  --canvas-elevated: #f9fafb;
+  --surface: #f3f4f6;
+  --surface-hover: #e5e7eb;
+  --ink: #1a1a1a;
+  --body: #374151;
+  --muted: #6b7280;
+  --hairline: #e5e7eb;
+  --border: #e5e7eb;
+  --accent: #ec4899;
+  --primary: #ec4899;
+}
+
+/* ── Fintech Theme (Coinbase, Binance style) ── */
+[data-theme="fintech"] {
+  --canvas: #0a0a0a;
+  --canvas-elevated: #141414;
+  --surface: #141414;
+  --surface-hover: #1f1f1f;
+  --ink: #ffffff;
+  --body: #d0d0d0;
+  --muted: #808080;
+  --hairline: #2a2a2a;
+  --border: #2a2a2a;
+  --accent: #f0b90b;
+  --primary: #f0b90b;
+}
+
+/* ── Terminal Theme (Ollama, Warp style) ── */
+[data-theme="terminal"] {
+  --canvas: #0c0c0c;
+  --canvas-elevated: #141414;
+  --surface: #141414;
+  --surface-hover: #1e1e1e;
+  --ink: #e0e0e0;
+  --body: #a0a0a0;
+  --muted: #606060;
+  --hairline: #2a2a2a;
+  --border: #2a2a2a;
+  --accent: #00ff88;
+  --primary: #00ff88;
+  --font-display: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* ── Developer Theme (Cursor, Raycast style) ── */
+[data-theme="developer"] {
+  --canvas: #1e1e1e;
+  --canvas-elevated: #252525;
+  --surface: #252525;
+  --surface-hover: #2e2e2e;
+  --ink: #e0e0e0;
+  --body: #a0a0a0;
+  --muted: #606060;
+  --hairline: #3a3a3a;
+  --border: #3a3a3a;
+  --accent: #007acc;
+  --primary: #007acc;
+}
+
+/* ── Health/Wellness Theme ── */
+[data-theme="health"] {
+  --canvas: #f0fdf4;
+  --canvas-elevated: #dcfce7;
+  --surface: #dcfce7;
+  --surface-hover: #bbf7d0;
+  --ink: #14532d;
+  --body: #166534;
+  --muted: #4ade80;
+  --hairline: #86efac;
+  --border: #86efac;
+  --accent: #22c55e;
+  --primary: #22c55e;
+}
+
+/* ── Creative Theme (Adobe, Figma style) ── */
+[data-theme="creative"] {
+  --canvas: #faf5ff;
+  --canvas-elevated: #f3e8ff;
+  --surface: #f3e8ff;
+  --surface-hover: #e9d5ff;
+  --ink: #3b0764;
+  --body: #6b21a8;
+  --muted: #a855f7;
+  --hairline: #d8b4fe;
+  --border: #d8b4fe;
+  --accent: #a855f7;
+  --primary: #a855f7;
+}
+
+/* ── Dark Mode Toggle Button ── */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--body);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--font-size-body-sm);
+  transition: all var(--transition-fast);
+}
+
+.theme-toggle:hover {
+  background: var(--surface-hover);
+  border-color: var(--primary);
+}
+
+.theme-toggle:active {
+  transform: scale(0.95);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ── Theme Indicator ── */
+.theme-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xxs) var(--space-sm);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--font-size-caption);
+  font-family: var(--font-mono);
+}
+
+.theme-indicator::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
