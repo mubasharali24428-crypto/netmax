@@ -43,10 +43,17 @@ npx -y @netmax/mcp-server
 Then ask your agent to run `full_diagnostics` — it will measure your real network speed, DNS
 latency, bufferbloat grade, jitter, packet loss, and WiFi quality in a single call.
 
-**15 tools:** `measure_speed` · `dns_ranking` · `bufferbloat` · `upload_speed` ·
+**17 tools:** `measure_speed` · `dns_ranking` · `bufferbloat` · `upload_speed` ·
 `packet_loss` · `jitter` · `wifi_info` · `download_file` · `eco_bloat` ·
 `full_diagnostics` · `diagnostic_summary` · `boost` · `parallel_diagnostics` ·
-`session_info` · `strict_limit`
+`session_info` · `strict_limit` · `ai_analyze` · `list_analyses`
+
+`ai_analyze` is the reachability surface for the whole P0–P2 AI layer — 22
+analysers (`netmax ai --list-analyses`) covering root-cause classification,
+bufferbloat/WiFi/DNS/loss/jitter attribution, trend forecasting, hardware
+health, traffic-shaping signatures, cost advice and a sandboxed metric-rule
+DSL. It analyses measurements you already have; it never runs one and never
+changes system state.
 
 ### Desktop app (macOS)
 

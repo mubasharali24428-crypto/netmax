@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "start": "node netmax-mcp-server.mjs",
-    "test": "node --check netmax-mcp-server.mjs && echo \"Syntax OK - 15 tools ready\""
+    "test": "node --check netmax-mcp-server.mjs && echo \"Syntax OK - 17 tools ready\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

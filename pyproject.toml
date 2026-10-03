@@ -17,4 +17,4 @@ charts = ["matplotlib"]
 netmax = "netmax:main"
 
 [tool.setuptools]
-py-modules = ["netmax"]
+py-modules = ["netmax", "netmax_ai", "netmax_ai_p1", "netmax_ai_p2"]

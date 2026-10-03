@@ -12,6 +12,7 @@ CANNOT: exceed the bandwidth your ISP provisions. No software can — the cap is
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import random
@@ -25,6 +26,10 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any
+
+from netmax_ai import AISpeedGovernor
 
 CF_DOWN = "https://speed.cloudflare.com/__down"
 # Four sources, static files first. Cloudflare's bot layer adaptively
@@ -698,6 +703,14 @@ LIMIT_PACE_CEILING = 1.5
 # connection: abort honestly instead of "holding" 0 Mbps forever.
 # 60 × 5 s = 5 minutes of total silence survives shorter blips.
 LIMIT_DEAD_INTERVALS = 60
+# AI-governor telemetry is ICMP, and ping's default interval is 1s — so a
+# packet_loss(count=10) probe is ~10s of traffic, LONGER than the 5s slice it
+# runs inside. Probing every slice both overruns the governor loop and puts
+# more traffic on the wire than the hardcoded path it replaces, which is
+# backwards for a cap whose purpose is to be gentle on a contended link.
+# Sample every Nth slice instead and reuse the last reading in between.
+AI_TELEMETRY_EVERY = 3
+AI_PROBE_COUNT = 3
 
 
 def _checked_mbps(value: float) -> float:
@@ -706,8 +719,12 @@ def _checked_mbps(value: float) -> float:
     return value
 
 
-def _limit_governor(streams: int, seconds: float,
-                    target_bps: float) -> tuple[int, list[float], float]:
+def _limit_governor(
+    streams: int,
+    seconds: float,
+    target_bps: float,
+    ai_governor: AISpeedGovernor | None = None,
+) -> tuple[int, list[float], float]:
     """Hold target_bps (aggregate bytes/s) for `seconds`; return (bytes, rates, elapsed).
 
     Each LIMIT_INTERVAL_S slice runs `streams` paced pulls at the current
@@ -730,6 +747,8 @@ def _limit_governor(streams: int, seconds: float,
     dead_streak = 0
     slices_done = 0
     elapsed = 0.0
+    target_mbps = target_bps * 8 / 1e6
+    last_telemetry: dict[str, float] = {}
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -750,6 +769,7 @@ def _limit_governor(streams: int, seconds: float,
         got = sum(counts)
         total += got
         achieved_bytes_s = got / slice_elapsed          # same unit as target_bps
+        achieved_mbps = achieved_bytes_s * 8 / 1e6
         rates.append(achieved_bytes_s * 8 / 1e6)        # Mbps for the report
         _progress_emit({"event": "interval", "mbps": rates[-1]})
         dead_streak = dead_streak + 1 if got == 0 else 0
@@ -775,12 +795,77 @@ def _limit_governor(streams: int, seconds: float,
         # The ceiling is unconditional — warm-up, corrections, everything is
         # bounded by it, so the commanded pace can never exceed 1.5× target.
         per_stream_bps = min(per_stream_bps, pace_ceiling_bps / streams)
+
+        # AI governor: best-effort override after the hardcoded correction.
+        if ai_governor is not None:
+            try:
+                # Telemetry is ICMP — sample it every AI_TELEMETRY_EVERY
+                # slices and reuse the last reading in between, so the cap
+                # adds a trickle of probes instead of a probe per slice.
+                if not last_telemetry or slices_done % AI_TELEMETRY_EVERY == 0:
+                    latency_ms = 0.0
+                    jitter_ms = 0.0
+                    loss_pct = 0.0
+                    try:
+                        latency_ms = _ping_median_ms(count=AI_PROBE_COUNT)
+                    except NetMaxError:
+                        pass
+                    try:
+                        import netmetrics as _nm
+                        jitter_ms = _nm.jitter_ms(count=AI_PROBE_COUNT)
+                    except NetMaxError:
+                        pass
+                    try:
+                        import netmetrics as _nm2
+                        loss_pct = _nm2.packet_loss(count=AI_PROBE_COUNT)
+                    except NetMaxError:
+                        pass
+                    last_telemetry = {
+                        "latency_ms": latency_ms,
+                        "jitter_ms": jitter_ms,
+                        "loss_pct": loss_pct,
+                    }
+                decision = ai_governor.decide(
+                    target_mbps,
+                    {
+                        "mbps": achieved_mbps,
+                        "latency_ms": last_telemetry.get("latency_ms", 0.0),
+                        "jitter_ms": last_telemetry.get("jitter_ms", 0.0),
+                        "loss_pct": last_telemetry.get("loss_pct", 0.0),
+                        "streams": streams,
+                        "endpoint": "current",
+                        "endpoint_health": {},
+                        "rssi": "unknown",
+                        "noise": "unknown",
+                        "channel": "unknown",
+                    },
+                )
+                if decision is not None:
+                    ai_governor.record_interval(
+                        achieved_mbps,
+                        streams,
+                        target_mbps,
+                    )
+                    if decision.streams is not None:
+                        streams = decision.streams
+                    if decision.pace_bps is not None:
+                        per_stream_bps = decision.pace_bps / max(streams, 1)
+                    if decision.reasoning:
+                        _progress_emit({"event": "ai", "reasoning": decision.reasoning})
+            except (OSError, ValueError, TypeError, KeyError):
+                pass
+
     if total == 0:
         raise NetMaxError("no data received — cannot hold the speed cap")
     return total, rates, elapsed
 
 
-def run_limit(streams: int, seconds: int, mbps: float) -> None:
+def run_limit(
+    streams: int,
+    seconds: int,
+    mbps: float,
+    ai_governor: bool = False,
+) -> None:
     """Hold the download rate at `mbps` for the whole window — no more, no less.
 
     A closed-loop governor re-paces curl every few seconds from measured
@@ -791,7 +876,8 @@ def run_limit(streams: int, seconds: int, mbps: float) -> None:
     the ISP does not deliver).
     """
     target_bps = mbps * 1e6 / 8
-    total, rates, elapsed = _limit_governor(streams, seconds, target_bps)
+    governor = AISpeedGovernor() if ai_governor else None
+    total, rates, elapsed = _limit_governor(streams, seconds, target_bps, ai_governor=governor)
     held = total * 8 / max(elapsed, 1e-9) / 1e6
     _hr(f"Limit — holding {mbps:g} Mbps with {streams} stream(s)")
     _print_speed("capped", streams, held, total / 1e6, int(seconds))
@@ -875,6 +961,218 @@ def _safe_fetch_out(out: str | None, url: str) -> str:
     return raw
 
 
+# name -> (module, attribute, method). Kept as strings so importing the AI
+# modules stays lazy: `netmax ai --list-analyses` and every non-ai mode must
+# keep working even if an AI module is missing from a partial install.
+AI_ANALYSES: dict[str, tuple[str, str, str]] = {
+    # P1
+    "root_cause": ("netmax_ai_p1", "RootCauseClassifier", "classify"),
+    "chunk_size": ("netmax_ai_p1", "AdaptiveChunkSizer", "suggest_chunk_bytes"),
+    "allocate_streams": ("netmax_ai_p1", "CrossStreamCoordinator", "allocate"),
+    "optimize": ("netmax_ai_p1", "MultiObjectiveOptimizer", "optimize"),
+    "isp_profile": ("netmax_ai_p1", "ISPBehaviorFingerprinter", "fingerprint"),
+    "wifi_advice": ("netmax_ai_p1", "WiFiOptimizationAdvisor", "advise"),
+    "dns_strategy": ("netmax_ai_p1", "DNSStrategyOptimizer", "advise"),
+    "loss_pattern": ("netmax_ai_p1", "PacketLossPatternRecognizer", "classify"),
+    "jitter_attribution": ("netmax_ai_p1", "JitterSourceAttributor", "attribute"),
+    "nl_command": ("netmax_ai_p1", "NaturalLanguageCLI", "parse"),
+    # P2
+    "explain": ("netmax_ai_p2", "ResultExplainer", "explain"),
+    "wizard": ("netmax_ai_p2", "TroubleshootingWizard", "start"),
+    "wizard_next": ("netmax_ai_p2", "TroubleshootingWizard", "next_step"),
+    "wizard_conclude": ("netmax_ai_p2", "TroubleshootingWizard", "conclude"),
+    "narrate": ("netmax_ai_p2", "AccessibilityNarrator", "narrate"),
+    "forecast": ("netmax_ai_p2", "TrendForecaster", "forecast"),
+    "hardware_health": ("netmax_ai_p2", "HardwareHealthMonitor", "assess"),
+    "throttle_signature": ("netmax_ai_p2", "ZeroDayThrottleDetector", "detect"),
+    "cost_advice": ("netmax_ai_p2", "CostAdvisor", "advise"),
+    "benchmark": ("netmax_ai_p2", "BenchmarkComparator", "compare"),
+    "coach": ("netmax_ai_p2", "GamifiedCoach", "week_plan"),
+    "metric_rule": ("netmax_ai_p2", "MetricRuleEngine", "evaluate"),
+}
+
+# Analysers that consume `record_sample` kwargs rather than one input dict.
+AI_RECORDERS: dict[str, str] = {
+    "forecast": "record_sample",
+    "hardware_health": "record_sample",
+    "throttle_signature": "record_sample",
+    "coach": "record_sample",
+    "isp_profile": "record_sample",
+}
+
+# How each recorder turns a history row into record_* kwargs.
+AI_RECORD_FIELDS: dict[str, tuple[str, ...]] = {
+    "forecast": ("mbps",),
+    "hardware_health": ("bloat_grade", "idle_latency_ms", "loss_pct"),
+    "throttle_signature": ("mbps", "streams"),
+    # hour is optional in the row; record_sample falls back to wall clock.
+    "isp_profile": ("mbps", "hour"),
+    "coach": (),          # accepts arbitrary metrics
+}
+
+
+# analysis -> (bundle_key, {method_param: input_key}).
+#
+# The analyser signatures are not uniform — some take one bundle, some take
+# a bundle plus scalar options, some take only scalars. Guessing that
+# generically is how `explain(diagnostics, tone, plan_mbps)` ends up splatted
+# as kwargs, so the contract is declared per analysis instead.
+#
+# bundle_key is the input key holding the first positional argument. When
+# that key is absent from the payload the WHOLE payload is passed instead,
+# which keeps flat JSON like --input '{"mbps":40}' working.
+AI_SIGNATURES: dict[str, tuple[str | None, dict[str, str]]] = {
+    # P1
+    "root_cause": ("diagnostics", {}),
+    "chunk_size": (None, {"rtt_ms": "rtt_ms", "jitter_ms": "jitter_ms",
+                          "loss_pct": "loss_pct",
+                          "throughput_mbps": "throughput_mbps"}),
+    "allocate_streams": (None, {"streams": "streams",
+                                "aggregate_bps": "aggregate_bps",
+                                "per_stream_bps": "per_stream_bps"}),
+    "optimize": ("options", {"weights": "weights"}),
+    "isp_profile": (None, {}),
+    "wifi_advice": ("wifi", {}),
+    "dns_strategy": ("resolvers", {}),
+    "loss_pattern": ("events", {}),
+    "jitter_attribution": (None, {"gateway_ms": "gateway_ms",
+                                  "internet_ms": "internet_ms",
+                                  "endpoint_ms": "endpoint_ms"}),
+    "nl_command": ("text", {}),
+    # P2
+    "explain": ("diagnostics", {"tone": "tone", "plan_mbps": "plan_mbps"}),
+    "wizard": ("symptom", {}),
+    "wizard_next": ("step_id", {"answer": "answer"}),
+    "wizard_conclude": ("answers", {}),
+    "narrate": ("diagnostics", {"include_caveats": "include_caveats"}),
+    "forecast": (None, {"horizon_days": "horizon_days"}),
+    "hardware_health": (None, {"config_changed_at": "config_changed_at"}),
+    "throttle_signature": (None, {}),
+    "cost_advice": (None, {"plan_mbps": "plan_mbps",
+                           "monthly_cost": "monthly_cost",
+                           "samples": "samples",
+                           "history_limit": "history_limit"}),
+    "benchmark": ("mbps", {"cohort_percentiles": "cohort_percentiles",
+                           "cohort_label": "cohort_label"}),
+    "coach": ("goal", {"history_limit": "history_limit"}),
+    "metric_rule": ("rule", {"metrics": "metrics"}),
+}
+
+
+def _load_json_input(spec: str) -> dict[str, Any]:
+    """Parse --input: inline JSON, or @path to a JSON file."""
+    text = (spec or "{}").strip()
+    if text.startswith("@"):
+        path = Path(text[1:]).expanduser()
+        text = path.read_text(encoding="utf-8")
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise NetMaxError(f"--input is not valid JSON: {exc}") from None
+    if not isinstance(parsed, dict):
+        raise NetMaxError("--input must be a JSON object")
+    return parsed
+
+
+def _load_history(path_spec: str) -> list[dict[str, Any]]:
+    """Read a history JSONL file, tolerating the corrupt lines it warns about."""
+    path = Path(path_spec).expanduser()
+    rows: list[dict[str, Any]] = []
+    if not path.exists():
+        raise NetMaxError(f"history file not found: {path}")
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue          # same tolerance as the history writer
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def run_ai_analysis(name: str, input_data: dict[str, Any],
+                    history: list[dict[str, Any]] | None = None) -> Any:
+    """Dispatch to one analyser by name and return its result."""
+    entry = AI_ANALYSES.get(name)
+    if entry is None:
+        raise NetMaxError(
+            f"unknown analysis {name!r}; run 'netmax ai --list-analyses'"
+        )
+    module_name, class_name, method_name = entry
+
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        raise NetMaxError(
+            f"{module_name} is unavailable ({exc}); the AI analyses are "
+            "optional extras"
+        ) from None
+    cls = getattr(module, class_name, None)
+    if cls is None:
+        raise NetMaxError(f"{class_name} missing from {module_name}")
+
+    analyser = cls()
+    payload = dict(input_data)
+
+    # Replay history into record_* when the analyser wants it.
+    if history:
+        recorder_name = AI_RECORDERS.get(name)
+        if recorder_name:
+            recorder = getattr(analyser, recorder_name, None)
+            if callable(recorder):
+                fields = AI_RECORD_FIELDS.get(name, ())
+                for row in history:
+                    if fields:
+                        # A null metric means "not measured" — recording it
+                        # as a real 0.0 would poison a trend or a percentile
+                        # with a reading that never happened.
+                        kwargs = {f: row[f] for f in fields
+                                  if row.get(f) is not None}
+                    else:
+                        kwargs = {k: v for k, v in row.items()
+                                  if isinstance(v, (int, float))}
+                    if kwargs:
+                        try:
+                            recorder(**kwargs)
+                        except TypeError:
+                            continue
+                # history supplied the series; do not also pass it as input
+                payload.pop("history", None)
+
+    method = getattr(analyser, method_name, None)
+    if not callable(method):
+        raise NetMaxError(f"{class_name}.{method_name} is not callable")
+
+    bundle_key, option_map = AI_SIGNATURES.get(name, (None, {}))
+    # Options come out of the payload first; whatever is left forms the bundle.
+    # A None bundle_key means the method takes NO positional argument (the
+    # zero-arg and all-scalar analysers) — passing the payload there would both
+    # duplicate option keys as a positional and break a zero-arg signature.
+    kwargs = {
+        param: payload.pop(src)
+        for param, src in option_map.items()
+        if src in payload
+    }
+
+    if bundle_key is None:
+        try:
+            return method(**kwargs)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise NetMaxError(f"{name} failed: {exc}") from None
+
+    positional = payload.pop(bundle_key, None)
+    if positional is None:
+        positional = payload      # flat form: the whole remainder is the bundle
+
+    try:
+        return method(positional, **kwargs)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise NetMaxError(f"{name} failed: {exc}") from None
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="netmax",
@@ -935,6 +1233,26 @@ def main(argv: list[str] | None = None) -> None:
                           help="auto-adjust stream count from latency/loss feedback")
     sp_bloat.add_argument("--eco", action="store_true", dest="eco",
                           help="small-probe estimate instead of full saturation")
+
+    # AI analysis surface (P0–P2). One dispatcher so every analyser in
+    # netmax_ai / netmax_ai_p1 / netmax_ai_p2 is reachable from the CLI,
+    # the Tk GUI, the MCP server and the app bundle — otherwise a library
+    # nobody can call is not a feature. Analysis only: never measures,
+    # never mutates system state.
+    sp_ai = sub.add_parser(
+        "ai", help="AI-assisted diagnosis over supplied measurements")
+    sp_ai.add_argument("--analysis", metavar="NAME",
+                       help="analyser to run; --list-analyses shows them all")
+    sp_ai.add_argument("--input", default="{}",
+                       help="JSON object of measurements/history "
+                            "(inline, or @path to a JSON file)")
+    sp_ai.add_argument("--history", default="",
+                       help="path to a history JSONL file to replay "
+                            "(overrides --input history field)")
+    sp_ai.add_argument("--pretty", action="store_true",
+                       help="indent the JSON output")
+    sp_ai.add_argument("--list-analyses", action="store_true",
+                       help="print the available analysers and exit")
 
     # watch mode (v0.4 diagnostics; the dispatch branch at 'elif cmd == "watch"'
     # existed without this parser — register it so the mode actually runs).
@@ -1037,6 +1355,7 @@ def main(argv: list[str] | None = None) -> None:
                     _checked(args.streams, 1, 50, "--streams"),
                     _checked_duration(args.seconds),
                     _checked_mbps(args.mbps),
+                    ai_governor=getattr(args, "ai_governor", False),
                 )
         elif cmd == "loss":
             import netmetrics
@@ -1055,6 +1374,21 @@ def main(argv: list[str] | None = None) -> None:
             import netmax_export
             netmax_export.export_results(args.fmt, args.out)
             print(f"exported ({args.fmt}) → {args.out}")
+        elif cmd == "ai":
+            if args.list_analyses:
+                width = max(len(k) for k in AI_ANALYSES)
+                for key, (mod, cls, method) in sorted(AI_ANALYSES.items()):
+                    print(f"{key:<{width}}  {mod}.{cls}.{method}")
+                return
+            if not args.analysis:
+                raise NetMaxError(
+                    "ai needs --analysis NAME (or --list-analyses)")
+            input_data = _load_json_input(args.input)
+            history_rows = (_load_history(args.history)
+                            if args.history else None)
+            result = run_ai_analysis(args.analysis, input_data, history_rows)
+            print(json.dumps(result, indent=2 if args.pretty else None,
+                             default=str))
         elif cmd == "watch":
             import netmax_watch
             cycles = args.cycles if args.cycles > 0 else 10**9

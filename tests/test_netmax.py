@@ -12,6 +12,7 @@ import socket
 import string
 import struct
 import subprocess
+import sys
 import types
 from collections import namedtuple
 from pathlib import Path
@@ -578,10 +579,116 @@ class TestLimitGovernor:
             netmax._limit_governor(1, 10, 250_000)
 
 
+class TestAITelemetrySampling:
+    """AI-governor telemetry is ICMP and must not run on every slice.
+
+    packet_loss(count=10) at ping's 1s default is ~10s of probes — longer
+    than the 5s LIMIT_INTERVAL_S slice it runs inside — so a per-slice probe
+    both overruns the governor loop and puts more traffic on the wire than
+    the hardcoded governor it replaces. Sampling is the fix; these tests pin
+    the sampling rate and the probe count that caused it.
+    """
+
+    @staticmethod
+    def _paced_line(seen_caps, fraction):
+        def fake(seconds, limit_bps=None):
+            seen_caps.append(limit_bps)
+            return int(250_000 * fraction)
+        return fake
+
+    def test_probes_are_sampled_not_per_slice(self, monkeypatch, fast_pull_clock):
+        seen_caps = []
+        monkeypatch.setattr(netmax, "_pull", self._paced_line(seen_caps, 0.8))
+        probes = []
+        monkeypatch.setattr(
+            netmax, "_ping_median_ms",
+            lambda count=10, host="1.1.1.1": (probes.append(count), 12.0)[1],
+        )
+
+        class FakeNM:
+            @staticmethod
+            def jitter_ms(count=10):
+                probes.append(count)
+                return 3.0
+
+            @staticmethod
+            def packet_loss(count=10):
+                probes.append(count)
+                return 0.0
+
+        monkeypatch.setitem(sys.modules, "netmetrics", FakeNM)
+
+        class FakeGov:
+            def decide(self, target_mbps, telemetry):
+                return None       # no override — we only count the probes
+
+            def record_interval(self, *_a):
+                pass
+
+        netmax._limit_governor(
+            1, 30, 250_000, ai_governor=FakeGov()
+        )
+        # decide() runs every slice; the ICMP probes must not. One probe round
+        # = 3 ICMP calls (ping/jitter/loss). Before the fix this was 3 calls
+        # per slice — strictly more wire traffic than the hardcoded governor.
+        slices = len(seen_caps)
+        rounds = len(probes) // 3
+        assert rounds < slices
+        assert rounds == 4                  # slices 1, 4, 7, 10 of a 30s window
+        assert max(probes) <= netmax.AI_PROBE_COUNT
+        # Worst case per slice would be 3 rounds; we are well under it.
+        assert rounds * 3 <= slices * 3 // 2
+
+    def test_probe_count_is_bounded(self, monkeypatch, fast_pull_clock):
+        counts = []
+        monkeypatch.setattr(netmax, "_pull", self._paced_line([], 0.8))
+        monkeypatch.setattr(
+            netmax, "_ping_median_ms",
+            lambda count=10, host="1.1.1.1": counts.append(count) or 12.0,
+        )
+
+        class FakeNM:
+            @staticmethod
+            def jitter_ms(count=10):
+                counts.append(count)
+                return 3.0
+
+            @staticmethod
+            def packet_loss(count=10):
+                counts.append(count)
+                return 0.0
+
+        monkeypatch.setitem(sys.modules, "netmetrics", FakeNM)
+
+        class FakeGov:
+            def decide(self, *_a):
+                return None
+
+            def record_interval(self, *_a):
+                pass
+
+        netmax._limit_governor(1, 30, 250_000, ai_governor=FakeGov())
+        assert counts, "no ICMP probes were issued"
+        # Never the old count=10, and never more than AI_PROBE_COUNT=3.
+        assert max(counts) <= netmax.AI_PROBE_COUNT
+        assert 10 not in counts
+
+    def test_no_ai_governor_means_no_probes(self, monkeypatch, fast_pull_clock):
+        """The hardcoded path must stay silent on the wire."""
+        monkeypatch.setattr(netmax, "_pull", self._paced_line([], 0.8))
+        probes = []
+        monkeypatch.setattr(
+            netmax, "_ping_median_ms",
+            lambda count=10, host="1.1.1.1": probes.append(count) or 12.0,
+        )
+        netmax._limit_governor(1, 30, 250_000)
+        assert probes == []
+
+
 class TestLimitMode:
     @staticmethod
     def _governor_spy(seen, total, rates, elapsed):
-        def fake(streams, seconds, target_bps):
+        def fake(streams, seconds, target_bps, ai_governor=None):
             seen.update(streams=streams, seconds=seconds, target_bps=target_bps)
             return total, rates, elapsed
         return fake
@@ -591,7 +698,7 @@ class TestLimitMode:
         monkeypatch.setattr(
             netmax, "_limit_governor",
             self._governor_spy(seen, 500_000, [2.0, 2.0], 2.0))
-        netmax.run_limit(4, 10, 2.0)
+        netmax.run_limit(4, 10, 2.0, ai_governor=False)
         # 2 Mbps = 250_000 B/s AGGREGATE — the governor splits it per stream
         assert seen["target_bps"] == pytest.approx(2.0 * 1e6 / 8)
         assert (seen["streams"], seen["seconds"]) == (4, 10)
@@ -599,8 +706,8 @@ class TestLimitMode:
     def test_held_verdict_with_stability(self, capsys, monkeypatch):
         monkeypatch.setattr(
             netmax, "_limit_governor",
-            lambda s, sec, t: (2_525_000, [2.0, 2.04], 10.0))
-        netmax.run_limit(1, 10, 2.0)
+            lambda s, sec, t, ai_governor=None: (2_525_000, [2.0, 2.04], 10.0))
+        netmax.run_limit(1, 10, 2.0, ai_governor=False)
         out = capsys.readouterr().out
         assert "target held" in out
         assert "stability:" in out
@@ -608,15 +715,15 @@ class TestLimitMode:
     def test_shortfall_reported_plainly(self, capsys, monkeypatch):
         monkeypatch.setattr(
             netmax, "_limit_governor",
-            lambda s, sec, t: (1_500_000, [1.2, 1.2], 10.0))
-        netmax.run_limit(1, 10, 2.0)
+            lambda s, sec, t, ai_governor=None: (1_500_000, [1.2, 1.2], 10.0))
+        netmax.run_limit(1, 10, 2.0, ai_governor=False)
         assert "short of the cap" in capsys.readouterr().out
 
     def test_overrun_reported(self, capsys, monkeypatch):
         monkeypatch.setattr(
             netmax, "_limit_governor",
-            lambda s, sec, t: (3_750_000, [3.0], 10.0))
-        netmax.run_limit(1, 10, 2.0)
+            lambda s, sec, t, ai_governor=None: (3_750_000, [3.0], 10.0))
+        netmax.run_limit(1, 10, 2.0, ai_governor=False)
         out = capsys.readouterr().out
         assert "cap overrun" in out
         # a single interval carries no stability information — line omitted
@@ -628,7 +735,7 @@ class TestLimitCli:
         seen = {}
         monkeypatch.setattr(
             netmax, "run_limit",
-            lambda s, sec, m: seen.update(s=s, sec=sec, m=m))
+            lambda s, sec, m, ai_governor=False: seen.update(s=s, sec=sec, m=m))
         netmax.main(["limit", "--mbps", "2.5", "--seconds", "20", "--streams", "3"])
         assert seen == {"s": 3, "sec": 20, "m": 2.5}
 
@@ -636,7 +743,7 @@ class TestLimitCli:
         seen = {}
         monkeypatch.setattr(
             netmax, "run_limit",
-            lambda s, sec, m: seen.update(s=s, sec=sec, m=m))
+            lambda s, sec, m, ai_governor=False: seen.update(s=s, sec=sec, m=m))
         netmax.main(["limit", "--mbps", "2"])
         assert seen == {"s": 1, "sec": 10, "m": 2.0}
 

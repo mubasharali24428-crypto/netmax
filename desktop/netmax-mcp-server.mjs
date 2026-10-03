@@ -91,6 +91,10 @@ const BRIDGE_MODES = new Set([
 const SERVER_START = new Date();
 let toolCallCount = 0;
 
+// Single source for the banner count. It was a hardcoded "15" in two
+// places and silently under-reported the moment a tool was added.
+const TOOL_COUNT = 17;
+
 // Failure alerts: Slack incoming-webhook URL (unset = no alerting).
 // Rate-limited to one post per 5 min; a dead webhook never breaks a call.
 const SLACK_WEBHOOK = process.env.NETMAX_SLACK_WEBHOOK || "";
@@ -738,6 +742,48 @@ function buildServer() {
     }
   );
 
+  // ── Tool: ai_analyze ─────────────────────────────────────────────────────────
+
+  // The reachability surface for the whole P0–P2 AI layer. Without this the
+  // analysers exist but no agent can call them — which is exactly the
+  // "shipped but unreachable" trap this project has hit before.
+  //
+  // Direct rather than via the bridge, for the same reason download_file is:
+  // `ai` takes a JSON payload argument the bridge's flag-only mode contract
+  // cannot express. The engine still validates everything — the dispatcher
+  // refuses unknown analysis names and rejects a bad metric rule itself.
+  server.tool(
+    "ai_analyze",
+    "Run an AI-assisted diagnosis over measurements you already have. " +
+      "Pass `analysis` (see list_analyses) and `input` (JSON object of the " +
+      "measurements), or `history_path` to replay a saved history file. " +
+      "Analysis only: it never runs a measurement or changes your system.",
+    {
+      analysis: z.string().describe("analyser name, e.g. root_cause"),
+      input: z.string().optional().describe("JSON object of measurements"),
+      history_path: z.string().optional().describe("history JSONL to replay"),
+      pretty: z.boolean().optional(),
+    },
+    async ({ analysis, input, history_path, pretty }) => {
+      const args = ["ai", "--analysis", String(analysis ?? "")];
+      if (input !== undefined) args.push("--input", String(input));
+      if (history_path !== undefined) {
+        args.push("--history", String(history_path));
+      }
+      if (pretty) args.push("--pretty");
+      return runTool("ai_analyze", () => runEngineDirect(args));
+    }
+  );
+
+  // ── Tool: list_analyses ─────────────────────────────────────────────────────
+
+  server.tool(
+    "list_analyses",
+    "List the AI analyses ai_analyze can run, with the module and method each one dispatches to.",
+    {},
+    async () => runTool("list_analyses", () => runEngineDirect(["ai", "--list-analyses"]))
+  );
+
   // ── Tool: session_info ──────────────────────────────────────────────────────
 
   server.tool(
@@ -787,7 +833,7 @@ async function main() {
     console.error(`  Engine root: ${ENGINE_ROOT}`);
     console.error(`  Python:      ${PYTHON}`);
     console.error(`  Bridge:      ${HAS_BRIDGE ? BRIDGE : "none (direct mode)"}`);
-    console.error(`  Tools:       15 registered`);
+    console.error(`  Tools:       ${TOOL_COUNT} registered`);
     console.error(`  Config:      NETMAX_ROOT / NETMAX_PYTHON / NETMAX_BRIDGE env vars`);
     console.error("");
     const transport = new StdioServerTransport();
@@ -915,7 +961,7 @@ async function main() {
     console.error(`  Dashboard:    ${scheme}://${host === "127.0.0.1" ? "localhost" : host}:${port}/`);
     console.error(`  Engine root:  ${ENGINE_ROOT}`);
     console.error(`  Auth:         ${token ? "bearer token (NETMAX_TOKEN)" : "none (localhost only)"}`);
-    console.error(`  Tools:        15 registered`);
+    console.error(`  Tools:        ${TOOL_COUNT} registered`);
     console.error("");
     console.error("Web MCP ready — add to Claude/Cursor/DSH as a remote MCP server:");
     console.error(`  url: ${scheme}://${host}:${port}/mcp` + (token ? "  headers: Authorization: Bearer <NETMAX_TOKEN>" : ""));
