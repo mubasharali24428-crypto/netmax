@@ -78,23 +78,28 @@ MODE_FLAGS: dict[str, tuple[str, ...]] = {
     "bloat": ("streams", "seconds"),
     "full": ("streams", "seconds"),
     "upload": ("seconds",),
+    "limit": ("streams", "seconds", "mbps", "strict"),
     "loss": ("count",),
     "jitter": ("count",),
     "wifi": (),
 }
 ALLOWED_MODES: tuple[str, ...] = tuple(MODE_FLAGS)
 
-_FLAG_SPELLING = {"streams": "--streams", "seconds": "--seconds", "count": "--count"}
+_FLAG_SPELLING = {"streams": "--streams", "seconds": "--seconds",
+                   "count": "--count", "mbps": "--mbps", "strict": "--strict"}
 
 # W7-4 (F2): inclusive bridge-side bounds mirroring netmax.py's argparse.
 # Enforced here so a bad UI value lands in the envelope instead of spawning
 # an engine subprocess that the engine's argparse would reject anyway.
 # W15: --seconds accepts quick band (5..30) OR long runs (up to 6 h).
+# limit mode: --mbps is a float cap (0.5..10000 Mbps); the Swift UI's
+# Int stepper mirrors the same bounds at 1..10000 granularity.
 DURATION_MAX_S = 21_600
-RANGE_BOUNDS: dict[str, tuple[int, int]] = {
+RANGE_BOUNDS: dict[str, tuple[float, float]] = {
     "streams": (1, 50),
     "seconds": (5, DURATION_MAX_S),
     "count": (1, 100),
+    "mbps": (0.5, 10_000),
 }
 
 
@@ -113,6 +118,8 @@ def build_command(
     streams: int | None = None,
     seconds: int | None = None,
     count: int | None = None,
+    mbps: float | None = None,
+    strict: bool | None = None,
     *,
     python: str | None = None,
     bundled: bool | None = None,
@@ -127,13 +134,18 @@ def build_command(
     Returns (argv, dropped_flags): dropped_flags lists flag names the caller
     gave that this mode does not support (F1 — surfaced, never silently lost).
     """
-    given: dict[str, int | None] = {
+    given: dict[str, int | float | bool | None] = {
         "streams": streams,
         "seconds": seconds,
         "count": count,
+        "mbps": mbps,
+        "strict": strict,
     }
     supported = MODE_FLAGS[mode]
-    dropped = sorted(k for k, v in given.items() if v is not None and k not in supported)
+    # False behaves as absent (only an explicit True travels); anything set
+    # that the mode does not support is surfaced, never silently lost.
+    dropped = sorted(k for k, v in given.items()
+                     if v is not None and v is not False and k not in supported)
     is_bundled = _is_bundled() if bundled is None else bundled
     cmd = [python if python is not None else resolve_interpreter()]
     if is_bundled:
@@ -144,8 +156,16 @@ def build_command(
     cmd += [str(ENGINE_PATH), mode]
     for key in supported:
         value = given[key]
-        if value is not None:
-            cmd += [_FLAG_SPELLING[key], str(int(value))]
+        if value is None or value is False:
+            continue
+        if value is True:
+            # Boolean flag (--strict): present without a value.
+            cmd += [_FLAG_SPELLING[key]]
+            continue
+        # Ints stay ints; floats (--mbps) print without trailing .0 —
+        # int() here would truncate a 2.5 Mbps cap to 2.
+        text = str(value) if isinstance(value, int) else f"{value:g}"
+        cmd += [_FLAG_SPELLING[key], text]
     return cmd, dropped
 
 
@@ -155,7 +175,8 @@ def stderr_tail(text: str, limit: int = STDERR_TAIL_CHARS) -> str:
 
 
 def validate_ranges(
-    streams: int | None, seconds: int | None, count: int | None
+    streams: int | None, seconds: int | None, count: int | None,
+    mbps: float | None = None,
 ) -> str | None:
     """Bridge-side range check (W7-4/F2), BEFORE any subprocess spawn.
 
@@ -165,18 +186,19 @@ def validate_ranges(
     (the engine words its own --seconds error as quick/long bands; the
     bounds themselves are identical).
     """
-    given: dict[str, int | None] = {
+    given: dict[str, int | float | None] = {
         "streams": streams,
         "seconds": seconds,
         "count": count,
+        "mbps": mbps,
     }
-    for name in ("streams", "seconds", "count"):
+    for name in ("streams", "seconds", "count", "mbps"):
         value = given[name]
         if value is None:
             continue
         low, high = RANGE_BOUNDS[name]
-        if not low <= int(value) <= high:
-            return f"netmax: --{name} must be {low}..{high}, got {int(value)}"
+        if not low <= value <= high:
+            return f"netmax: --{name} must be {low:g}..{high:g}, got {value:g}"
     return None
 
 
@@ -251,6 +273,8 @@ def run_engine(
     seconds: int | None,
     count: int | None,
     json_out: str,
+    mbps: float | None = None,
+    strict: bool | None = None,
     *,
     runner=None,
     env: Mapping[str, str] | None = None,
@@ -267,7 +291,7 @@ def run_engine(
         print(f"engine_bridge: {detail}", file=sys.stderr)
         return 1
     # W7-4/F2: reject out-of-range values BEFORE spawning anything.
-    range_error = validate_ranges(streams, seconds, count)
+    range_error = validate_ranges(streams, seconds, count, mbps)
     if timeout_s is None:
         timeout_s = effective_timeout(seconds)
     if range_error:
@@ -281,7 +305,8 @@ def run_engine(
         print(f"engine_bridge: {range_error}", file=sys.stderr)
         return 1
     command, dropped_flags = build_command(
-        mode, streams, seconds, count, python=resolve_interpreter(env)
+        mode, streams, seconds, count, mbps=mbps, strict=strict,
+        python=resolve_interpreter(env)
     )
     # W11-A-075 fix: forward NETMAX_PLUGIN so GUI-launched engine runs can
     # load plugin modes exactly like CLI runs (env var was previously invisible
@@ -375,6 +400,25 @@ def _check_arg_mapping() -> None:
         (("baseline", {"seconds": 7}), [fixed_py, engine, "baseline", "--seconds", "7"], []),
         (("dns", {}), [fixed_py, engine, "dns"], []),
         (("loss", {"count": 20}), [fixed_py, engine, "loss", "--count", "20"], []),
+        # limit mode: floats pass through untruncated (--mbps 2.5 stays 2.5).
+        (
+            ("limit", {"streams": 2, "seconds": 30, "mbps": 2.5}),
+            [fixed_py, engine, "limit", "--streams", "2", "--seconds", "30",
+             "--mbps", "2.5"],
+            [],
+        ),
+        # --strict is a bare flag, limit-only; elsewhere it is surfaced.
+        (
+            ("limit", {"streams": 1, "seconds": 60, "mbps": 5.0, "strict": True}),
+            [fixed_py, engine, "limit", "--streams", "1", "--seconds", "60",
+             "--mbps", "5", "--strict"],
+            [],
+        ),
+        (
+            ("turbo", {"streams": 8, "seconds": 10, "strict": True}),
+            [fixed_py, engine, "turbo", "--streams", "8", "--seconds", "10"],
+            ["strict"],
+        ),
         ((("wifi", {}), [fixed_py, engine, "wifi"], [])),
         # Unsupported flag for the mode is never forwarded — but surfaced.
         ((("turbo", {"count": 99}), [fixed_py, engine, "turbo"], ["count"])),
@@ -442,23 +486,28 @@ def _check_range_validation() -> None:
         raise AssertionError("unset flags must validate clean")
     if validate_ranges(1, 30, 100) is not None:
         raise AssertionError("inclusive bounds must validate clean")
-    cases: list[tuple[str, int, str]] = [
+    cases: list[tuple[str, int | float, str | None]] = [
         ("streams", 0, "netmax: --streams must be 1..50, got 0"),
         ("streams", 51, "netmax: --streams must be 1..50, got 51"),
         ("seconds", 4, "netmax: --seconds must be 5..21600, got 4"),
         ("seconds", 31, None),
         ("count", 0, "netmax: --count must be 1..100, got 0"),
         ("count", 101, "netmax: --count must be 1..100, got 101"),
+        ("mbps", 0.4, "netmax: --mbps must be 0.5..10000, got 0.4"),
+        ("mbps", 2.5, None),
+        ("mbps", 10001, "netmax: --mbps must be 0.5..10000, got 10001"),
     ]
     for name, bad, expected in cases:
-        kwargs: dict[str, int | None] = {
+        kwargs: dict[str, int | float | None] = {
             "streams": None,
             "seconds": None,
             "count": None,
+            "mbps": None,
         }
         kwargs[name] = bad
         got = validate_ranges(
-            kwargs["streams"], kwargs["seconds"], kwargs["count"]
+            kwargs["streams"], kwargs["seconds"], kwargs["count"],
+            mbps=kwargs["mbps"],
         )
         if got != expected:
             raise AssertionError(f"--{name}={bad}: {got!r} != {expected!r}")
@@ -530,6 +579,8 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--streams", type=int, default=None)
     run_parser.add_argument("--seconds", type=int, default=None)
     run_parser.add_argument("--count", type=int, default=None)
+    run_parser.add_argument("--mbps", type=float, default=None)
+    run_parser.add_argument("--strict", action="store_true", default=None)
     run_parser.add_argument("--json-out", dest="json_out", required=True)
 
     sub.add_parser("selftest", help="offline self-checks (no network, no engine)")
@@ -560,7 +611,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "selftest":
         return selftest()
     return run_engine(
-        args.mode, args.streams, args.seconds, args.count, args.json_out
+        args.mode, args.streams, args.seconds, args.count, args.json_out,
+        mbps=args.mbps, strict=args.strict or None,
     )
 
 

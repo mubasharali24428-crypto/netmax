@@ -114,3 +114,91 @@ remains the one item still pending its result.
 - Verification: pytest 425, ruff clean, Swift selftests 20/20, `swift test` 1/1
   (20 harnesses), bridge selftest 4/4, engine-sync OK.
 - Still open: H8 (license trial product). Not pushed.
+
+## Session — 2026-09-26 long-run auto-stop fix + Mode Lab speed cap (v1.0.7)
+
+- USER-REPORTED BUG: runs set to 15/30+ min "auto stopped". Root cause (verified
+  live): `_pull` returned on the first clean curl finish — the test files are
+  100 MiB (OVH) / 50 MB (CF), so at 32 Mbps a "60-second" run ended at 26 s
+  (105 MB). The W15 long-run UI (up to 6 h) had no engine-side sustaining.
+- Fix: `_pull` now serves the window as BACK-TO-BACK chunks (fresh cache-buster
+  per chunk) until the window cap (exit 28); mid-run endpoint blips pause and
+  retry instead of aborting; zero-byte windows still raise. Live verify:
+  60 s baseline → 59.97 s / 384 MB.
+- New `limit` mode (user-requested "put a limit on network speed"): holds a
+  fixed aggregate Mbps for the whole run, cap divided evenly across streams
+  (curl --limit-rate, plain bytes/s). Honest verdicts held/short/overrun.
+  Live verify: 2 Mbps × 1 stream = 2.0 held; 2 Mbps × 4 streams = 2.1 held.
+- Mode Lab: `limit` card + SpeedCapEntryView (direct Mbps entry), presets get
+  optional `mbps` (legacy presets decode), `netmax.state.lastMbps` restore,
+  EngineParameterRanges.mbps mirrors bridge RANGE_BOUNDS.
+- Bridge: limit + --mbps (float 0.5..10000, untruncated forwarding); timeout
+  already scaled (W15 F5 fix). Tests 425 → 445 green; bridge selftest 4/4;
+  ruff clean; swift build + `swift test` green (26 harnesses).
+- Versions synced to 1.0.7 (package.json → pyproject/cask/RELEASE-NOTES);
+  app rebuilt via build_app.sh and installed to /Applications.
+
+## Session — 2026-09-27 Dashboard Speed Limit + Quick Test lengths (v1.0.7 delta 2)
+
+- USER: "add time limit to Quick Test (5/10/15 min), bring the limit feature to
+  the Dashboard as a RED RECTANGULAR button, and make the engine hold the cap
+  consistently for long periods."
+- Engine: `_limit_governor` closed-loop controller (5 s intervals, ±1.5×
+  correction clamp, warm-up skip, starvation guard, ±3% deadband, dead-interval
+  survival up to 5 min, stability report line). Unit bug caught by tests
+  (bytes/s vs bits/s) before ever shipping.
+- Dashboard (MenuBarView = tab 0): Quick Test length picker (per-leg halving so
+  boost's TOTAL matches the pick); SpeedLimitCard red bar + panel (any speed
+  0.5–10000 incl. decimals, DurationEntryView, streams, Start/Stop, verdict +
+  stability in the result box, history mode "limit").
+- Harnesses 26 → 27 (SpeedLimitCardTests). pytest 453 green; ruff clean;
+  swift build + swift test green; app rebuilt, seal OK, installed to
+  /Applications and restarted (governor + UI strings verified in bundle).
+
+## Session — 2026-09-27 tight band guarantee (v1.0.7 delta 3)
+
+- USER: held speed must sit in a tight band around the limit (2 → ~1–4, never
+  10/20; 15 → 10–20, never 30). Root hole found: degradation ratcheted the
+  governor pace ×1.5/interval → a recovering line could briefly deliver
+  multiples of the target.
+- Fix: LIMIT_PACE_CEILING = 1.5× target, applied unconditionally per interval
+  (init, warm-up, corrections all bounded). One-interval transient max 1.5×,
+  sustained band ±10% aim, down-correction lands on target in one step.
+  Report gained the "band guard" line.
+- pytest 455 green (+2 ceiling tests); ruff clean; rebuilt + reinstalled +
+  restarted the app. Live re-verify deferred: both speed CDNs 429-limited
+  after the session's heavy pulls (engine honestly reports them as dead
+  intervals rather than counting the bodies); background check scheduled.
+- End-to-end band verification (local HTTP server + real curl + real governor,
+  since public CDNs were 429-cooling): 2 Mbps × 1 stream → held 2.04, interval
+  rates 1.90–2.16 (ceiling 3.0); 15 Mbps × 2 streams → held 14.92, rates
+  14.88–15.27 (ceiling 22.5). Both inside ±10% post-warm-up; ceiling never
+  approached.
+
+## Session — 2026-10-03 waves 1-4 (versions, breaker, 4 endpoints, strict ceiling, MCP #15)
+
+- Wave 1 (hygiene+security): server.json 1.0.6→1.0.7 (all 4 pins agree; CI
+  version-pin step added); README counts resynced (412→482 across waves);
+  SESSION-HANDOFF identifiers redacted (gitignored, never committed); MCP
+  refuses off-loopback without NETMAX_TOKEN (exit 2, 3 paths verified);
+  docs/.DS_Store untracked. history.jsonl 0600 already enforced both
+  sides — verified, no change.
+- Wave 2 (reliability): escalating endpoint breaker (60s→5min→1h, success
+  resets; single-fail behavior identical); engine copy re-synced; loopback
+  MCP concurrency smoke (web-mcp-smoke.mjs) + ubuntu CI job.
+- Endpoints 2→4: Hetzner + CacheFly vetted live (HEAD/range-GET only);
+  LeaseWeb dropped (dead path); CF demoted last (adaptive bot 403s).
+  Rotation + mirror-order tests added.
+- Wave 3 (strict ceiling): netmax_shape.py (dnctl+pf anchor, lo0 excluded,
+  finally-cleanup, SIGTERM guard, ShapeError dodges dual-module trap);
+  `limit --strict` CLI. Live: 60s + 90s holds exit 0, teardown clean x3;
+  sync-flagged ceiling proof — turbo 2.2 / baseline 0.7 under a 5 Mbps
+  cap (refs 10.9/10.4). Ceiling semantics, not exact fill (no queue knob
+  on pipes per dnctl man page).
+- Wave 4 (MCP): bridge --strict passthrough (bare bool flag, droppedFlags
+  when misapplied); `strict_limit` tool #15 (seconds<=150 vs 180s exec
+  timeout); 14→15 swept (banners, manifests, smoke scripts, READMEs,
+  landing, marketing copy; historical records untouched).
+- Gates: ruff clean; pytest 482 passed; bridge selftest 4/4; live smoke
+  ALL PASS. Open: Swift menu-bar toggle for strict (product/security call);
+  ceiling re-verify only if pipe behavior questioned (evidence on file).

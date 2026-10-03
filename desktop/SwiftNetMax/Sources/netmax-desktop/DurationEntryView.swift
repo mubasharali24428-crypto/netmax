@@ -89,6 +89,18 @@ struct DurationEntryView: View {
             syncDraftFromSeconds()
         }
         .onChange(of: seconds) { _ in syncDraftFromSeconds() }
+        // W17 fix (observed live): the draft used to commit only on Enter or
+        // focus-loss, so clicking Run/Start right after typing launched the
+        // engine with the PREVIOUS duration. Valid drafts now apply on every
+        // keystroke; invalid ones still wait for the explicit commit.
+        .onChange(of: draftText) { newValue in
+            guard let typed = Double(newValue.trimmingCharacters(in: .whitespaces)),
+                  typed > 0 else { return }
+            let totalSeconds = Int((typed * Double(unit.multiplier)).rounded())
+            guard totalSeconds >= EngineParameterRanges.seconds.lowerBound else { return }
+            seconds = min(totalSeconds, EngineParameterRanges.seconds.upperBound)
+            invalidFlash = false
+        }
     }
 
     private var rangeAndEffectiveCaption: String {
@@ -101,6 +113,13 @@ struct DurationEntryView: View {
     // MARK: Conversion + validation
 
     private func syncDraftFromSeconds() {
+        // If the draft already expresses this exact duration (e.g. the
+        // continuous commit just applied it), leave the text alone —
+        // rewriting mid-typing would clobber what the user is typing.
+        if let typed = Double(draftText.trimmingCharacters(in: .whitespaces)),
+           Int((typed * Double(unit.multiplier)).rounded()) == seconds {
+            return
+        }
         let v = Double(seconds) / Double(unit.multiplier)
         draftText = v == v.rounded() ? "\(Int(v))" : String(format: "%.1f", v)
     }

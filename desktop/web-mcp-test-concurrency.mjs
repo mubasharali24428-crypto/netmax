@@ -24,7 +24,7 @@ try {
   }
 
   const tools = await A.c.listTools();
-  check("A listTools after calls", tools.tools.length === 14, tools.tools.length + " tools");
+  check("A listTools after calls", tools.tools.length === 15, tools.tools.length + " tools");
 
   // B) CONCURRENT second client while A stays connected (stateless: fresh transport per request)
   const B = mkClient("B");

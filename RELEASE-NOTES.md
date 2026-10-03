@@ -1,5 +1,88 @@
 # Release Notes
 
+## 1.0.7
+
+**Engine / bridge**
+- Auto-stop fix (user-reported): long runs no longer end early. `_pull` used to
+  return on the first clean curl finish, so any run longer than one test file
+  (OVH 100 MiB ≈ 26 s at 32 Mbps; CF 50 MB even shorter) auto-stopped before the
+  requested duration. Pulls now run BACK-TO-BACK chunks until the window cap
+  (curl exit 28), with a fresh cache-buster per chunk, and a mid-run endpoint
+  blip (429/403/TLS reset) pauses and retries instead of aborting the run.
+  Verified live: a 60-second baseline now runs 59.97 s and moves 384 MB
+  (previously it ended at 26 s / 105 MB).
+- New `limit` mode: hold a fixed download rate for the whole window
+  (`netmax.py limit --mbps 2 --seconds 1800`). The cap is divided evenly across
+  streams so the aggregate holds however many are open (curl `--limit-rate`,
+  plain bytes/s — no 1024-suffix ambiguity). Honest verdicts: target held /
+  short of the cap (line couldn't reach it) / cap overrun (burst pacing).
+- Bridge: `limit` in MODE_FLAGS with `--mbps` (float, 0.5..10000, forwarded
+  untruncated); watchdog already scales (2× window + margin) so 30-min holds
+  are never killed mid-run.
+
+**Swift**
+- Mode Lab: new `limit` mode card with a Speed cap entry (SpeedCapEntryView,
+  direct Mbps text field + clamping, mirroring the duration entry), wired
+  through presets (`mbps` optional — legacy presets decode), last-state
+  restore (`netmax.state.lastMbps`), and EngineParameterRanges.mbps (1…10000,
+  mirroring bridge RANGE_BOUNDS).
+
+**Tests**
+- Engine: sustained-loop contract (chunk accumulation, per-chunk remaining-time
+  cap, mid-run blip resilience, zero-byte windows raise), limit verdicts, CLI
+  wiring/validation; bridge: mbps range boundaries, limit forwarding, scaled
+  timeout.
+
+## 1.0.7 (delta 2 — Dashboard Speed Limit + Quick Test lengths)
+
+**Swift (Dashboard / MenuBarView)**
+- Speed Limit gets its own highlighted home: a full-width RED RECTANGULAR bar
+  (user-specified) between Target Speed and the speedometer. Tapping it opens
+  the limit panel: any speed 0.5–10000 Mbps (decimals + comma accepted), the
+  W15 duration entry (sec/min/hr), streams 1–50 (cap splits across them),
+  Start/Stop, and the engine's verdict + stability report. Runs land in
+  history (mode "limit") and feed cards/timeline like every other run.
+  New file `SpeedLimitCard.swift` + offline `SpeedLimitCardTests` harness
+  (parse/format validation), harness count 26 → 27.
+- Quick Test length picker (user-requested): 5 / 10 / 15 min segmented control
+  above Run Quick Test. boost = baseline + turbo legs, so the engine gets half
+  the picked length per leg and the TOTAL matches the choice; result text
+  states the leg split ("Quick Test — 10 min (boost, two 300s legs)").
+
+**Engine (netmax.py)**
+- Closed-loop LIMIT GOVERNOR (`_limit_governor`) replaces the single static
+  --limit-rate hold: every 5 s the achieved rate is measured and the per-stream
+  pace is re-aimed at the target (clamped ±1.5× per interval). Strength rules:
+  first interval = warm-up (no correction — TCP ramp), starvation intervals
+  (<25% of target) don't boost into a recovering line, ±3% deadband stops
+  oscillation, dead intervals hold the pace (blips up to 5 minutes are ridden
+  out — 60 consecutive dead intervals abort honestly), zero-byte windows raise.
+  The report now ends with a stability line ("stability: 75% of 5s intervals
+  within ±10% (min …, mean …, max …)"). Live: 2 Mbps × 30 s held at −2.3%.
+
+**Tests**
+- Governor suite: warm-up→convergence, clamp on collapse/overshoot, cap split
+  across streams, mid-run blip survival, dead-streak abort, zero-byte raise,
+  verdicts + stability line. Suite: 453 passing (+27 overall).
+
+## 1.0.7 (delta 3 — tight band guarantee)
+
+- USER: "the held speed must sit tightly around the limit — 2 Mbps must never
+  look like 10 or 20." Root hole: a degraded stretch ratcheted the pace up
+  ×1.5 per interval, so a suddenly recovering line briefly delivered
+  multiples of the target.
+- Fix: hard pace ceiling — the commanded cap can never exceed
+  `LIMIT_PACE_CEILING` (1.5×) the target, applied unconditionally every
+  interval. Worst case is one 5 s interval at 1.5× target while the
+  controller re-aims; sustained overshoot above the band is structurally
+  impossible. Down-correction re-aims to the target in a single interval.
+- Report now ends with the guarantee: "band guard: the pace was hard-limited
+  to 3 Mbps (1.5× your 2 target) for the entire run."
+- Tests: pace-ceiling ratchet wall + degraded-then-recovered re-aim suite.
+  455 passing. (Live re-verify was delayed — both speed CDNs were returning
+  429 after the session's heavy testing; the engine honestly refuses to
+  count rate-limit bodies as data.)
+
 ## 1.0.6
 
 **Swift**

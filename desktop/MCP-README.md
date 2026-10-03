@@ -27,6 +27,7 @@ via `engine_bridge.py`. Your app, its data, its running state, its daemons —
 | `mcp__netmax__boost` | Baseline + turbo + gain % headroom |
 | `mcp__netmax__parallel_diagnostics` | All test concurrently in one call |
 | `mcp__netmax__session_info` | Server uptime, call count, PID |
+| `mcp__netmax__strict_limit` | System-wide speed ceiling via dnctl+pf (macOS, needs server as root; ≤150 s) |
 ## Run standalone
 
 ```bash
@@ -56,7 +57,8 @@ Client config (Claude / Cursor / DSH remote MCP):
   so hosting it remotely would measure the datacenter's pipe, not yours.
 - `NETMAX_HOST=0.0.0.0` opens it to the LAN (pair with the token).
 - `NETMAX_TOKEN=<secret>` requires `Authorization: Bearer <secret>` on every
-  request (401 otherwise). Use it whenever the bind is not loopback.
+  request (401 otherwise). Required when the bind is not loopback — the
+  server refuses to start off-loopback without it.
 
 ## Wire into DSH
 

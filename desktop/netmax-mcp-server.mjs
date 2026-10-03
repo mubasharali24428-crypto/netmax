@@ -481,6 +481,28 @@ function buildServer() {
     }
   );
 
+  // ── Tool: strict_limit ──────────────────────────────────────────────────
+  // System-wide kernel-enforced speed ceiling (dnctl+pf, macOS). Unlike the
+  // soft `limit` governor (own downloads only), this shapes ALL off-machine
+  // traffic for the window. Requires the server to run as root — otherwise
+  // the engine refuses with its sudo message, surfaced here as FAILED
+  // (never silent). seconds capped at 150: execFile's 180 s timeout would
+  // SIGTERM a longer hold (the engine's SIGTERM guard still cleans up, but
+  // the tool call itself would report failure).
+
+  server.tool(
+    "strict_limit",
+    "Enforce a system-wide download ceiling in Mbps for N seconds — kernel-level (dnctl+pf, macOS), shapes ALL apps and devices on this machine's pipe, not just test traffic. Loopback is never shaped. REQUIRES the MCP server to run as root (sudo); otherwise fails with the engine's sudo instructions.",
+    {
+      mbps: z.number().min(0.5).max(10000).describe("Ceiling in Mbps (0.5-10000, nothing may exceed it)"),
+      seconds: z.number().int().min(5).max(150).default(60).describe("Hold duration in seconds (5-150; capped so the call finishes inside the tool timeout)"),
+    },
+    async ({ mbps, seconds }) =>
+      runTool("strict_limit", () =>
+        runViaBridge("limit", ["--streams", "1", "--seconds", String(seconds),
+          "--mbps", String(mbps), "--strict"]))
+  );
+
   // ── Tool: parallel_diagnostics ─────────────────────────────────────────────
 
   server.tool(
@@ -671,7 +693,7 @@ async function main() {
     console.error(`  Engine root: ${ENGINE_ROOT}`);
     console.error(`  Python:      ${PYTHON}`);
     console.error(`  Bridge:      ${HAS_BRIDGE ? BRIDGE : "none (direct mode)"}`);
-    console.error(`  Tools:       14 registered`);
+    console.error(`  Tools:       15 registered`);
     console.error(`  Config:      NETMAX_ROOT / NETMAX_PYTHON / NETMAX_BRIDGE env vars`);
     console.error("");
     const transport = new StdioServerTransport();
@@ -690,6 +712,15 @@ async function main() {
   const host = process.env.NETMAX_HOST || "127.0.0.1";
   const port = Number(process.env.NETMAX_PORT || 8808);
   const token = process.env.NETMAX_TOKEN;
+
+  // Off-loopback without a token serves engine control to the LAN
+  // unauthenticated — refuse instead of serving open.
+  const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
+  if (!LOOPBACK.has(host) && !token) {
+    console.error(`Refusing: NETMAX_HOST=${host} is not loopback but NETMAX_TOKEN is unset.`);
+    console.error(`Set NETMAX_TOKEN=<secret> to serve off-loopback, or leave NETMAX_HOST unset.`);
+    process.exit(2);
+  }
 
   const httpServer = createServer(async (req, res) => {
     // Trust boundary: bearer gate before anything parses.
@@ -721,7 +752,7 @@ async function main() {
     console.error(`  Endpoint:     http://${host === "127.0.0.1" ? "localhost" : host}:${port}/mcp`);
     console.error(`  Engine root:  ${ENGINE_ROOT}`);
     console.error(`  Auth:         ${token ? "bearer token (NETMAX_TOKEN)" : "none (localhost only)"}`);
-    console.error(`  Tools:        14 registered`);
+    console.error(`  Tools:        15 registered`);
     console.error("");
     console.error("Web MCP ready — add to Claude/Cursor/DSH as a remote MCP server:");
     console.error(`  url: http://${host}:${port}/mcp` + (token ? "  headers: Authorization: Bearer <NETMAX_TOKEN>" : ""));

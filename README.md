@@ -12,7 +12,7 @@
 **npm (MCP server):** `npx -y @netmax/mcp-server`  
 **macOS app:** `brew tap mubasharali24428-crypto/netmax && brew install --cask netmax`
 
-**14 network-diagnostic tools for AI coding agents.** Run speed tests, DNS ranking, bufferbloat
+**15 network-diagnostic tools for AI coding agents.** Run speed tests, DNS ranking, bufferbloat
 grading, jitter, packet loss, WiFi diagnostics — all from inside your AI coding agent.
 
 **Honest bandwidth maximizer for macOS.** NetMax squeezes every bit your plan
@@ -43,10 +43,10 @@ npx -y @netmax/mcp-server
 Then ask your agent to run `full_diagnostics` — it will measure your real network speed, DNS
 latency, bufferbloat grade, jitter, packet loss, and WiFi quality in a single call.
 
-**14 tools:** `measure_speed` · `dns_ranking` · `bufferbloat` · `upload_speed` ·
+**15 tools:** `measure_speed` · `dns_ranking` · `bufferbloat` · `upload_speed` ·
 `packet_loss` · `jitter` · `wifi_info` · `download_file` · `eco_bloat` ·
 `full_diagnostics` · `diagnostic_summary` · `boost` · `parallel_diagnostics` ·
-`session_info`
+`session_info` · `strict_limit`
 
 ### Desktop app (macOS)
 
@@ -99,6 +99,21 @@ python3 netmax.py export --fmt csv --out out.csv
 python3 netmax.py watch --interval 30     # continuous monitor
 ```
 
+### Speed cap (v1.0.7)
+
+```bash
+python3 netmax.py limit --mbps 2 --seconds 1800   # hold 2 Mbps for 30 min
+python3 netmax.py limit --mbps 10 --streams 4     # cap held across all streams
+```
+
+`limit` pins the AGGREGATE download rate at the chosen Mbps for the whole
+window — the cap is divided evenly across the streams, so the sum stays at
+the target however many are open. If the line cannot reach the cap, the
+report says so plainly (no software can create bandwidth the ISP doesn't
+deliver). Long runs of every download mode are served as back-to-back
+chunks, so a 15/30-minute test runs its full window instead of stopping
+when the first ~100 MB test file drains.
+
 ### GUI
 
 ```bash
@@ -110,16 +125,16 @@ subprocess so a failed measurement can never take down the UI.
 
 ## Tests
 
-412 offline tests in the default suite (network fully mocked — safe to run
-anywhere), including the 94 in the engine_store / bridge suites:
+482 offline tests in the default suite (network fully mocked — safe to run
+anywhere), including the 104 in the engine_store / bridge suites:
 
 ```bash
-cd ~/netmax
-python3 -m pytest            # full suite (412: engine + GUI + modules + bridge + store)
+cd ~/netmax-app
+python3 -m pytest            # full suite (482: engine + GUI + modules + bridge + store)
 python3 -m pytest tests/test_netmax.py -v        # engine only
 python3 -m pytest test_netmax_gui.py -v          # GUI only
 python3 -m pytest desktop/engine_store/test_store.py -q   # SQLite layer (38)
-python3 -m pytest desktop/bridge/test_engine_bridge.py -q # bridge (56)
+python3 -m pytest desktop/bridge/test_engine_bridge.py -q # bridge (65)
 python3 -m ruff check .       # lint gate
 ```
 

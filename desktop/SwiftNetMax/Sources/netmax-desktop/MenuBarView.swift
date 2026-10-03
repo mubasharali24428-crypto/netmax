@@ -55,6 +55,17 @@ struct MenuBarView: View {
             .accessibilityLabel("Run Quick Test")
             .accessibilityHint("Starts a short Quick Test and shows results below")
 
+            // W17: selectable Quick Test length (user-requested) — 5/10/15 min.
+            Picker("Quick Test length", selection: $quickTestMinutes) {
+                Text("5 min").tag(5)
+                Text("10 min").tag(10)
+                Text("15 min").tag(15)
+            }
+            .pickerStyle(.segmented)
+            .disabled(status == .running)
+            .accessibilityLabel("Quick Test length")
+            .accessibilityHint("How long the quick test runs")
+
             // W16: Stop on the dashboard (user-requested) — kills the engine.
             if status == .running {
                 StopRunButton(isRunning: true)
@@ -70,6 +81,11 @@ struct MenuBarView: View {
                 runQuickTest(streams: streams, seconds: seconds,
                              completion: finished)
             }
+
+            // W17: Speed Limit — the dedicated red entry point (user-
+            // requested), deliberately separate from every other feature.
+            Divider()
+            SpeedLimitCard()
 
             // W13: live speedometer — real-time throughput of every app on
             // this Mac, sampled each second from interface byte counters.
@@ -304,14 +320,19 @@ struct MenuBarView: View {
         quickTestStoppedByUser = false
         Task {
             do {
+                // W17: boost = baseline + turbo, each leg `seconds` long —
+                // half the picked length per leg so the TOTAL run matches
+                // the picker (5/10/15 min).
+                let perLeg = max(5, quickTestMinutes * 30)
                 // "boost" = baseline vs turbo + gain % — a real C1 engine mode.
-                let output = try await client.run("boost", args: ["--seconds", "5"])
+                let output = try await client.run("boost", args: ["--seconds", "\(perLeg)"])
                 await MainActor.run {
                     // C4: append + process (Quick Test previously never hit
                     // history, so menu-bar / alerts / reload never fired).
                     let record = HistoryStore.shared.append(
-                        mode: "boost", params: ["seconds": 5], raw: output)
-                    resultText = output
+                        mode: "boost", params: ["seconds": perLeg], raw: output)
+                    resultText = "Quick Test — \(quickTestMinutes) min "
+                        + "(boost, two \(perLeg)s legs):\n" + output
                     status = .done
                     reloadHistory()   // fresh run lands in the cards immediately
                     RunPostProcessor.process(record)
@@ -334,6 +355,9 @@ struct MenuBarView: View {
 
     /// W16: set when Stop is pressed during the popover Quick Test.
     @State private var quickTestStoppedByUser = false
+
+    /// W17: Quick Test length in minutes (5/10/15, user-requested).
+    @State private var quickTestMinutes = 5
 }
 
 /// Formatting/tint helpers mirrored from DashboardCardsView's private

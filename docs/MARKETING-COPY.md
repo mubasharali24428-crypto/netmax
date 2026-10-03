@@ -30,7 +30,7 @@ overclaiming): it sells the *skill you demonstrably have* — you wired 7 harnes
 > - A 1-page setup note per harness so you can reproduce it
 >
 > **About me:** I'm a full-stack developer who built and published my own MCP server
-> (`@netmax/mcp-server`, MIT, 14 tools) — this is not my first rodeo.
+> (`@netmax/mcp-server`, MIT, 15 tools) — this is not my first rodeo.
 >
 > **What MCP servers can do (a few examples):** pull network diagnostics, run shell commands,
 > query your Postgres/SQLite, search Notion, trigger CI, fetch APIs with retry logic.
@@ -72,7 +72,7 @@ README + the npm package description + the landing page.
 ### Goal description
 
 > NetMax is a local-first network diagnostics tool for AI coding agents — an MIT-licensed Python
-> engine, a published npm MCP server (`@netmax/mcp-server`, 14 tools), and a macOS menu-bar app.
+> engine, a published npm MCP server (`@netmax/mcp-server`, 15 tools), and a macOS menu-bar app.
 >
 > The macOS app is currently ad-hoc signed because Apple's Developer Program costs **$99/yr**, and
 > this project is pre-revenue. Notarization removes the "unidentified developer" warning for every

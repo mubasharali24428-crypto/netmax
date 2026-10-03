@@ -297,3 +297,13 @@ def test_registry_constants_are_wellformed():
         name, template = entry[0], entry[1]
         assert isinstance(name, str) and name
         assert isinstance(template, str) and template.startswith("https://")
+
+
+def test_registry_mirrors_netmax_endpoint_order():
+    """The dual copy drifts silently (it did for engine/netmax.py once) —
+    names and order must match netmax.ENDPOINTS exactly."""
+    import netmax
+
+    assert [n for n, _ in netmax_endpoints.ENDPOINTS] == [
+        n for n, _ in netmax.ENDPOINTS
+    ]

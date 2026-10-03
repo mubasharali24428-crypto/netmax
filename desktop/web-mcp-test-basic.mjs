@@ -18,7 +18,7 @@ try {
   check("serverVersion", !!ver?.version, `v${ver?.version} (${ver?.name})`);
 
   const tools = await client.listTools();
-  check("listTools", tools.tools.length === 14, `${tools.tools.length} tools (expect 14)`);
+  check("listTools", tools.tools.length === 15, `${tools.tools.length} tools (expect 15)`);
   const names = tools.tools.map(t => t.name).sort().join(",");
 
   const dns = await client.callTool({ name: "dns_ranking", arguments: {} });

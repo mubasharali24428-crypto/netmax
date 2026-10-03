@@ -40,13 +40,15 @@ import SwiftUI
 
 /// One saved Mode Lab configuration (S-013).
 /// Stored as JSON in the UserDefaults array `netmax.presets`; `count` rides
-/// along so a preset restores the full working state.
+/// along so a preset restores the full working state. `mbps` is optional so
+/// presets saved before the limit mode still decode.
 struct ModePreset: Codable, Equatable, Identifiable {
     let name: String
     let mode: String
     var streams: Int
     var seconds: Int
     var count: Int
+    var mbps: Int?
 
     var id: String { name }
 }
@@ -92,15 +94,22 @@ struct SequenceLegResult: Identifiable, Equatable {
 // MARK: - Model
 
 /// The tunable parameters the engine accepts across its modes.
-/// Spelling matches `engine_bridge.py` `_FLAG_SPELLING` (CLI: --streams/--seconds/--count).
+/// Spelling matches `engine_bridge.py` `_FLAG_SPELLING`
+/// (CLI: --streams/--seconds/--count/--mbps).
 private enum ModeParameter: String, CaseIterable {
     case streams
     case seconds
     case count
+    case mbps
 
     var cliFlag: String { "--\(rawValue)" }
 
-    var label: String { rawValue.capitalized }
+    var label: String {
+        switch self {
+        case .mbps: "Speed cap"
+        default: rawValue.capitalized
+        }
+    }
 
     /// Inclusive stepper range — seed catalog subset of
     /// `EngineParameterRanges` (M3 SSOT; always within engine bounds).
@@ -109,6 +118,7 @@ private enum ModeParameter: String, CaseIterable {
         case .streams: EngineParameterRanges.seedStreams
         case .seconds: EngineParameterRanges.quickSeconds
         case .count: EngineParameterRanges.seedCount
+        case .mbps: EngineParameterRanges.mbps
         }
     }
 
@@ -117,6 +127,7 @@ private enum ModeParameter: String, CaseIterable {
         case .streams: "Number of parallel connections used by this mode"
         case .seconds: "Duration of the test in seconds"
         case .count: "Number of probe samples"
+        case .mbps: "Download rate to hold for the whole run, in Mbps"
         }
     }
 }
@@ -148,6 +159,9 @@ private enum ModeCatalog {
                        flags: [.streams, .seconds]),
         ModeDefinition(id: "upload", summary: "Upload-speed probe (Mbps up).",
                        flags: [.seconds]),
+        ModeDefinition(id: "limit",
+                       summary: "Hold a fixed download speed — the cap is kept for the full duration.",
+                       flags: [.streams, .seconds, .mbps]),
         ModeDefinition(id: "loss", summary: "Packet-loss percent over repeated probes.",
                        flags: [.count]),
         ModeDefinition(id: "jitter", summary: "Jitter: mean consecutive RTT delta.",
@@ -180,6 +194,8 @@ struct ModeLabView: View {
     @State private var streams = 8
     @State private var seconds = 10
     @State private var count = 10
+    /// Speed cap for the `limit` mode (Mbps).
+    @State private var mbps = 10
 
     // W12 T4-c (audits 164/165): last session's mode + streams/seconds,
     // restored across launches. Key spellings come straight from the W12
@@ -188,6 +204,7 @@ struct ModeLabView: View {
     @AppStorage("netmax.state.lastMode") private var storedModeID = ""
     @AppStorage("netmax.state.lastStreams") private var storedStreams = 0
     @AppStorage("netmax.state.lastSeconds") private var storedSeconds = 0
+    @AppStorage("netmax.state.lastMbps") private var storedMbps = 0
 
     @State private var status: RunStatus = .idle
     @State private var resultText = ""
@@ -257,6 +274,7 @@ struct ModeLabView: View {
         .onChange(of: selectedModeID) { storedModeID = $0 }
         .onChange(of: streams) { storedStreams = $0 }
         .onChange(of: seconds) { storedSeconds = $0 }
+        .onChange(of: mbps) { storedMbps = $0 }
     }
 
     // MARK: Layout columns (W12 T4-b)
@@ -390,6 +408,10 @@ struct ModeLabView: View {
                       ModeParameter.seconds.range.upperBound)
         count = min(max(preset.count, ModeParameter.count.range.lowerBound),
                     ModeParameter.count.range.upperBound)
+        if let savedMbps = preset.mbps {
+            mbps = min(max(savedMbps, ModeParameter.mbps.range.lowerBound),
+                       ModeParameter.mbps.range.upperBound)
+        }
     }
 
     /// NSAlert text-input prompt (per lane spec) for the new preset's name;
@@ -416,7 +438,8 @@ struct ModeLabView: View {
                                   mode: selectedModeID,
                                   streams: streams,
                                   seconds: seconds,
-                                  count: count))
+                                  count: count,
+                                  mbps: mbps))
         presets = updated
         PresetStore.savePresets(updated)
         activePresetID = name
@@ -491,6 +514,14 @@ struct ModeLabView: View {
             } else {
                 parameterStepper(.seconds, value: $seconds)
             }
+            // Speed cap (limit mode): direct Mbps entry, same pattern as the
+            // duration entry.
+            if selectedMode.supports(.mbps) {
+                SpeedCapEntryView(mbps: $mbps, isRunning: status == .running)
+            } else {
+                parameterStepper(.mbps, value: $mbps)
+                    .opacity(0.55)
+            }
             parameterStepper(.count, value: $count)
         }
     }
@@ -554,6 +585,8 @@ struct ModeLabView: View {
             "\(parameter.range.lowerBound)–\(parameter.range.upperBound) seconds"
         case .count:
             "\(parameter.range.lowerBound)–\(parameter.range.upperBound) probes"
+        case .mbps:
+            "\(parameter.range.lowerBound)–\(parameter.range.upperBound) Mbps speed cap"
         }
     }
 
@@ -812,6 +845,7 @@ struct ModeLabView: View {
         if mode.supports(.streams) { args += [ModeParameter.streams.cliFlag, "\(streams)"] }
         if mode.supports(.seconds) { args += [ModeParameter.seconds.cliFlag, "\(seconds)"] }
         if mode.supports(.count) { args += [ModeParameter.count.cliFlag, "\(count)"] }
+        if mode.supports(.mbps) { args += [ModeParameter.mbps.cliFlag, "\(mbps)"] }
         return args
     }
 
@@ -821,6 +855,7 @@ struct ModeLabView: View {
         if mode.supports(.streams) { params["streams"] = streams }
         if mode.supports(.seconds) { params["seconds"] = seconds }
         if mode.supports(.count) { params["count"] = count }
+        if mode.supports(.mbps) { params["mbps"] = mbps }
         return params
     }
 
@@ -860,6 +895,10 @@ struct ModeLabView: View {
         }
         if storedSeconds >= seedQ.lowerBound && storedSeconds <= seedQ.upperBound {
             seconds = storedSeconds
+        }
+        let capRange = EngineParameterRanges.mbps
+        if storedMbps >= capRange.lowerBound && storedMbps <= capRange.upperBound {
+            mbps = storedMbps
         }
         if ModeCatalog.modes.contains(where: { $0.id == storedModeID }) {
             selectedModeID = storedModeID
@@ -942,6 +981,33 @@ enum ModeLabTests {
               "sequence round-trips in order")
         PresetStore.saveSequence([], suite)
         check(PresetStore.loadSequence(suite).isEmpty, "empty sequence clears")
+
+        // ── limit mode (speed cap) ────────────────────────────────────────
+        check(ModeCatalog.modes.contains { $0.id == "limit" },
+              "limit mode exists in the catalog")
+        let limit = ModeCatalog.definition(for: "limit")
+        check(limit.supports(.streams) && limit.supports(.seconds) && limit.supports(.mbps),
+              "limit supports streams/seconds/mbps")
+        check(!ModeCatalog.definition(for: "baseline").supports(.mbps),
+              "baseline does not take a speed cap")
+        check(!ModeCatalog.definition(for: "dns").supports(.mbps),
+              "dns does not take a speed cap")
+        check(ModeParameter.mbps.range == EngineParameterRanges.mbps,
+              "mbps parameter range mirrors the M3 SSOT")
+
+        // Preset round-trip preserves the speed cap…
+        let capped = ModePreset(name: "2 Mbps hold", mode: "limit",
+                                streams: 4, seconds: 1800, count: 10, mbps: 2)
+        PresetStore.savePresets([capped], suite)
+        check(PresetStore.loadPresets(suite) == [capped],
+              "preset with mbps round-trips intact")
+
+        // …and presets saved before the limit mode still decode (mbps = nil).
+        let legacy = Data(#"[{"name":"Old","mode":"boost","streams":8,"seconds":10,"count":10}]"#
+            .utf8)
+        let legacyDecoded = try? JSONDecoder().decode([ModePreset].self, from: legacy)
+        check(legacyDecoded?.first?.mbps == nil && legacyDecoded?.count == 1,
+              "legacy preset without mbps decodes as nil")
 
         return failures
     }

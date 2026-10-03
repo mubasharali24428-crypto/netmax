@@ -26,7 +26,7 @@ import engine_bridge as eb
 PY = "/opt/fake/bin/python"
 MODES = (
     "baseline", "turbo", "boost", "dns", "bloat", "full",
-    "upload", "loss", "jitter", "wifi",
+    "upload", "limit", "loss", "jitter", "wifi",
 )
 
 
@@ -90,6 +90,8 @@ def test_build_command_uses_resolved_interpreter():
          ["--streams", "8", "--seconds", "30"]),
         ("dns", {}, []),
         ("upload", {"seconds": 15}, ["--seconds", "15"]),
+        ("limit", {"streams": 2, "seconds": 30, "mbps": 2.5},
+         ["--streams", "2", "--seconds", "30", "--mbps", "2.5"]),
         ("loss", {"count": 25}, ["--count", "25"]),
         ("jitter", {"count": 5}, ["--count", "5"]),
         ("wifi", {}, []),
@@ -100,6 +102,21 @@ def test_build_command_maps_only_supported_flags(mode, kwargs, expected_tail):
     cmd, dropped = eb.build_command(mode, **kwargs, python=PY, bundled=False)
     assert cmd == [PY, str(eb.ENGINE_PATH), mode] + expected_tail
     assert dropped == []  # supported flags are never reported as dropped
+
+
+def test_strict_rides_as_bare_flag_on_limit_only():
+    cmd, dropped = eb.build_command(
+        "limit", streams=1, seconds=60, mbps=5.0, strict=True,
+        python=PY, bundled=False)
+    assert cmd[-1] == "--strict" and dropped == []
+    cmd, dropped = eb.build_command(
+        "turbo", streams=8, seconds=10, strict=True,
+        python=PY, bundled=False)
+    assert "--strict" not in cmd and dropped == ["strict"]
+    cmd, dropped = eb.build_command(
+        "limit", streams=1, seconds=60, mbps=5.0, strict=False,
+        python=PY, bundled=False)
+    assert "--strict" not in cmd and dropped == []  # False == absent
 
 
 def test_every_contract_mode_is_known():
@@ -139,10 +156,15 @@ def test_defaults_omit_unset_flags():
         ("count", 1, None),
         ("count", 100, None),
         ("count", 101, "netmax: --count must be 1..100, got 101"),
+        ("mbps", 0.4, "netmax: --mbps must be 0.5..10000, got 0.4"),
+        ("mbps", 0.5, None),
+        ("mbps", 2.5, None),
+        ("mbps", 10_000, None),
+        ("mbps", 10_001, "netmax: --mbps must be 0.5..10000, got 10001"),
     ],
 )
 def test_validate_ranges_boundaries(name, value, expected):
-    kwargs = {"streams": None, "seconds": None, "count": None}
+    kwargs = {"streams": None, "seconds": None, "count": None, "mbps": None}
     kwargs[name] = value
     assert eb.validate_ranges(**kwargs) == expected
 
@@ -167,6 +189,22 @@ def test_run_engine_rejects_out_of_range_before_spawning(tmp_path):
     assert env["mode"] == "boost"
     assert env["data"] is None
     assert env["error"] == "netmax: --seconds must be 5..21600, got 0"
+
+
+def test_limit_mode_forwards_mbps_and_scales_timeout(tmp_path):
+    """limit mode: --mbps rides through untruncated; the bridge watchdog
+    scales with the window so a 30-min hold is never killed mid-run."""
+
+    def runner(cmd, **kw):
+        assert cmd[cmd.index("--mbps") + 1] == "2.5"
+        assert cmd[cmd.index("--seconds") + 1] == "1800"
+        assert kw["timeout"] == 1800 * 2 + eb.TIMEOUT_MARGIN_S
+        return _completed(stdout='{"mbps": 2.4}')
+
+    out = tmp_path / "env.json"
+    code = eb.run_engine("limit", 1, 1800, None, str(out), mbps=2.5, runner=runner)
+    env = json.loads(out.read_text(encoding="utf-8"))
+    assert code == 0 and env["success"] is True and env["mode"] == "limit"
 
 
 def test_bundled_flag_prepends_B_and_keeps_absolute_engine_path():

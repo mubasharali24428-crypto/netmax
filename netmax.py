@@ -25,11 +25,16 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 CF_DOWN = "https://speed.cloudflare.com/__down"
-# Primary/backup sources. Cloudflare's bot layer adaptively 403-blocks
-# repeated hits from one client (returns a 1-byte body that reads as ~0 Mbps),
-# so OVH's static test file leads and CF is the fallback. {cb} = cache-buster.
+# Four sources, static files first. Cloudflare's bot layer adaptively
+# 403-blocks repeated hits from one client (returns a 1-byte body that
+# reads as ~0 Mbps), so it is LAST — OVH/Hetzner/CacheFly statics lead.
+# Vetted 2026-10-03 (HEAD/ranged-GET only): LeaseWeb's /speedtest path is
+# dead (404), Hetzner rejects HEAD but serves GET (which is all we use).
+# {cb} = cache-buster.
 ENDPOINTS: list[tuple[str, str]] = [
     ("OVH", "https://proof.ovh.net/files/100Mb.dat"),
+    ("Hetzner", "https://fsn1-speed.hetzner.com/100MB.bin"),
+    ("CacheFly", "https://cachefly.cachefly.net/100mb.test"),
     ("Cloudflare", f"{CF_DOWN}?bytes=50000000&cb={{cb}}"),
 ]
 RESOLVERS = {
@@ -45,33 +50,87 @@ class NetMaxError(RuntimeError):
 
 # ── throughput ────────────────────────────────────────────────────────────────
 
-def _pull(seconds: float) -> int:
-    """Download via curl until the time cap; return bytes received.
+def _curl_argv(seconds: float, url: str, limit_bps: float | None) -> list[str]:
+    """curl argv for one download chunk, optionally rate-limited.
 
-    Tries each endpoint in order until one delivers data; raises NetMaxError
-    with per-endpoint diagnostics if none do. Exit code 28 (curl timeout) is
-    expected here — every file is far larger than the window by design.
+    limit_bps is PLAIN bytes/second (no k/m suffix — curl's suffixes are
+    1024-based, which would silently misstate a Mbps target).
+    """
+    argv = ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code} %{size_download}",
+            "--max-time", str(int(max(seconds, 1)))]
+    if limit_bps:
+        argv += ["--limit-rate", str(int(limit_bps))]
+    return argv + [url]
 
-    UX-FIX (P0): the write-out now carries %{http_code} and the sample is
+
+# Adaptive endpoint order: an endpoint that hard-failed (429/403/TLS) is
+# deprioritized so long runs don't waste the head of every chunk — and
+# every governor interval — re-hitting a rate-limited CDN before falling
+# back. That repeated dead probe read as a sawtooth on the live speedometer
+# (observed 2026-09-27: OVH 429 → ~12% of every 5 s interval lost to the
+# failed attempt). Cooldown escalates with consecutive failures — a lone
+# blip costs 60 s, but an endpoint that keeps failing (Cloudflare's bot
+# layer adaptively 403ing repeated hits) backs off 5 min, then 1 h max.
+# Any success resets the streak.
+_ENDPOINT_FAIL_UNTIL: dict[str, float] = {}
+_ENDPOINT_FAIL_COUNT: dict[str, int] = {}
+ENDPOINT_COOLDOWN_S = 60.0
+ENDPOINT_COOLDOWN_STEPS = (60.0, 300.0, 3600.0)
+
+
+def _reset_endpoint_health() -> None:
+    _ENDPOINT_FAIL_UNTIL.clear()
+    _ENDPOINT_FAIL_COUNT.clear()
+
+
+def _ordered_endpoints() -> list[tuple[str, str]]:
+    """Healthy endpoints first, cooled-down ones last (still tried)."""
+    now = time.monotonic()
+    healthy = [e for e in ENDPOINTS if _ENDPOINT_FAIL_UNTIL.get(e[0], 0.0) <= now]
+    skipped = [e for e in ENDPOINTS if _ENDPOINT_FAIL_UNTIL.get(e[0], 0.0) > now]
+    return healthy + skipped
+
+
+def _mark_endpoint(name: str, ok: bool) -> None:
+    if ok:
+        _ENDPOINT_FAIL_UNTIL.pop(name, None)
+        _ENDPOINT_FAIL_COUNT.pop(name, None)
+    else:
+        streak = _ENDPOINT_FAIL_COUNT.get(name, 0) + 1
+        _ENDPOINT_FAIL_COUNT[name] = streak
+        wait = ENDPOINT_COOLDOWN_STEPS[min(streak, len(ENDPOINT_COOLDOWN_STEPS)) - 1]
+        _ENDPOINT_FAIL_UNTIL[name] = time.monotonic() + wait
+
+
+def _pull_chunk(seconds: float, limit_bps: float | None,
+                problems: list[str]) -> tuple[int, bool]:
+    """One endpoint sweep: curl until `seconds` elapses or data runs out.
+
+    Returns (bytes, hit_time_cap). hit_time_cap is True when curl ended on
+    the window cap itself (exit 28) — the caller's deadline is then spent
+    and no further chunk should start. Diagnostics accumulate into
+    `problems`; a sweep that delivers nothing returns (0, False).
+
+    UX-FIX (P0): the write-out carries %{http_code} and the sample is
     accepted only when the server answered 2xx. Before this, a rate-limited
     429 with a tiny error body (curl exit 0, size_download=162) counted as
-    "downloaded data" and fabricated throughput — a default 8-stream boost
-    reported a bogus -56% headroom on a link with zero real headroom.
+    "downloaded data" and fabricated throughput.
     """
-    problems: list[str] = []
-    for name, template in ENDPOINTS:
+    for name, template in _ordered_endpoints():
         url = template.format(cb=random.getrandbits(64))
         try:
             proc = subprocess.run(
-                ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code} %{size_download}",
-                 "--max-time", str(seconds), url],
+                _curl_argv(seconds, url, limit_bps),
                 capture_output=True, text=True,
                 timeout=seconds + 15,
             )
         except FileNotFoundError:
-            raise NetMaxError("curl not found on PATH — install curl to measure") from None
+            raise NetMaxError(
+                "curl not found on PATH — install curl to measure"
+            ) from None
         except subprocess.TimeoutExpired:
             problems.append(f"{name}: curl hung past subprocess timeout")
+            _mark_endpoint(name, ok=False)
             continue
         fields = proc.stdout.strip().split()
         if len(fields) == 2 and fields[0].isdigit() and fields[1].isdigit():
@@ -85,6 +144,7 @@ def _pull(seconds: float) -> int:
             problems.append(
                 f"{name}: {proc.stderr.strip() or f'curl exit {proc.returncode} after {received}B'}"
             )
+            _mark_endpoint(name, ok=False)
             continue
         # HTTP status must be 2xx — a 4xx/5xx body (rate-limit page, block
         # page, error JSON) is never throughput, whatever its size.
@@ -93,18 +153,66 @@ def _pull(seconds: float) -> int:
                 f"{name}: HTTP {http_code if http_code is not None else 'unparseable'} "
                 f"({received}B body — not counted as data)"
             )
+            _mark_endpoint(name, ok=False)
             continue
         if received > 0:
-            return received
+            _mark_endpoint(name, ok=True)
+            return received, proc.returncode == 28
         problems.append(f"{name}: 2xx but empty body ({proc.stdout.strip()[:60]!r})")
-    raise NetMaxError("all speed endpoints failed — " + "; ".join(problems))
+        _mark_endpoint(name, ok=False)
+    return 0, False
 
 
-def throughput(streams: int, seconds: float) -> tuple[float, float]:
-    """Open `streams` parallel pulls; return (aggregate Mbps, total MB moved)."""
+def _pull(seconds: float, limit_bps: float | None = None) -> int:
+    """Download for the FULL requested window; return total bytes received.
+
+    Sustains the window: no test file is bigger than ~100 MiB, which a
+    30 Mbps pipe drains in under half a minute — the W15 long-run feature
+    (up to 6 h) therefore serves a run as BACK-TO-BACK curl chunks. A chunk
+    that finishes early (exit 0, file exhausted) is immediately replaced by
+    the next one with a fresh cache-buster; only the window cap (exit 28)
+    ends the pull. Without this loop a "15-minute" run auto-stopped as soon
+    as the first file drained — the reported duration then measured the
+    file size, not the request.
+
+    Resilience: a mid-run chunk failure (Cloudflare 429/403 bot blocks, TLS
+    resets) pauses briefly and retries — a long surveillance run must not
+    die on one blip. Bytes from hard-failed chunks are never counted. Only
+    a window that received zero bytes raises NetMaxError.
+
+    limit_bps caps this stream at N bytes/s via curl --limit-rate (`limit`
+    mode; the caller divides the aggregate cap across streams).
+    """
+    deadline = time.monotonic() + max(float(seconds), 0.0)
+    total = 0
+    problems: list[str] = []
+    while True:
+        chunk_cap = deadline - time.monotonic()
+        if chunk_cap <= 0:
+            break
+        got, hit_cap = _pull_chunk(chunk_cap, limit_bps, problems)
+        total += got
+        if hit_cap:
+            break
+        if got == 0 and time.monotonic() < deadline:
+            time.sleep(min(2.0, deadline - time.monotonic()))
+    if total == 0:
+        raise NetMaxError("all speed endpoints failed — " + "; ".join(problems[-6:]))
+    return total
+
+
+def throughput(streams: int, seconds: float,
+               limit_bps: float | None = None) -> tuple[float, float]:
+    """Open `streams` parallel pulls; return (aggregate Mbps, total MB moved).
+
+    limit_bps (bytes/s) is the AGGREGATE cap; each stream gets an equal
+    share so the sum holds even with every stream open.
+    """
     started = time.monotonic()
+    per_stream_bps = limit_bps / streams if limit_bps else None
     with ThreadPoolExecutor(max_workers=streams) as pool:
-        futures = [pool.submit(_pull, seconds) for _ in range(streams)]
+        futures = [pool.submit(_pull, seconds, per_stream_bps)
+                   for _ in range(streams)]
         counts = [future.result() for future in futures]
     elapsed = max(time.monotonic() - started, 1e-9)
     grand_total = sum(counts)
@@ -405,6 +513,161 @@ def run_bloat(streams: int, seconds: int) -> None:
         )
 
 
+# ── speed cap (limit mode) ───────────────────────────────────────────────────
+
+# curl's limiter paces in chunk bursts and TCP ramps up over the first
+# seconds, so a held rate wobbles around the target — more with many
+# streams (burst granularity × N) and on short windows. Inside this band
+# the run counts as "held"; anything beyond is reported as over/short.
+LIMIT_TOLERANCE = 0.10
+# Closed-loop governor: re-pace curl every LIMIT_INTERVAL_S from measured
+# progress, so the aggregate tracks the target as the line wobbles (WiFi
+# contention, slow start, limiter bursts) instead of trusting one static
+# --limit-rate for the whole window.
+LIMIT_INTERVAL_S = 5.0
+# Max correction per interval, both ways — one noisy interval can never
+# swing the pace wildly (controller stability).
+LIMIT_MAX_CORRECT = 1.5
+# HARD CEILING on the commanded pace: 1.5× the target aggregate, ever.
+# A cap above this can never help — if the line can't reach 1.5× target it
+# can't reach the target either — and without a ceiling a degraded stretch
+# ratchets the pace upward (×1.5 per interval), so a suddenly recovering
+# line would briefly deliver MULTIPLES of the requested speed. This ceiling
+# is what bounds the held rate tightly around the target: worst case is one
+# 5 s interval at 1.5× target while the controller re-aims.
+LIMIT_PACE_CEILING = 1.5
+# This many consecutive dead intervals (no bytes at all) reads as a dead
+# connection: abort honestly instead of "holding" 0 Mbps forever.
+# 60 × 5 s = 5 minutes of total silence survives shorter blips.
+LIMIT_DEAD_INTERVALS = 60
+
+
+def _checked_mbps(value: float) -> float:
+    if not 0.5 <= value <= 10_000:
+        raise NetMaxError(f"--mbps must be 0.5..10000, got {value:g}")
+    return value
+
+
+def _limit_governor(streams: int, seconds: float,
+                    target_bps: float) -> tuple[int, list[float], float]:
+    """Hold target_bps (aggregate bytes/s) for `seconds`; return (bytes, rates, elapsed).
+
+    Each LIMIT_INTERVAL_S slice runs `streams` paced pulls at the current
+    per-stream cap; the cap is then corrected by target/achieved (clamped
+    to ±LIMIT_MAX_CORRECT) so the sum keeps tracking the target even as
+    the line degrades or recovers. The commanded pace is hard-capped at
+    LIMIT_PACE_CEILING × target, so the held rate stays in a tight band
+    around the target no matter how the line wobbles — a degraded stretch
+    can never ratchet the pace into multiples of the request. `rates`
+    holds one Mbps sample per interval for the stability report. A single
+    dead interval (endpoint blip, WiFi dropout) is survived; only
+    LIMIT_DEAD_INTERVALS consecutive dead intervals — or a window with
+    zero bytes — raises NetMaxError.
+    """
+    deadline = time.monotonic() + max(float(seconds), 0.0)
+    per_stream_bps = target_bps / streams
+    pace_ceiling_bps = target_bps * LIMIT_PACE_CEILING
+    total = 0
+    rates: list[float] = []
+    dead_streak = 0
+    slices_done = 0
+    elapsed = 0.0
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        slice_s = min(LIMIT_INTERVAL_S, remaining)
+        started = time.monotonic()
+        counts = [0] * streams
+        with ThreadPoolExecutor(max_workers=streams) as pool:
+            futures = [pool.submit(_pull, slice_s, per_stream_bps)
+                       for _ in range(streams)]
+            for i, future in enumerate(futures):
+                try:
+                    counts[i] = future.result()
+                except NetMaxError:
+                    counts[i] = 0            # dead interval — governor holds on
+        slice_elapsed = max(time.monotonic() - started, 1e-9)
+        elapsed += slice_elapsed
+        got = sum(counts)
+        total += got
+        achieved_bytes_s = got / slice_elapsed          # same unit as target_bps
+        rates.append(achieved_bytes_s * 8 / 1e6)        # Mbps for the report
+        dead_streak = dead_streak + 1 if got == 0 else 0
+        if dead_streak >= LIMIT_DEAD_INTERVALS:
+            raise NetMaxError(
+                f"line delivered nothing for {dead_streak} consecutive "
+                f"{int(LIMIT_INTERVAL_S)}s intervals — connection looks dead"
+            )
+        # Re-pace for the next interval: aim at the target, clamped so one
+        # noisy interval can never swing the pace wildly. Three cases keep
+        # the pace unchanged: the FIRST interval (TCP slow-start ramp — the
+        # low reading is the connection warming up, not the cap being too
+        # tight), a starvation interval (<25% of target — boosting into a
+        # recovering line only overshoots), and anything inside a ±3%
+        # deadband (correcting inside measurement noise oscillates).
+        slices_done += 1
+        if got > 0 and slices_done > 1 and achieved_bytes_s >= 0.25 * target_bps:
+            factor = target_bps / achieved_bytes_s
+            if 0.97 * target_bps <= achieved_bytes_s <= 1.03 * target_bps:
+                factor = 1.0
+            factor = min(max(factor, 1 / LIMIT_MAX_CORRECT), LIMIT_MAX_CORRECT)
+            per_stream_bps *= factor
+        # The ceiling is unconditional — warm-up, corrections, everything is
+        # bounded by it, so the commanded pace can never exceed 1.5× target.
+        per_stream_bps = min(per_stream_bps, pace_ceiling_bps / streams)
+    if total == 0:
+        raise NetMaxError("no data received — cannot hold the speed cap")
+    return total, rates, elapsed
+
+
+def run_limit(streams: int, seconds: int, mbps: float) -> None:
+    """Hold the download rate at `mbps` for the whole window — no more, no less.
+
+    A closed-loop governor re-paces curl every few seconds from measured
+    progress, so the aggregate stays pinned at the target over long runs
+    as the line wobbles — and however many streams are open, the cap is
+    divided evenly across them. If the line cannot reach the cap the
+    shortfall is stated plainly (extra streams cannot create bandwidth
+    the ISP does not deliver).
+    """
+    target_bps = mbps * 1e6 / 8
+    total, rates, elapsed = _limit_governor(streams, seconds, target_bps)
+    held = total * 8 / max(elapsed, 1e-9) / 1e6
+    _hr(f"Limit — holding {mbps:g} Mbps with {streams} stream(s)")
+    _print_speed("capped", streams, held, total / 1e6, int(seconds))
+    delta = (held / mbps - 1) * 100
+    if abs(delta) <= LIMIT_TOLERANCE * 100:
+        print(f"target held: {held:.2f} Mbps vs {mbps:g} requested "
+              f"({delta:+.1f}%) for the full {int(seconds)}s window.")
+    elif held < mbps:
+        print(
+            f"short of the cap: the line delivered {held:.2f} Mbps against a "
+            f"{mbps:g} Mbps target ({delta:+.1f}%). No software can create "
+            "the missing bandwidth — the cap was set above what the link gave."
+        )
+    else:
+        print(
+            f"cap overrun: {held:.2f} Mbps vs {mbps:g} requested ({delta:+.1f}%). "
+            "curl paces in bursts — try fewer streams or a lower cap."
+        )
+    if len(rates) > 1:
+        band = mbps * LIMIT_TOLERANCE
+        in_band = sum(1 for r in rates if abs(r - mbps) <= band)
+        print(
+            f"stability: {in_band * 100 / len(rates):.0f}% of "
+            f"{int(LIMIT_INTERVAL_S)}s intervals within "
+            f"±{LIMIT_TOLERANCE * 100:.0f}% "
+            f"(min {min(rates):.2f}, mean {statistics.fmean(rates):.2f}, "
+            f"max {max(rates):.2f} Mbps)"
+        )
+    print(
+        f"band guard: the pace was hard-limited to "
+        f"{mbps * LIMIT_PACE_CEILING:g} Mbps "
+        f"({LIMIT_PACE_CEILING:g}× your {mbps:g} target) for the entire run."
+    )
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 # W15: duration bounds. Quick tests stay 5–30 s; long surveillance runs
@@ -479,6 +742,16 @@ def main(argv: list[str] | None = None) -> None:
     sp_bloat = sub.add_parser("bloat-eco", help="eco bufferbloat estimate (~100 KB)")
     sp_up = sub.add_parser("upload", help="upload-speed probe (Mbps up)")
     sp_up.add_argument("--seconds", type=int, default=10)
+    # Speed-cap mode: hold a fixed download rate for the whole window.
+    sp_lim = sub.add_parser("limit", help="hold a fixed download rate (Mbps cap)")
+    sp_lim.add_argument("--streams", type=int, default=1)
+    sp_lim.add_argument("--seconds", type=int, default=10)
+    sp_lim.add_argument("--mbps", type=float, required=True,
+                        help="target download rate in Mbps (0.5..10000)")
+    sp_lim.add_argument("--strict", action="store_true",
+                        help="system-wide kernel-enforced cap via dnctl+pf "
+                             "(macOS, needs sudo) — shapes ALL traffic, "
+                             "not just test downloads")
     sp_loss = sub.add_parser("loss", help="packet-loss percent")
     sp_loss.add_argument("--count", type=int, default=10)
     sp_jit = sub.add_parser("jitter", help="jitter (mean consecutive RTT delta)")
@@ -577,6 +850,28 @@ def main(argv: list[str] | None = None) -> None:
             )
             _hr("Upload probe")
             print(f"upload          {mbps:>7.1f} Mbps   ({mb:.1f} MB sent)")
+        elif cmd == "limit":
+            if getattr(args, "strict", False):
+                import netmax_shape
+                _mbps = _checked_mbps(args.mbps)
+                _seconds = _checked_duration(args.seconds)
+                try:
+                    netmax_shape.require_root(_mbps)
+                    _hr(f"Strict limit — system-wide ceiling at {_mbps:g} Mbps")
+                    print("shaping ALL off-machine traffic via dnctl+pf "
+                          "(loopback untouched); --streams is ignored in this mode.")
+                    netmax_shape.hold(_mbps, _seconds)
+                except netmax_shape.ShapeError as exc:
+                    print(f"netmax: {exc}", file=sys.stderr)
+                    sys.exit(1)
+                print(f"cap window complete ({_seconds}s at {_mbps:g} Mbps ceiling); "
+                      "pipe + anchor removed, pf restored.")
+            else:
+                run_limit(
+                    _checked(args.streams, 1, 50, "--streams"),
+                    _checked_duration(args.seconds),
+                    _checked_mbps(args.mbps),
+                )
         elif cmd == "loss":
             import netmetrics
             loss = netmetrics.packet_loss(count=_checked(args.count, 1, 100, "--count"))
@@ -634,6 +929,7 @@ MODE_HELP = {
     "dns": "rank DNS resolvers",
     "bloat": "bufferbloat: latency under load grade",
     "full": "everything + verdict",
+    "limit": "hold a fixed download rate (--mbps) for the window",
 }
 
 

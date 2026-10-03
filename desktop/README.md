@@ -7,7 +7,7 @@ Two surfaces, one engine:
 - **NetMaxDesktop** — a double-clickable macOS **menu-bar app** wrapping the same engine
   (documented lower in this file).
 
-## MCP Server — 14 network-diagnostic tools for AI coding agents
+## MCP Server — 15 network-diagnostic tools for AI coding agents
 
 Wire NetMax into any MCP-compatible harness as a **free** stdio server. Runtime needs
 Node ≥ 18 **plus** Python 3.10+ and `curl` (the server shells out to the bundled NetMax
@@ -38,7 +38,8 @@ Or download the DMG from the [v1.0.0 release](https://github.com/mubasharali2442
 
 Tools: `measure_speed`, `dns_ranking`, `bufferbloat`, `upload_speed`, `packet_loss`,
 `jitter`, `wifi_info`, `download_file`, `eco_bloat`, `full_diagnostics`,
-`diagnostic_summary`, `boost`, `parallel_diagnostics`, `session_info`. Full detail:
+`diagnostic_summary`, `boost`, `parallel_diagnostics`, `session_info`,
+`strict_limit`. Full detail:
 [`MCP-README.md`](./MCP-README.md).
 
 Run standalone: `node netmax-mcp-server.mjs`

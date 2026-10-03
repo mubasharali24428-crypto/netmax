@@ -16,10 +16,13 @@ import random
 import urllib.request
 from urllib.request import urlopen
 
-# Mirrors netmax.ENDPOINTS: OVH leads (Cloudflare's bot layer adaptively 403s
-# repeated hits), CF is the fallback. {cb} = cache-buster placeholder.
+# Mirrors netmax.ENDPOINTS: statics lead (OVH, Hetzner, CacheFly),
+# Cloudflare last (bot layer adaptively 403s repeated hits).
+# Vetted 2026-10-03; LeaseWeb dropped (dead path). {cb} = cache-buster.
 ENDPOINTS: list[tuple[str, str]] = [
     ("OVH", "https://proof.ovh.net/files/100Mb.dat"),
+    ("Hetzner", "https://fsn1-speed.hetzner.com/100MB.bin"),
+    ("CacheFly", "https://cachefly.cachefly.net/100mb.test"),
     ("Cloudflare", "https://speed.cloudflare.com/__down?bytes=50000000&cb={cb}"),
 ]
 

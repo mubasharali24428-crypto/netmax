@@ -22,6 +22,58 @@ import netmax
 FakeProc = namedtuple("FakeProc", "stdout stderr returncode")
 
 
+class FastClock:
+    """time.monotonic stand-in that advances `step` s per read.
+
+    The sustained _pull loop runs back-to-back chunks until a real deadline;
+    a clock that advances per read lets offline tests drive that loop to its
+    deadline instantly, and `time.sleep` is patched to a no-op alongside it.
+    """
+
+    def __init__(self, step: float = 1.0):
+        self.now = 0.0
+        self.step = step
+
+    def __call__(self) -> float:
+        self.now += self.step
+        return self.now
+
+
+@pytest.fixture
+def fast_pull_clock(monkeypatch):
+    """Make the sustained pull loop terminate immediately (no real waiting)."""
+    clock = FastClock()
+    monkeypatch.setattr(netmax.time, "monotonic", clock)
+    monkeypatch.setattr(netmax.time, "sleep", lambda _s: None)
+    return clock
+
+
+class ManualClock:
+    """time.monotonic stand-in that only moves when the test advances it.
+
+    Chunk fakes advance it themselves (simulating the chunk's real
+    duration), so sweep counts stay deterministic no matter how many
+    internal clock reads the implementation makes.
+    """
+
+    def __init__(self):
+        self.now = 0.0
+
+    def advance(self, dt: float) -> None:
+        self.now += dt
+
+    def __call__(self) -> float:
+        return self.now
+
+
+@pytest.fixture(autouse=True)
+def _clean_endpoint_health():
+    """Adaptive endpoint-health memory must not leak between tests."""
+    netmax._reset_endpoint_health()
+    yield
+    netmax._reset_endpoint_health()
+
+
 # ── throughput / _pull ────────────────────────────────────────────────────────
 
 
@@ -55,14 +107,15 @@ class TestPull:
             if "ovh.net" in argv[-1]:
                 # curl exit 0, 2-field write-out, HTTP 429 + 162B error body
                 return FakeProc("429 162", "", 0)
-            return FakeProc("200 999", "", 0)
+            # exit 28 = window cap reached — ends the sustained pull
+            return FakeProc("200 999", "", 28)
 
         monkeypatch.setattr(subprocess, "run", fake_run)
         assert netmax._pull(5) == 999
-        assert len(seen) == len(netmax.ENDPOINTS)
+        assert len(seen) == 2  # OVH fails, Hetzner (2nd) carries, cap ends pull
 
     def test_429_on_every_endpoint_raises_instead_of_returning_bytes(
-        self, monkeypatch
+        self, monkeypatch, fast_pull_clock
     ):
         """UX-FIX acceptance: all-429 must fail loudly with the HTTP code visible."""
         monkeypatch.setattr(
@@ -80,13 +133,15 @@ class TestPull:
             if "ovh.net" in argv[-1]:
                 # 200 but zero bytes delivered
                 return FakeProc("200 0", "403 Forbidden", 0)
-            return FakeProc("200 999", "", 0)
+            return FakeProc("200 999", "", 28)  # exit 28: window cap reached
 
         monkeypatch.setattr(subprocess, "run", fake_run)
         assert netmax._pull(5) == 999
-        assert len(seen) == len(netmax.ENDPOINTS)
+        assert len(seen) == 2  # OVH empty, Hetzner (2nd) carries, cap ends pull
 
-    def test_raises_netmaxerror_when_all_endpoints_fail(self, monkeypatch):
+    def test_raises_netmaxerror_when_all_endpoints_fail(
+        self, monkeypatch, fast_pull_clock
+    ):
         monkeypatch.setattr(
             subprocess, "run",
             lambda argv, **kw: FakeProc("", "", 6),
@@ -94,7 +149,9 @@ class TestPull:
         with pytest.raises(netmax.NetMaxError, match="all speed endpoints failed"):
             netmax._pull(5)
 
-    def test_non_numeric_stdout_treated_as_zero_bytes(self, monkeypatch):
+    def test_non_numeric_stdout_treated_as_zero_bytes(
+        self, monkeypatch, fast_pull_clock
+    ):
         monkeypatch.setattr(
             subprocess, "run",
             lambda argv, **kw: FakeProc("not-a-number", "", 0),
@@ -103,7 +160,9 @@ class TestPull:
         with pytest.raises(netmax.NetMaxError):
             netmax._pull(5)
 
-    def test_old_single_field_writeout_is_rejected(self, monkeypatch):
+    def test_old_single_field_writeout_is_rejected(
+        self, monkeypatch, fast_pull_clock
+    ):
         """Guard against resurrecting the pre-fix curl write-out.
 
         The write-out MUST request http_code first — a bare %{size_download}
@@ -115,6 +174,385 @@ class TestPull:
         )
         with pytest.raises(netmax.NetMaxError):
             netmax._pull(5)
+
+
+class TestSustainedPull:
+    """Long-run contract: chunks repeat until the window cap (auto-stop fix).
+
+    Regression: _pull used to return on the FIRST clean finish (exit 0), so
+    any run longer than one test file (100 MiB ≈ 26 s at 32 Mbps) auto-stopped
+    before the requested duration — a 15-min run died in half a minute.
+    """
+
+    def test_back_to_back_chunks_fill_the_window(self, monkeypatch):
+        """Chunks repeat until the window is spent (auto-stop regression)."""
+        clock = ManualClock()
+        monkeypatch.setattr(netmax.time, "monotonic", clock)
+        monkeypatch.setattr(netmax.time, "sleep", lambda _s: None)
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append(argv)
+            clock.advance(4.0)             # each 100 MB chunk lasts 4 s
+            return FakeProc("200 1000", "", 0)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        # 10 s window / 4 s per chunk = three chunks, ended by the deadline
+        assert netmax._pull(10) == 3000
+        assert len(calls) == 3
+
+    def test_each_chunk_capped_at_remaining_window(self, monkeypatch):
+        """A chunk's --max-time covers the time still owed, not the full one."""
+        clock = ManualClock()
+        monkeypatch.setattr(netmax.time, "monotonic", clock)
+        monkeypatch.setattr(netmax.time, "sleep", lambda _s: None)
+        caps = []
+
+        def fake_run(argv, **kwargs):
+            caps.append(int(argv[argv.index("--max-time") + 1]))
+            clock.advance(4.0)
+            return FakeProc("200 10", "", 0)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert netmax._pull(10) == 30
+        assert caps == [10, 6, 2]
+
+    def test_midrun_blip_does_not_abort_the_run(self, monkeypatch):
+        """One failed sweep mid-window pauses and retries — a long run must
+        not die on a transient endpoint error, and the failed endpoint is
+        deprioritized for the rest of the window."""
+        clock = ManualClock()
+        monkeypatch.setattr(netmax.time, "monotonic", clock)
+        monkeypatch.setattr(netmax.time, "sleep", lambda _s: None)
+        ovh_calls = []
+        cf_calls = []
+
+        def fake_run(argv, **kwargs):
+            clock.advance(1.0)             # every curl attempt costs 1 s
+            if "ovh.net" in argv[-1]:
+                ovh_calls.append(1)
+                if len(ovh_calls) == 2:    # OVH dies on its second use
+                    return FakeProc("", "", 7)
+                return FakeProc("200 100", "", 0)
+            cf_calls.append(1)
+            return FakeProc("200 100", "", 0)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        total = netmax._pull(10)           # must NOT raise despite the blip
+        # 9 successful sweeps of 100 B each in the 10 s window; OVH is only
+        # tried twice (its failure marks it for the 60 s cooldown)
+        assert total == 900
+        assert len(ovh_calls) == 2
+        assert len(cf_calls) == 8
+
+    def test_rate_limited_endpoint_deprioritized(self, monkeypatch):
+        """Adaptive order (observed live): a 429-ing CDN is skipped on later
+        sweeps so a long run stops losing the head of every interval to it —
+        that repeated dead probe read as a sawtooth on the speedometer."""
+        seen = []
+
+        def fake_run(argv, **kw):
+            seen.append(argv[-1])
+            if "ovh.net" in argv[-1]:
+                return FakeProc("429 162", "", 0)
+            return FakeProc("200 100", "", 28)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert netmax._pull(5) == 100          # sweep 1: OVH fails, CF works
+        assert any("ovh.net" in u for u in seen)
+        seen.clear()
+        assert netmax._pull(5) == 100          # sweep 2: OVH skipped entirely
+        assert not any("ovh.net" in u for u in seen)
+
+    def test_first_failure_cools_down_60s(self, monkeypatch):
+        """Breaker step 1 (unchanged): a lone blip costs 60 s."""
+        clock = ManualClock()
+        monkeypatch.setattr(netmax.time, "monotonic", clock)
+        netmax._mark_endpoint("OVH", ok=False)
+        assert next(n for n, _ in netmax._ordered_endpoints()) == "Hetzner"
+        clock.advance(59.0)
+        assert next(n for n, _ in netmax._ordered_endpoints()) == "Hetzner"
+        clock.advance(2.0)                        # t=61: cooldown spent
+        assert next(n for n, _ in netmax._ordered_endpoints()) == "OVH"
+
+    def test_repeated_failures_escalate_to_1h(self, monkeypatch):
+        """Breaker steps 2-3: 2nd consecutive fail → 5 min, 3rd+ → 1 h."""
+        clock = ManualClock()
+        monkeypatch.setattr(netmax.time, "monotonic", clock)
+        netmax._mark_endpoint("OVH", ok=False)     # streak 1 → 60 s
+        clock.advance(61.0)
+        netmax._mark_endpoint("OVH", ok=False)     # streak 2 → 300 s
+        clock.advance(299.0)                      # t=360: still cooling
+        assert next(n for n, _ in netmax._ordered_endpoints()) == "Hetzner"
+        clock.advance(2.0)                        # t=362: 300 s spent
+        assert next(n for n, _ in netmax._ordered_endpoints()) == "OVH"
+        netmax._mark_endpoint("OVH", ok=False)     # streak 3 → 3600 s
+        clock.advance(3599.0)
+        assert next(n for n, _ in netmax._ordered_endpoints()) == "Hetzner"
+        clock.advance(2.0)
+        assert next(n for n, _ in netmax._ordered_endpoints()) == "OVH"
+
+    def test_success_resets_breaker_streak(self, monkeypatch):
+        """Any success clears the streak — the next fail is 60 s again."""
+        clock = ManualClock()
+        monkeypatch.setattr(netmax.time, "monotonic", clock)
+        netmax._mark_endpoint("OVH", ok=False)
+        netmax._mark_endpoint("OVH", ok=False)     # streak 2
+        netmax._mark_endpoint("OVH", ok=True)      # reset
+        netmax._mark_endpoint("OVH", ok=False)     # streak 1 → 60 s
+        assert netmax._ENDPOINT_FAIL_UNTIL["OVH"] == 60.0
+
+    def test_zero_bytes_over_the_whole_window_raises(
+        self, monkeypatch, fast_pull_clock
+    ):
+        monkeypatch.setattr(
+            subprocess, "run", lambda argv, **kw: FakeProc("429 1", "", 0)
+        )
+        with pytest.raises(netmax.NetMaxError):
+            netmax._pull(5)
+
+    def test_three_refuse_fourth_carries(self, monkeypatch):
+        """4-way rotation: OVH/Hetzner/CacheFly 429 in one sweep, CF
+        carries it — the run survives throttling that killed the old
+        2-endpoint rotation outright."""
+        seen = []
+
+        def fake_run(argv, **kw):
+            seen.append(argv[-1])
+            if "cloudflare" in argv[-1]:
+                return FakeProc("200 100", "", 28)
+            return FakeProc("429 162", "", 0)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        assert netmax._pull(5) == 100
+        hosts = " ".join(seen)
+        assert "ovh.net" in hosts and "hetzner" in hosts
+        assert "cachefly" in hosts and "cloudflare" in hosts
+
+    def test_all_four_refuse_raises_with_every_name(
+        self, monkeypatch, fast_pull_clock
+    ):
+        """Total refusal still fails honestly — and names every endpoint
+        tried, so the operator sees it was 4-wide, not 1 flaky CDN."""
+        monkeypatch.setattr(
+            subprocess, "run", lambda argv, **kw: FakeProc("429 1", "", 0)
+        )
+        with pytest.raises(netmax.NetMaxError, match="Hetzner"):
+            netmax._pull(5)
+
+    def test_limit_rate_flag_passed_when_capped(self, monkeypatch):
+        argvs = []
+        monkeypatch.setattr(
+            subprocess, "run",
+            lambda argv, **kw: (argvs.append(argv), FakeProc("200 1", "", 28))[1],
+        )
+        netmax._pull(5, limit_bps=250_000)
+        assert argvs[0][argvs[0].index("--limit-rate") + 1] == "250000"
+
+    def test_no_limit_rate_flag_when_uncapped(self, monkeypatch):
+        argvs = []
+        monkeypatch.setattr(
+            subprocess, "run",
+            lambda argv, **kw: (argvs.append(argv), FakeProc("200 1", "", 28))[1],
+        )
+        netmax._pull(5)
+        assert "--limit-rate" not in argvs[0]
+
+
+class TestLimitGovernor:
+    """Closed-loop cap controller: re-paces curl every interval so the
+    aggregate tracks the target as the line wobbles (long-run strength).
+
+    With FastClock(step=1.0) each governor interval consumes exactly three
+    clock reads (deadline check, interval start, interval end), so a slice
+    measures 1.0 s and a 10 s window runs three intervals.
+    """
+
+    @staticmethod
+    def _paced_line(seen_caps, ratio):
+        """Fake _pull delivering `ratio` × whatever cap it was given."""
+        def fake(seconds, limit_bps=None):
+            seen_caps.append(limit_bps)
+            return int((limit_bps or 0) * ratio * 1.0)
+        return fake
+
+    def test_warmup_then_converges_when_line_runs_below_cap(
+        self, monkeypatch, fast_pull_clock
+    ):
+        seen_caps = []
+        monkeypatch.setattr(netmax, "_pull", self._paced_line(seen_caps, 0.8))
+        total, rates, elapsed = netmax._limit_governor(1, 10, 250_000)
+        # interval 1 is warm-up (cap untouched); interval 2 corrects ×1.25;
+        # interval 3 lands inside the deadband and holds.
+        assert seen_caps == [250_000, 250_000, 312_500]
+        assert rates == pytest.approx([1.6, 1.6, 2.0])
+        assert elapsed == pytest.approx(3.0)
+        assert total == 650_000
+
+    def test_correction_is_clamped_on_collapse(self, monkeypatch, fast_pull_clock):
+        seen_caps = []
+        monkeypatch.setattr(netmax, "_pull", self._paced_line(seen_caps, 0.5))
+        netmax._limit_governor(1, 10, 250_000)
+        # line at 50% of cap: raw correction ×2 is clamped to ×1.5,
+        # applied after the warm-up interval (caps[2] = interval 3's cap)
+        assert seen_caps[2] == pytest.approx(250_000 * netmax.LIMIT_MAX_CORRECT)
+
+    def test_starvation_interval_does_not_boost(self, monkeypatch, fast_pull_clock):
+        seen_caps = []
+        # 10% of cap: a starvation blip — boosting into a recovering line
+        # would only overshoot, so the cap holds.
+        monkeypatch.setattr(netmax, "_pull", self._paced_line(seen_caps, 0.1))
+        netmax._limit_governor(1, 10, 250_000)
+        assert seen_caps == [250_000, 250_000, 250_000]
+
+    def test_correction_is_clamped_on_overshoot(self, monkeypatch, fast_pull_clock):
+        seen_caps = []
+        monkeypatch.setattr(netmax, "_pull", self._paced_line(seen_caps, 2.0))
+        netmax._limit_governor(1, 10, 250_000)
+        # limiter overshoot ×2: correction clamped to ÷1.5, applied after
+        # the warm-up interval (caps[2] = interval 3's cap)
+        assert seen_caps[2] == pytest.approx(250_000 / netmax.LIMIT_MAX_CORRECT)
+
+    def test_cap_split_across_streams(self, monkeypatch, fast_pull_clock):
+        seen_caps = []
+        monkeypatch.setattr(netmax, "_pull", self._paced_line(seen_caps, 1.0))
+        netmax._limit_governor(4, 10, 250_000)
+        assert seen_caps[0] == pytest.approx(250_000 / 4)
+
+    def test_survives_midrun_blips(self, monkeypatch, fast_pull_clock):
+        calls = []
+
+        def flaky(seconds, limit_bps=None):
+            calls.append(limit_bps)
+            if len(calls) == 2:             # one whole dead interval
+                raise netmax.NetMaxError("endpoint blip")
+            return int((limit_bps or 0) * 1.0)
+
+        monkeypatch.setattr(netmax, "_pull", flaky)
+        total, rates, _elapsed = netmax._limit_governor(1, 10, 250_000)
+        assert total == 500_000            # only the two live intervals count
+        assert rates == pytest.approx([2.0, 0.0, 2.0])
+
+    def test_dead_line_aborts_after_streak(self, monkeypatch, fast_pull_clock):
+        def dead(seconds, limit_bps=None):
+            raise netmax.NetMaxError("all speed endpoints failed")
+
+        monkeypatch.setattr(netmax, "_pull", dead)
+        with pytest.raises(netmax.NetMaxError, match="connection looks dead"):
+            netmax._limit_governor(1, 300, 250_000)
+
+    def test_pace_never_exceeds_ceiling_during_degradation(
+        self, monkeypatch, fast_pull_clock
+    ):
+        """Hard band guarantee: a degraded line must never ratchet the
+        commanded pace past LIMIT_PACE_CEILING × target (user report: 2 Mbps
+        selected must never deliver anything like 10 or 20)."""
+        seen_caps = []
+        monkeypatch.setattr(netmax, "_pull", self._paced_line(seen_caps, 0.6))
+        netmax._limit_governor(1, 20, 250_000)
+        ceiling = 250_000 * netmax.LIMIT_PACE_CEILING
+        assert max(seen_caps) <= ceiling + 1e-6
+        assert max(seen_caps) == pytest.approx(ceiling)  # ratchet hits the wall
+
+    def test_recovery_after_degradation_stays_in_band(
+        self, monkeypatch, fast_pull_clock
+    ):
+        """Degraded stretch (line at 60%) then a healthy line: the first
+        healthy interval may touch the 1.5× ceiling, and the very next
+        interval is re-aimed exactly back at the target — never multiples."""
+        seen_caps = []
+
+        def line(seconds, limit_bps=None):
+            seen_caps.append(limit_bps)
+            ratio = 0.6 if len(seen_caps) <= 2 else 1.0
+            return int((limit_bps or 0) * ratio * 1.0)
+
+        monkeypatch.setattr(netmax, "_pull", line)
+        _total, rates, _elapsed = netmax._limit_governor(1, 20, 250_000)
+        ceiling = 250_000 * netmax.LIMIT_PACE_CEILING
+        assert max(seen_caps) <= ceiling + 1e-6
+        # interval 3 ran at the ceiling (line recovered), interval 4 is
+        # re-aimed exactly back at the target.
+        assert seen_caps[3] == pytest.approx(250_000)
+        assert rates[3] == pytest.approx(2.0)
+
+    def test_zero_byte_window_raises(self, monkeypatch, fast_pull_clock):
+        def dead(seconds, limit_bps=None):
+            raise netmax.NetMaxError("all speed endpoints failed")
+
+        monkeypatch.setattr(netmax, "_pull", dead)
+        with pytest.raises(netmax.NetMaxError, match="no data received"):
+            netmax._limit_governor(1, 10, 250_000)
+
+
+class TestLimitMode:
+    @staticmethod
+    def _governor_spy(seen, total, rates, elapsed):
+        def fake(streams, seconds, target_bps):
+            seen.update(streams=streams, seconds=seconds, target_bps=target_bps)
+            return total, rates, elapsed
+        return fake
+
+    def test_cap_passed_as_aggregate_bytes_per_second(self, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(
+            netmax, "_limit_governor",
+            self._governor_spy(seen, 500_000, [2.0, 2.0], 2.0))
+        netmax.run_limit(4, 10, 2.0)
+        # 2 Mbps = 250_000 B/s AGGREGATE — the governor splits it per stream
+        assert seen["target_bps"] == pytest.approx(2.0 * 1e6 / 8)
+        assert (seen["streams"], seen["seconds"]) == (4, 10)
+
+    def test_held_verdict_with_stability(self, capsys, monkeypatch):
+        monkeypatch.setattr(
+            netmax, "_limit_governor",
+            lambda s, sec, t: (2_525_000, [2.0, 2.04], 10.0))
+        netmax.run_limit(1, 10, 2.0)
+        out = capsys.readouterr().out
+        assert "target held" in out
+        assert "stability:" in out
+
+    def test_shortfall_reported_plainly(self, capsys, monkeypatch):
+        monkeypatch.setattr(
+            netmax, "_limit_governor",
+            lambda s, sec, t: (1_500_000, [1.2, 1.2], 10.0))
+        netmax.run_limit(1, 10, 2.0)
+        assert "short of the cap" in capsys.readouterr().out
+
+    def test_overrun_reported(self, capsys, monkeypatch):
+        monkeypatch.setattr(
+            netmax, "_limit_governor",
+            lambda s, sec, t: (3_750_000, [3.0], 10.0))
+        netmax.run_limit(1, 10, 2.0)
+        out = capsys.readouterr().out
+        assert "cap overrun" in out
+        # a single interval carries no stability information — line omitted
+        assert "stability:" not in out
+
+
+class TestLimitCli:
+    def test_cli_wiring(self, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(
+            netmax, "run_limit",
+            lambda s, sec, m: seen.update(s=s, sec=sec, m=m))
+        netmax.main(["limit", "--mbps", "2.5", "--seconds", "20", "--streams", "3"])
+        assert seen == {"s": 3, "sec": 20, "m": 2.5}
+
+    def test_defaults_single_stream_ten_seconds(self, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(
+            netmax, "run_limit",
+            lambda s, sec, m: seen.update(s=s, sec=sec, m=m))
+        netmax.main(["limit", "--mbps", "2"])
+        assert seen == {"s": 1, "sec": 10, "m": 2.0}
+
+    def test_mbps_out_of_band_fails(self, monkeypatch):
+        monkeypatch.setattr(netmax, "run_limit", lambda *a: None)
+        with pytest.raises(SystemExit):
+            netmax.main(["limit", "--mbps", "0.2"])
+        with pytest.raises(SystemExit):
+            netmax.main(["limit", "--mbps", "10001"])
 
 
 class TestThroughput:
@@ -130,7 +568,7 @@ class TestThroughput:
                 return 11.0
 
         monkeypatch.setattr(netmax.time, "monotonic", fake_clock)
-        monkeypatch.setattr(netmax, "_pull", lambda seconds: 1_000_000)
+        monkeypatch.setattr(netmax, "_pull", lambda seconds, limit_bps=None: 1_000_000)
         mbps, mb = netmax.throughput(4, 1)
         assert mbps == pytest.approx(8 * 4_000_000 / 1e6)  # 32 Mbit in 1 s = 32 Mbps
         assert mb == pytest.approx(4.0)
@@ -138,7 +576,7 @@ class TestThroughput:
     def test_single_stream_matches_pull_bytes(self, monkeypatch):
         clock = iter([0.0, 2.0])
         monkeypatch.setattr(netmax.time, "monotonic", lambda: next(iter([next(clock, 2.0)])))
-        monkeypatch.setattr(netmax, "_pull", lambda seconds: 2_000_000)
+        monkeypatch.setattr(netmax, "_pull", lambda seconds, limit_bps=None: 2_000_000)
         mbps, mb = netmax.throughput(1, 2)
         assert mb == pytest.approx(2.0)
         # 2 MB over 2 s = 8 Mbps
@@ -391,12 +829,14 @@ class TestReporting:
 
 
 class TestEndpointsFallbackOrder:
-    """ENDPOINTS leads with OVH and falls back to Cloudflare (CF 403-blocks)."""
+    """ENDPOINTS leads with static files (OVH, Hetzner, CacheFly);
+    Cloudflare is LAST (its bot layer 403-blocks repeated hits)."""
 
     def test_order_and_templates(self):
-        assert [name for name, _ in netmax.ENDPOINTS] == ["OVH", "Cloudflare"]
+        assert [name for name, _ in netmax.ENDPOINTS] == [
+            "OVH", "Hetzner", "CacheFly", "Cloudflare"]
         ovh_url = netmax.ENDPOINTS[0][1]
-        cf_url = netmax.ENDPOINTS[1][1]
+        cf_url = netmax.ENDPOINTS[3][1]
         assert ovh_url == "https://proof.ovh.net/files/100Mb.dat"
         assert cf_url.startswith(netmax.CF_DOWN)
         assert "{cb}" in cf_url  # cache-buster placeholder present
@@ -405,7 +845,7 @@ class TestEndpointsFallbackOrder:
         urls = []
         monkeypatch.setattr(subprocess, "run",
                             lambda argv, **kw: (urls.append(argv[-1]),
-                                                FakeProc("200 5", "", 0))[1])
+                                                FakeProc("200 5", "", 28))[1])
         monkeypatch.setattr(netmax.random, "getrandbits", lambda n: 42)
         netmax._pull(5)
         assert "{cb}" not in urls[0]  # OVH template has no placeholder
@@ -413,8 +853,14 @@ class TestEndpointsFallbackOrder:
 
     def test_cloudflare_template_receives_cache_buster(self, monkeypatch):
         urls = []
-        # OVH fails (HTTP 403 body), CF works — new 2-field write-out format
-        replies = iter([FakeProc("403 0", "", 0), FakeProc("200 7", "", 0)])
+        # All three statics fail, CF works — new 2-field write-out format;
+        # CF's exit 28 (window cap) ends the sustained pull after one sweep.
+        replies = iter([
+            FakeProc("403 0", "", 0),   # OVH
+            FakeProc("403 0", "", 0),   # Hetzner
+            FakeProc("403 0", "", 0),   # CacheFly
+            FakeProc("200 7", "", 28),   # Cloudflare
+        ])
 
         def fake_run(argv, **kw):
             urls.append(argv[-1])
@@ -424,8 +870,8 @@ class TestEndpointsFallbackOrder:
         monkeypatch.setattr(netmax.random, "getrandbits", lambda n: 42)
         netmax._pull(5)
         assert len(urls) == len(netmax.ENDPOINTS)
-        assert "{cb}" not in urls[1]
-        assert "cb=42" in urls[1]
+        assert "{cb}" not in urls[3]
+        assert "cb=42" in urls[3]
 
 
 class TestFreshName:
@@ -442,14 +888,14 @@ class TestFreshName:
 
 class TestShareNote:
     def test_turbo_prints_share_note(self, capsys, monkeypatch):
-        monkeypatch.setattr(netmax, "_pull", lambda seconds: 1_000_000)
+        monkeypatch.setattr(netmax, "_pull", lambda seconds, limit_bps=None: 1_000_000)
         netmax.run_turbo(2, 5)
         out = capsys.readouterr().out
         assert netmax.SHARE_NOTE.strip().splitlines()[0][:20] in out
         assert "per-flow fairness" in out
 
     def test_baseline_does_not_print_share_note(self, capsys, monkeypatch):
-        monkeypatch.setattr(netmax, "_pull", lambda seconds: 1_000_000)
+        monkeypatch.setattr(netmax, "_pull", lambda seconds, limit_bps=None: 1_000_000)
         netmax.run_baseline(5)
         out = capsys.readouterr().out
         assert "per-flow fairness" not in out
@@ -509,7 +955,7 @@ class TestBloatGrade:
 
     def test_grades_follow_waveform_rubric(self, monkeypatch):
         # idle 40; loaded samples 45/55/60 → delta = max(60)-40 = +20 ms → A (<30)
-        monkeypatch.setattr(netmax, "_pull", lambda seconds: 1_000_000)
+        monkeypatch.setattr(netmax, "_pull", lambda seconds, limit_bps=None: 1_000_000)
         monkeypatch.setattr(netmax, "_ping_median_ms", self._pinger(40.0, 45.0, 55.0, 60.0))
         idle, delta, grade = netmax.bloat_grade(2, 6)
         assert idle == 40.0
@@ -518,21 +964,21 @@ class TestBloatGrade:
 
     def test_b_grade_for_moderate_bloat(self, monkeypatch):
         # delta = 100-45 = 55 ms → B (<60)
-        monkeypatch.setattr(netmax, "_pull", lambda seconds: 1_000_000)
+        monkeypatch.setattr(netmax, "_pull", lambda seconds, limit_bps=None: 1_000_000)
         monkeypatch.setattr(netmax, "_ping_median_ms", self._pinger(45.0, 90.0, 100.0))
         _idle, _delta, grade = netmax.bloat_grade(2, 6)
         assert grade == "B"
 
     def test_a_plus_when_latency_stable_under_load(self, monkeypatch):
         monkeypatch.setattr(netmax, "_ping_median_ms", self._pinger(40.0, 40.0))
-        monkeypatch.setattr(netmax, "_pull", lambda seconds: 1)
+        monkeypatch.setattr(netmax, "_pull", lambda seconds, limit_bps=None: 1)
         _idle, delta, grade = netmax.bloat_grade(2, 6)
         assert delta == pytest.approx(0.0)
         assert grade == "A+"
 
     def test_f_when_latency_explodes(self, monkeypatch):
         monkeypatch.setattr(netmax, "_ping_median_ms", self._pinger(40.0, 500.0, 800.0))
-        monkeypatch.setattr(netmax, "_pull", lambda seconds: 1)
+        monkeypatch.setattr(netmax, "_pull", lambda seconds, limit_bps=None: 1)
         _idle, _delta, grade = netmax.bloat_grade(2, 6)
         assert grade == "F"
 
@@ -670,7 +1116,7 @@ class TestBloatGradeBoundaries:
                 return _idle + _delta         # every loaded sample
 
             monkeypatch.setattr(netmax, "_ping_median_ms", fake_ping)
-            monkeypatch.setattr(netmax, "_pull", lambda seconds: 1000)
+            monkeypatch.setattr(netmax, "_pull", lambda seconds, limit_bps=None: 1000)
             _got_idle, got_delta, grade = netmax.bloat_grade(2, 6)
             assert grade == expected, f"delta={delta}: got {grade}, want {expected}"
             assert got_delta == pytest.approx(delta)

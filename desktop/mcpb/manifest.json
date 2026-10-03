@@ -3,7 +3,7 @@
   "name": "netmax",
   "display_name": "NetMax MCP Server",
   "version": "1.0.3",
-  "description": "14 network-diagnostic tools for AI coding agents — speed test, DNS ranking, bufferbloat, WiFi, jitter, packet loss, multi-stream download.",
+  "description": "15 network-diagnostic tools for AI coding agents — speed test, DNS ranking, bufferbloat, WiFi, jitter, packet loss, multi-stream download, system-wide speed ceiling.",
   "long_description": "NetMax exposes a local-first network diagnostics engine to any MCP client (Claude Code, Codex, Cursor, Gemini, LM Studio, DSH). Tools cover speed testing, DNS resolver ranking, bufferbloat under load, packet loss, jitter, WiFi details, downloads, and session summaries. The engine is Python 3.10+ with curl; the server is a Node ESM stdio process.",
   "author": {
     "name": "Mubashar Ali",
