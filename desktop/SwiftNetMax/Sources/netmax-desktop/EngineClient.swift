@@ -144,6 +144,88 @@ struct EngineClient {
         throw EngineClientError(message)
     }
 
+    // MARK: Privileged runs (strict system-wide limit)
+
+    /// Engine candidates for a DIRECT (non-bridge) call, in preference
+    /// order: beside the bridge script (bundled layout), then the repo
+    /// root relative to a dev-checkout bridge. Pure — the caller picks
+    /// the first path that exists.
+    static func enginePathCandidates(bridgePath: String) -> [String] {
+        let dir = (bridgePath as NSString).deletingLastPathComponent
+        let sameDir = (dir as NSString).appendingPathComponent("netmax.py")
+        let repoRoot = ((dir as NSString).appendingPathComponent("../../netmax.py") as NSString).standardizingPath
+        return [sameDir, repoRoot]
+    }
+
+    /// Single-quote a shell word (`/My Tools/x` stays one word; embedded
+    /// quotes are escaped the POSIX way).
+    static func shellQuoted(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Body of the temp script a privileged run executes. Every element is
+    /// quoted at build time, so paths with spaces survive both the shell
+    /// and the osascript hop without any runtime escaping.
+    static func privilegedScriptText(python: [String], engine: String, args: [String]) -> String {
+        "#!/bin/sh\n" + (python + [engine] + args).map(shellQuoted).joined(separator: " ") + "\n"
+    }
+
+    /// osascript argv running a script file with administrator privileges.
+    /// The system owns the password dialog; the app never sees credentials.
+    /// NOTE: Stop kills osascript, which ORPHANS the underlying root child
+    /// until its window ends — the engine's finally-cleanup still removes
+    /// the pf rules then, just not early. Callers must say so in the UI.
+    static func osascriptArgv(scriptPath: String) -> [String] {
+        ["/usr/bin/osascript", "-e",
+         "do shell script " + shellQuoted(scriptPath) + " with administrator privileges"]
+    }
+
+    /// Run the engine ELEVATED (strict limit only): writes a temp script and
+    /// executes it via osascript's administrator-privileges dialog.
+    /// - Throws: `EngineClientError` (dialog cancelled, engine error, …).
+    func runPrivileged(args: [String]) async throws -> String {
+        guard let bridge = Self.locateBridgeScript() else {
+            throw EngineClientError("Engine bridge not found (looked in bundle Resources/engine and ./bridge).")
+        }
+        guard let engine = Self.enginePathCandidates(bridgePath: bridge)
+            .first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+            throw EngineClientError("Engine (netmax.py) not found next to the bridge.")
+        }
+        let scriptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("netmax-priv-\(UUID().uuidString).sh")
+        let body = Self.privilegedScriptText(python: pythonArgv + ["-B"], engine: engine, args: args)
+        do {
+            try body.write(to: scriptURL, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                                  ofItemAtPath: scriptURL.path)
+        } catch {
+            throw EngineClientError("Could not stage privileged script: \(error.localizedDescription)")
+        }
+        defer { try? FileManager.default.removeItem(at: scriptURL) }
+        let argv = Self.osascriptArgv(scriptPath: scriptURL.path)
+        let result: (output: Data?, error: Data?, status: Int32)
+        do {
+            result = try await Process.spawn(argv: argv)
+        } catch is CancellationError {
+            throw EngineClientError("Test stopped.")
+        } catch {
+            throw EngineClientError("Could not launch privileged run: \(error.localizedDescription)")
+        }
+        let stdout = String(data: result.output ?? Data(), encoding: .utf8) ?? ""
+        let stderr = String(data: result.error ?? Data(), encoding: .utf8) ?? ""
+        // osascript exit 1 with "User canceled" = dialog dismissed, not a bug.
+        if result.status != 0 && stderr.contains("User canceled") {
+            throw EngineClientError("Admin approval dismissed — no limit was installed.")
+        }
+        guard result.status == 0 else {
+            let detail = stderr.isEmpty ? stdout : stderr
+            throw EngineClientError(detail.isEmpty
+                ? "Privileged run failed (exit \(result.status))."
+                : "Privileged run failed: \(detail.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
+        return stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func prettyPrinted(_ value: Any) -> String {
         if let jsonData = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted, .sortedKeys]),
            let text = String(data: jsonData, encoding: .utf8) {
@@ -159,6 +241,48 @@ struct EngineClientError: Error, LocalizedError {
     init(_ message: String) { self.message = message }
     var errorDescription: String? { message }
 }
+
+#if DEBUG
+/// Offline self-checks for the privileged strict-limit path.
+enum StrictLimitTests {
+    @discardableResult
+    static func runAll() -> Int {
+        var failures = 0
+        func check(_ condition: Bool, _ name: String) {
+            failures += condition ? 0 : 1
+            if !condition { print("[StrictLimitTests] FAIL: \(name)") }
+        }
+
+        let cands = EngineClient.enginePathCandidates(
+            bridgePath: "/A/Resources/engine/engine_bridge.py")
+        check(cands == ["/A/Resources/engine/netmax.py", "/A/netmax.py"],
+              "bundled bridge maps to bundled engine, then repo root")
+
+        check(EngineClient.shellQuoted("/My Tools/py") == "'/My Tools/py'",
+              "spaces stay one word")
+        check(EngineClient.shellQuoted("o'clock") == "'o'\\''clock'",
+              "embedded quote escaped POSIX-style")
+
+        let body = EngineClient.privilegedScriptText(
+            python: ["/usr/bin/python3", "-B"],
+            engine: "/A/Resources/engine/netmax.py",
+            args: ["limit", "--mbps", "5", "--seconds", "60", "--strict"])
+        check(body == "#!/bin/sh\n'/usr/bin/python3' '-B' "
+              + "'/A/Resources/engine/netmax.py' 'limit' '--mbps' '5' "
+              + "'--seconds' '60' '--strict'\n",
+              "script body fully quoted, -B before engine")
+        check(!body.contains("--streams"),
+              "strict direct call carries no streams flag")
+
+        let argv = EngineClient.osascriptArgv(scriptPath: "/tmp/netmax-priv-1.sh")
+        check(argv == ["/usr/bin/osascript", "-e",
+                       "do shell script '/tmp/netmax-priv-1.sh' with administrator privileges"],
+              "osascript argv shape")
+
+        return failures
+    }
+}
+#endif
 
 private extension Process {
     /// Run a process to completion off the main actor, capturing stdio.

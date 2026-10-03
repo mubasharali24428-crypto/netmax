@@ -91,6 +91,21 @@ jobs:
           kill $SRV 2>/dev/null
           exit $STATUS
 
+      - name: TLS + dashboard smoke (self-signed, loopback)
+        run: |
+          openssl req -x509 -newkey rsa:2048 \
+            -keyout /tmp/ci-key.pem -out /tmp/ci-cert.pem \
+            -days 1 -nodes -subj "/CN=localhost"
+          NETMAX_TLS_CERT=/tmp/ci-cert.pem NETMAX_TLS_KEY=/tmp/ci-key.pem \
+            NETMAX_PORT=8814 node netmax-mcp-server.mjs --http &
+          SRV=$!
+          sleep 2
+          curl -sk https://127.0.0.1:8814/ | grep -q "toolCalls" || exit 1
+          curl -sk https://127.0.0.1:8814/ | grep -q "https" || exit 1
+          kill $SRV 2>/dev/null
+          rm -f /tmp/ci-cert.pem /tmp/ci-key.pem
+          echo "tls+dashboard OK"
+
   swift-build:
     name: Swift app release build
     runs-on: macos-14

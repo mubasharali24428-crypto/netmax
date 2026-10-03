@@ -19,6 +19,7 @@ struct SpeedLimitCard: View {
     @State private var capText = "2"
     @State private var seconds = 1800
     @State private var streams = 1
+    @State private var strict = false
     @State private var resultText = ""
 
     /// Red used across the card (button + panel accents) — user-specified.
@@ -81,6 +82,7 @@ struct SpeedLimitCard: View {
             speedRow
             DurationEntryView(seconds: $seconds, isRunning: running)
             streamsRow
+            strictRow
 
             HStack(spacing: 8) {
                 Button {
@@ -175,6 +177,24 @@ struct SpeedLimitCard: View {
         .accessibilityValue("\(streams)")
     }
 
+    /// System-wide kernel ceiling (dnctl+pf) instead of the soft per-download
+    /// governor. Needs one admin approval per run; Stop ends the wait but an
+    /// in-progress strict hold finishes its window (the orphaned root child
+    /// still cleans up its pf rules then — see EngineClient.runPrivileged).
+    private var strictRow: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Toggle("Strict — shape ALL traffic", isOn: $strict)
+                .disabled(running)
+                .accessibilityLabel("Strict system-wide limit")
+                .accessibilityHint("Caps every app through a kernel pipe; asks for admin approval each run")
+            Text(strict
+                 ? "Kernel ceiling: every app shaped, one admin approval per run."
+                 : "Soft cap: test downloads only, no approval needed.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     private var resultBox: some View {
         Group {
             if !resultText.isEmpty {
@@ -211,12 +231,18 @@ struct SpeedLimitCard: View {
         let runCap = cap
         let runSeconds = seconds
         let runStreams = streams
-        let args = ["--mbps", SpeedLimitCard.formatMbps(runCap),
-                    "--seconds", "\(runSeconds)",
-                    "--streams", "\(runStreams)"]
+        let runStrict = strict
+        let args = runStrict
+            ? ["limit", "--mbps", SpeedLimitCard.formatMbps(runCap),
+               "--seconds", "\(runSeconds)", "--strict"]
+            : ["--mbps", SpeedLimitCard.formatMbps(runCap),
+               "--seconds", "\(runSeconds)",
+               "--streams", "\(runStreams)"]
         Task {
             do {
-                let output = try await client.run("limit", args: args)
+                let output = runStrict
+                    ? try await client.runPrivileged(args: args)
+                    : try await client.run("limit", args: args)
                 await MainActor.run {
                     resultText = output
                     running = false

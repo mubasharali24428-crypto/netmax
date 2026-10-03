@@ -689,7 +689,7 @@ async function main() {
   const httpMode = process.argv.includes("--http") || /^(1|true|yes)$/i.test(process.env.NETMAX_HTTP || "");
 
   if (!httpMode) {
-    console.error(`NetMax MCP server v1.0.5 (stdio)`);
+    console.error(`NetMax MCP server v1.0.7 (stdio)`);
     console.error(`  Engine root: ${ENGINE_ROOT}`);
     console.error(`  Python:      ${PYTHON}`);
     console.error(`  Bridge:      ${HAS_BRIDGE ? BRIDGE : "none (direct mode)"}`);
@@ -706,7 +706,30 @@ async function main() {
   // The engine measures THIS machine's network; a remotely-hosted instance
   // would measure the datacenter's pipe, not the user's. Loopback bind unless
   // NETMAX_HOST is set (LAN pairing); bearer token when NETMAX_TOKEN is set.
-  const { createServer } = await import("node:http");
+  // Team hardening: user-provided cert/key switch the transport to TLS.
+  // Both or neither — one without the other refuses to start (fail loud).
+  // (No self-signing here: teams bring their own via mkcert/internal CA.)
+  const tlsCertPath = process.env.NETMAX_TLS_CERT;
+  const tlsKeyPath = process.env.NETMAX_TLS_KEY;
+  if ((tlsCertPath && !tlsKeyPath) || (!tlsCertPath && tlsKeyPath)) {
+    console.error("Refusing: set both NETMAX_TLS_CERT and NETMAX_TLS_KEY, or neither.");
+    process.exit(2);
+  }
+  const scheme = tlsCertPath ? "https" : "http";
+  let createServer = (await import("node:http")).createServer;
+  if (tlsCertPath) {
+    const { readFile } = await import("node:fs/promises");
+    let cert, key;
+    try {
+      [cert, key] = await Promise.all(
+        [readFile(tlsCertPath, "utf-8"), readFile(tlsKeyPath, "utf-8")]);
+    } catch (e) {
+      console.error(`Refusing: cannot read TLS file: ${e.message}`);
+      process.exit(2);
+    }
+    const https = await import("node:https");
+    createServer = (handler) => https.createServer({ cert, key }, handler);
+  }
   const { StreamableHTTPServerTransport } = await import("@modelcontextprotocol/sdk/server/streamableHttp.js");
 
   const host = process.env.NETMAX_HOST || "127.0.0.1";
@@ -723,7 +746,8 @@ async function main() {
   }
 
   const httpServer = createServer(async (req, res) => {
-    // Trust boundary: bearer gate before anything parses.
+    // Trust boundary: bearer gate before anything parses (dashboard too —
+    // uptime/call counts are minor, but one gate for all paths stays simple).
     if (token) {
       const provided = String(req.headers["authorization"] || "").replace(/^Bearer /, "");
       if (provided !== token) {
@@ -731,6 +755,19 @@ async function main() {
         res.end("unauthorized");
         return;
       }
+    }
+    // Team dashboard: GET / is a plain-text status page (curl-friendly);
+    // every other path goes to the MCP transport as before.
+    if (req.method === "GET" && (req.url === "/" || req.url === "/status")) {
+      const upSecs = Math.floor((Date.now() - SERVER_START.getTime()) / 1000);
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end([
+        `NetMax MCP server v1.0.7 (web) — ${scheme}, ${token ? "bearer auth" : "no auth (loopback only)"}`,
+        `mcp: ${scheme}://${host}:${port}/mcp`,
+        `uptime: ${upSecs}s  tools: 15  toolCalls: ${toolCallCount}`,
+        `engine: ${ENGINE_ROOT}  python: ${PYTHON}  bridge: ${HAS_BRIDGE ? "yes" : "no"}`,
+      ].join("\n") + "\n");
+      return;
     }
     try {
       // Stateless: fresh transport per request (official SDK pattern).
@@ -748,14 +785,15 @@ async function main() {
   });
 
   httpServer.listen(port, host, () => {
-    console.error(`NetMax MCP server v1.0.5 (web) — Streamable HTTP`);
-    console.error(`  Endpoint:     http://${host === "127.0.0.1" ? "localhost" : host}:${port}/mcp`);
+    console.error(`NetMax MCP server v1.0.7 (web) — Streamable HTTP over ${scheme}`);
+    console.error(`  Endpoint:     ${scheme}://${host === "127.0.0.1" ? "localhost" : host}:${port}/mcp`);
+    console.error(`  Dashboard:    ${scheme}://${host === "127.0.0.1" ? "localhost" : host}:${port}/`);
     console.error(`  Engine root:  ${ENGINE_ROOT}`);
     console.error(`  Auth:         ${token ? "bearer token (NETMAX_TOKEN)" : "none (localhost only)"}`);
     console.error(`  Tools:        15 registered`);
     console.error("");
     console.error("Web MCP ready — add to Claude/Cursor/DSH as a remote MCP server:");
-    console.error(`  url: http://${host}:${port}/mcp` + (token ? "  headers: Authorization: Bearer <NETMAX_TOKEN>" : ""));
+    console.error(`  url: ${scheme}://${host}:${port}/mcp` + (token ? "  headers: Authorization: Bearer <NETMAX_TOKEN>" : ""));
   });
 }
 

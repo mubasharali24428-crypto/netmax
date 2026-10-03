@@ -60,6 +60,14 @@ Client config (Claude / Cursor / DSH remote MCP):
   request (401 otherwise). Required when the bind is not loopback — the
   server refuses to start off-loopback without it.
 
+## Team hardening: TLS + dashboard
+
+- `NETMAX_TLS_CERT` + `NETMAX_TLS_KEY` (PEM paths) switch the transport to
+  HTTPS — bring your own cert (mkcert / internal CA); clients must trust it.
+  Set only one and the server refuses to start (exit 2).
+- `GET /` (or `/status`) is a plain-text dashboard: version, transport, auth
+  mode, uptime, tool count/calls, engine path. Same bearer gate as MCP.
+
 ## Wire into DSH
 
 Already done! The web profile at `~/.dsh/profiles/web/cordis.patch.yml` has
