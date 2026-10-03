@@ -106,6 +106,25 @@ jobs:
           rm -f /tmp/ci-cert.pem /tmp/ci-key.pem
           echo "tls+dashboard OK"
 
+      - name: Fleet aggregation smoke (stdlib stub peers)
+        run: |
+          mkdir -p /tmp/peerA /tmp/peerB
+          echo "peer A dashboard" > /tmp/peerA/index.html
+          echo "peer B dashboard" > /tmp/peerB/index.html
+          python3 -m http.server 8815 --directory /tmp/peerA >/dev/null 2>&1 &
+          P1=$!
+          python3 -m http.server 8816 --directory /tmp/peerB >/dev/null 2>&1 &
+          P2=$!
+          NETMAX_FLEET="desk=http://127.0.0.1:8815,mini=http://127.0.0.1:8816" \
+            NETMAX_PORT=8817 node netmax-mcp-server.mjs --http &
+          SRV=$!
+          sleep 2
+          curl -s http://127.0.0.1:8817/fleet | tee /tmp/fleet.json | grep -q '"ok": true'
+          grep -q '"desk"' /tmp/fleet.json && grep -q '"mini"' /tmp/fleet.json
+          STATUS=$?
+          kill $SRV $P1 $P2 2>/dev/null
+          exit $STATUS
+
   swift-build:
     name: Swift app release build
     runs-on: macos-14

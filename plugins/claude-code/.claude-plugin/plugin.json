@@ -1,0 +1,11 @@
+{
+  "name": "netmax",
+  "description": "Network diagnostics for AI coding agents — speed, DNS, bufferbloat, WiFi, system-wide speed ceiling (15 MCP tools, MIT, local-first)",
+  "version": "1.0.7",
+  "author": {
+    "name": "Mubashar Ali",
+    "url": "https://github.com/mubasharali24428-crypto/netmax"
+  },
+  "license": "MIT",
+  "keywords": ["network", "diagnostics", "speed-test", "mcp"]
+}

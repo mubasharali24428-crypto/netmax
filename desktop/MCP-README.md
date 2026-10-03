@@ -68,6 +68,15 @@ Client config (Claude / Cursor / DSH remote MCP):
 - `GET /` (or `/status`) is a plain-text dashboard: version, transport, auth
   mode, uptime, tool count/calls, engine path. Same bearer gate as MCP.
 
+## Team fleet view: multiple Macs, one endpoint
+
+- `NETMAX_FLEET="desk=http://mac1:8808,mini=http://mac2:8808"` makes
+  `GET /fleet` return every peer's dashboard excerpt as JSON
+  (`[{name, ok, status}]`). Unreachable peers report `ok: false` inline —
+  the call itself never fails because one box is down.
+- Optional `NETMAX_FLEET_TOKEN` is sent as Bearer to every peer (use one
+  shared team token). Peer URLs are operator config, not user input.
+
 ## Failure alerts: Slack webhook
 
 - `NETMAX_SLACK_WEBHOOK=<incoming-webhook-URL>` posts one line per FAILED

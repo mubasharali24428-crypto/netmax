@@ -308,6 +308,37 @@ async function runTool(mode, fn) {
   return okResult(mode, text, envelope.data ?? raw);
 }
 
+/** Aggregate peer dashboards for GET /fleet (see handler above). */
+async function fleetStatus() {
+  const peers = String(process.env.NETMAX_FLEET || "")
+    .split(",").map((s) => s.trim()).filter(Boolean)
+    .map((entry) => {
+      const i = entry.indexOf("=");
+      return i < 0 ? null : { name: entry.slice(0, i).trim(), url: entry.slice(i + 1).trim() };
+    })
+    .filter((p) => p && p.name && p.url);
+  const token = process.env.NETMAX_FLEET_TOKEN || "";
+  const settled = await Promise.allSettled(peers.map(async (p) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 5000);
+    try {
+      const headers = token ? { authorization: `Bearer ${token}` } : {};
+      const r = await fetch(p.url.replace(/\/$/, "") + "/", { headers, signal: ctrl.signal });
+      const body = await r.text();
+      return r.ok
+        ? { name: p.name, ok: true, status: body.split("\n").slice(0, 4).join(" | ").slice(0, 300) }
+        : { name: p.name, ok: false, status: `http ${r.status}` };
+    } catch (e) {
+      return { name: p.name, ok: false, status: `unreachable: ${e.message}`.slice(0, 160) };
+    } finally {
+      clearTimeout(timer);
+    }
+  }));
+  return JSON.stringify({
+    peers: settled.map((s) => s.value ?? { name: "?", ok: false, status: "internal" }),
+  }, null, 2) + "\n";
+}
+
 // ── Server ──────────────────────────────────────────────────────────────────
 
 // ── Server factory (one instance per transport lifetime) ─────────────────
@@ -815,6 +846,16 @@ async function main() {
     }
     // Team dashboard: GET / is a plain-text status page (curl-friendly);
     // every other path goes to the MCP transport as before.
+    // Team fleet view: GET /fleet aggregates peer dashboards named in
+    // NETMAX_FLEET ("desk=http://host:port,mini=http://host:port").
+    // Optional NETMAX_FLEET_TOKEN is sent as Bearer to every peer.
+    // Peer URLs are operator config (not user input) — unreachable peers
+    // report ok:false inline and never fail the call.
+    if (req.method === "GET" && req.url === "/fleet") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(await fleetStatus());
+      return;
+    }
     if (req.method === "GET" && (req.url === "/" || req.url === "/status")) {
       const upSecs = Math.floor((Date.now() - SERVER_START.getTime()) / 1000);
       res.writeHead(200, { "content-type": "text/plain" });
