@@ -2,7 +2,7 @@
   "manifest_version": "0.2",
   "name": "netmax",
   "display_name": "NetMax MCP Server",
-  "version": "1.0.3",
+  "version": "1.0.7",
   "description": "15 network-diagnostic tools for AI coding agents — speed test, DNS ranking, bufferbloat, WiFi, jitter, packet loss, multi-stream download, system-wide speed ceiling.",
   "long_description": "NetMax exposes a local-first network diagnostics engine to any MCP client (Claude Code, Codex, Cursor, Gemini, LM Studio, DSH). Tools cover speed testing, DNS resolver ranking, bufferbloat under load, packet loss, jitter, WiFi details, downloads, and session summaries. The engine is Python 3.10+ with curl; the server is a Node ESM stdio process.",
   "author": {
@@ -54,6 +54,7 @@
     { "name": "eco_bloat", "description": "Run the eco (low-impact) bufferbloat variant" },
     { "name": "diagnostic_summary", "description": "Summarize the latest diagnostic session" },
     { "name": "parallel_diagnostics", "description": "Run multiple diagnostics in parallel" },
-    { "name": "session_info", "description": "Show session info and server status" }
+    { "name": "session_info", "description": "Show session info and server status" },
+    { "name": "strict_limit", "description": "Enforce a system-wide download ceiling (macOS, root)" }
   ]
 }

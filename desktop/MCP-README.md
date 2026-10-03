@@ -68,6 +68,13 @@ Client config (Claude / Cursor / DSH remote MCP):
 - `GET /` (or `/status`) is a plain-text dashboard: version, transport, auth
   mode, uptime, tool count/calls, engine path. Same bearer gate as MCP.
 
+## Failure alerts: Slack webhook
+
+- `NETMAX_SLACK_WEBHOOK=<incoming-webhook-URL>` posts one line per FAILED
+  tool call (`mode` + first error line). Unset = no alerting, zero overhead.
+- Rate-limited to 1 post per 5 min (in-memory; resets on restart). A dead or
+  malformed webhook never breaks a tool call — fire-and-forget by design.
+
 ## Wire into DSH
 
 Already done! The web profile at `~/.dsh/profiles/web/cordis.patch.yml` has

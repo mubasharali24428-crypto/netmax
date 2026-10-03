@@ -91,6 +91,40 @@ const BRIDGE_MODES = new Set([
 const SERVER_START = new Date();
 let toolCallCount = 0;
 
+// Failure alerts: Slack incoming-webhook URL (unset = no alerting).
+// Rate-limited to one post per 5 min; a dead webhook never breaks a call.
+const SLACK_WEBHOOK = process.env.NETMAX_SLACK_WEBHOOK || "";
+const SLACK_MIN_INTERVAL_MS = 5 * 60 * 1000;
+let lastSlackAlertMs = 0;
+
+function notifySlack(mode, reason) {
+  if (!SLACK_WEBHOOK) return;
+  const now = Date.now();
+  if (now - lastSlackAlertMs < SLACK_MIN_INTERVAL_MS) return;
+  lastSlackAlertMs = now;
+  try {
+    const url = new URL(SLACK_WEBHOOK);
+    const firstLine = String(reason).split("\n")[0].slice(0, 200);
+    const body = JSON.stringify({ text: `NetMax \`${mode}\` failed: ${firstLine}` });
+    const transport = url.protocol === "https:"
+      ? import("node:https")
+      : import("node:http");
+    Promise.resolve(transport).then(({ request }) => {
+      const req = request(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body),
+        },
+      });
+      req.on("error", () => {});
+      req.end(body);
+    }).catch(() => {});
+  } catch {
+    // Malformed webhook URL must never break a tool call.
+  }
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function timeout(ms) {
@@ -253,19 +287,23 @@ function failResult(mode, reason) {
  * Handles: envelope failure, engine-error text, dead-measurement prose.
  */
 async function runTool(mode, fn) {
+  const failed = (reason) => {
+    notifySlack(mode, reason); // fire-and-forget, rate-limited, unset=no-op
+    return failResult(mode, reason);
+  };
   let envelope;
   try {
     envelope = await fn();
   } catch (err) {
-    return failResult(mode, `engine invocation failed: ${err.message}`);
+    return failed(`engine invocation failed: ${err.message}`);
   }
   if (!envelope || envelope.success === false) {
-    return failResult(mode, envelope?.error || "engine reported failure");
+    return failed(envelope?.error || "engine reported failure");
   }
   const raw = envelope?.data?.raw ?? envelope?.data ?? envelope?.raw ?? "";
   const text = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
   if (looksLikeDeadMeasurement(text)) {
-    return failResult(mode, text);
+    return failed(text);
   }
   return okResult(mode, text, envelope.data ?? raw);
 }
@@ -277,7 +315,7 @@ async function runTool(mode, fn) {
 function buildServer() {
   const server = new McpServer({
     name: "netmax-mcp-server",
-    version: "1.0.5",
+    version: "1.0.7",
     description: "NetMax Desktop network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
   });
 
@@ -785,7 +823,7 @@ async function main() {
   });
 
   httpServer.listen(port, host, () => {
-    console.error(`NetMax MCP server v1.0.7 (web) — Streamable HTTP over ${scheme}`);
+    console.error(`NetMax MCP server v1.0.7 (web) — Streamable HTTP (${scheme})`);
     console.error(`  Endpoint:     ${scheme}://${host === "127.0.0.1" ? "localhost" : host}:${port}/mcp`);
     console.error(`  Dashboard:    ${scheme}://${host === "127.0.0.1" ? "localhost" : host}:${port}/`);
     console.error(`  Engine root:  ${ENGINE_ROOT}`);

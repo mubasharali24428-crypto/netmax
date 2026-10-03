@@ -12,8 +12,8 @@
 | **Name** | NetMax MCP Server |
 | **npm package** | `@netmax/mcp-server` |
 | **GitHub** | https://github.com/mubasharali24428-crypto/netmax |
-| **Tagline** | 14 network-diagnostic tools for AI coding agents |
-| **Description** | NetMax gives AI coding agents real network measurements — speed test, DNS ranking, bufferbloat, WiFi signal, jitter, packet loss, and multi-stream download. Local-first, honest limits (never promises more than your ISP cap). |
+| **Tagline** | 15 network-diagnostic tools for AI coding agents |
+| **Description** | NetMax gives AI coding agents real network measurements — speed test, DNS ranking, bufferbloat, WiFi signal, jitter, packet loss, multi-stream download, and a system-wide speed ceiling. Local-first, honest limits (never promises more than your ISP cap). |
 | **Tags** | `mcp`, `network`, `diagnostics`, `speed-test`, `dns`, `bufferbloat`, `wifi`, `ai`, `coding` |
 | **Transport** | stdio |
 | **Install** | `npx -y @netmax/mcp-server` |
@@ -41,13 +41,14 @@
   ```
   ./desktop/mcpb/build-mcpb.sh      # → desktop/netmax-<version>.mcpb (manifest in desktop/mcpb/)
   ```
-  Current artifact: `desktop/netmax-1.0.3.mcpb` (3.1 MB, manifest valid, `initialize` +
-  `tools/list` = 14 tools verified via MCPB unpack round-trip on 2026-09-11).
+  Current artifact: `desktop/netmax-1.0.7.mcpb` (rebuilt 2026-10-03: manifest
+  v1.0.7 with 15 tools incl. `strict_limit`; prior artifact `netmax-1.0.3.mcpb`
+  removed).
 - **CLI publish (verified syntax):**
   ```
   npx -y @smithery/cli auth login                              # interactive device flow
   npx -y @smithery/cli namespace                               # check your namespace
-  npx -y @smithery/cli mcp publish ./desktop/netmax-1.0.3.mcpb -n <your-namespace>/netmax
+  npx -y @smithery/cli mcp publish ./desktop/netmax-1.0.7.mcpb -n <your-namespace>/netmax
   ```
 - Web alternative: **https://smithery.ai/new** → Sign in → "Local (MCPB Bundle)" → upload the `.mcpb`.
 - After publishing: **Settings → Verification** for the official-vendor checklist.
