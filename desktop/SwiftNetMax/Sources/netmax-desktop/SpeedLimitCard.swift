@@ -107,8 +107,11 @@ struct SpeedLimitCard: View {
             if running {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
-                    Text("Holding \(SpeedLimitCard.formatMbps(capMbps ?? 0)) — "
-                         + "the speedometer below shows it live")
+                    Text(strict
+                         ? "Holding \(SpeedLimitCard.formatMbps(capMbps ?? 0)) ceiling — "
+                           + "download or stream something to see it capped live"
+                         : "Holding \(SpeedLimitCard.formatMbps(capMbps ?? 0)) — "
+                           + "the speedometer below shows it live")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

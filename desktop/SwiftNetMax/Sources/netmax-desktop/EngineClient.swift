@@ -157,10 +157,22 @@ struct EngineClient {
         return [sameDir, repoRoot]
     }
 
-    /// Single-quote a shell word (`/My Tools/x` stays one word; embedded
-    /// quotes are escaped the POSIX way).
+    /// Single-quote a POSIX shell word (`/My Tools/x` stays one word;
+    /// embedded quotes are escaped the POSIX way). For script BODIES only —
+    /// never for the osascript -e string itself (AppleScript has no
+    /// single-quoted strings; see appleScriptString).
     static func shellQuoted(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Quote for embedding inside an AppleScript double-quoted string
+    /// (the osascript -e argument). AppleScript unescapes \\ \" \$ \`
+    /// before the shell ever sees the command.
+    static func appleScriptString(_ s: String) -> String {
+        "\"" + s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "$", with: "\\$")
+            .replacingOccurrences(of: "`", with: "\\`") + "\""
     }
 
     /// Body of the temp script a privileged run executes. Every element is
@@ -177,7 +189,7 @@ struct EngineClient {
     /// the pf rules then, just not early. Callers must say so in the UI.
     static func osascriptArgv(scriptPath: String) -> [String] {
         ["/usr/bin/osascript", "-e",
-         "do shell script " + shellQuoted(scriptPath) + " with administrator privileges"]
+         "do shell script " + appleScriptString(scriptPath) + " with administrator privileges"]
     }
 
     /// Run the engine ELEVATED (strict limit only): writes a temp script and
@@ -276,8 +288,29 @@ enum StrictLimitTests {
 
         let argv = EngineClient.osascriptArgv(scriptPath: "/tmp/netmax-priv-1.sh")
         check(argv == ["/usr/bin/osascript", "-e",
-                       "do shell script '/tmp/netmax-priv-1.sh' with administrator privileges"],
-              "osascript argv shape")
+                       "do shell script \"/tmp/netmax-priv-1.sh\" with administrator privileges"],
+              "osascript argv shape (AppleScript strings are double-quoted — "
+              + "single quotes are a -2741 parse error, caught live 2026-10-03)")
+
+        check(EngineClient.appleScriptString("/My Tools/a$b`c\\d\"e") ==
+              "\"/My Tools/a\\$b\\`c\\\\d\\\"e\"",
+              "AppleScript string escaping covers \\ \" $ `")
+
+        // Hermetic gate that would have caught the -2741: compile the exact
+        // -e string with osacompile (no execution, no privileges, no network).
+        if FileManager.default.isExecutableFile(atPath: "/usr/bin/osacompile") {
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: "/usr/bin/osacompile")
+            proc.arguments = ["-e", argv[2], "-o", "/tmp/netmax-osac-test.scpt"]
+            do {
+                try proc.run()
+                proc.waitUntilExit()
+                check(proc.terminationStatus == 0, "generated -e compiles under osacompile")
+            } catch {
+                check(false, "osacompile launch failed: \(error)")
+            }
+            try? FileManager.default.removeItem(atPath: "/tmp/netmax-osac-test.scpt")
+        }
 
         return failures
     }
