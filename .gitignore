@@ -1,6 +1,9 @@
 
 # Build artifacts
 # Python
+build/
+dist/
+*.egg-info/
 # Sensitive session documents (contain credentials)
 # macOS
 **/.DS_Store
@@ -12,7 +15,6 @@ SESSION-HANDOFF.md
 __pycache__/
 desktop/mcpb-src/
 docs/HN-REPLY-TEMPLATES.md
-netmax.egg-info/
 results.json
 results.png
 results/
