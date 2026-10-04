@@ -1238,23 +1238,42 @@ def _load_json_input(spec: str) -> dict[str, Any]:
     return parsed
 
 
-def _load_history(path_spec: str) -> list[dict[str, Any]]:
-    """Read a history JSONL file, tolerating the corrupt lines it warns about."""
-    path = Path(path_spec).expanduser()
-    rows: list[dict[str, Any]] = []
-    if not path.exists():
-        raise NetMaxError(f"history file not found: {path}")
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue          # same tolerance as the history writer
-        if isinstance(row, dict):
-            rows.append(row)
-    return rows
+def _history_mode(analysis: str) -> str:
+    """Which single mode to coalesce for this analysis, if any.
+
+    Only the analysers that need SEVERAL metrics at one instant benefit
+    from merging. Coalescing for a time-series analyser is actively
+    destructive: it collapses a run every few minutes into a single row,
+    leaving nothing to trend. So forecast, attribute_change,
+    throttle_signature and hardware_health deliberately get every run.
+    """
+    return "baseline" if analysis in {"root_cause", "simulate_change"} else ""
+
+
+def _load_history(path_spec: str, *, mode: str = "") -> list[dict[str, Any]]:
+    """Read a history JSONL file into the flat rows the analysers read.
+
+    The app stores {"ts": ISO8601, "mode", "params", "result_raw": <text>}
+    — the metrics live inside a nested human-readable blob and the hour of
+    day never appears. Without normalising here every analyser reads zero
+    samples from real history while passing every synthetic-fixture test.
+
+    `mode` merges measurements of one kind onto a shared timeline so a
+    root-cause or twin analysis has several metrics per moment.
+    """
+    import netmax_history
+
+    try:
+        rows = netmax_history.load_and_normalize(path_spec)
+    except FileNotFoundError as exc:
+        raise NetMaxError(str(exc)) from None
+    if not mode:
+        # No coalescing wanted: every run is its own observation, which is
+        # what the time-series analysers need. build_coherent drops rows
+        # with no timestamp, so calling it here would silently empty a
+        # hand-written or synthetic history.
+        return rows
+    return netmax_history.build_coherent(rows, mode=mode)
 
 
 def run_ai_analysis(name: str, input_data: dict[str, Any],
@@ -1803,7 +1822,8 @@ def main(argv: list[str] | None = None) -> None:
                 raise NetMaxError(
                     "ai needs --analysis NAME (or --list-analyses)")
             input_data = _load_json_input(args.input)
-            history_rows = (_load_history(args.history)
+            history_rows = (_load_history(args.history,
+                                           mode=_history_mode(args.analysis))
                             if args.history else None)
             result = run_ai_analysis(args.analysis, input_data, history_rows)
             print(json.dumps(result, indent=2 if args.pretty else None,
