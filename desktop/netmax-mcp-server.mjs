@@ -95,6 +95,18 @@ let toolCallCount = 0;
 // places and silently under-reported the moment a tool was added.
 const TOOL_COUNT = 17;
 
+// Names, for the netmax://capabilities resource so an agent can discover
+// what exists without guessing. Kept beside TOOL_COUNT on purpose: the
+// audit checks that constant against the tools actually defined, and a
+// list sitting next to it invites the same check to cover both.
+const TOOL_NAMES = [
+  "measure_speed", "dns_ranking", "bufferbloat", "upload_speed",
+  "packet_loss", "jitter", "wifi_info", "download_file", "eco_bloat",
+  "full_diagnostics", "diagnostic_summary", "boost",
+  "parallel_diagnostics", "strict_limit", "ai_analyze", "list_analyses",
+  "session_info",
+];
+
 // Failure alerts: Slack incoming-webhook URL (unset = no alerting).
 // Rate-limited to one post per 5 min; a dead webhook never breaks a call.
 const SLACK_WEBHOOK = process.env.NETMAX_SLACK_WEBHOOK || "";
@@ -820,6 +832,97 @@ function buildServer() {
       });
     }
   );
+
+  // ── Resources ───────────────────────────────────────────────────────────────
+  //
+  // Tools require the agent to know what to ask for; resources let it READ
+  // state and capability without spending a measurement. Three, chosen
+  // because each one is a thing an agent would otherwise have to guess at
+  // or — worse — assert from memory.
+
+  const jsonResource = (uri, name, description, produce) => {
+    server.resource(
+      name,
+      uri,
+      { description, mimeType: "application/json" },
+      async () => ({
+        contents: [
+          {
+            uri,
+            mimeType: "application/json",
+            text: JSON.stringify(await produce(), null, 2),
+          },
+        ],
+      })
+    );
+  };
+
+  // What this server can do, including the AI analysers, so an agent never
+  // has to guess a tool name or hallucinate one.
+  jsonResource(
+    "netmax://capabilities",
+    "netmax-capabilities",
+    "Every tool and AI analysis this server exposes, with what each needs.",
+    async () => {
+      // runTool returns a FORMATTED tool result, not the envelope, so a
+      // resource needs the raw engine output to parse.
+      const envelope = await runEngineDirect(["ai", "--list-analyses"]);
+      // runEngineDirect resolves { success, data, raw } where data IS the
+      // trimmed stdout string — not an object with a .raw inside it.
+      const text =
+        typeof envelope?.data === "string"
+          ? envelope.data
+          : String(envelope?.raw ?? "");
+      const analyses = text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((l) => {
+          const parts = l.split(/\s+/);
+          return { name: parts[0], implementation: parts[1] || null };
+        })
+        .filter((a) => a.name);
+      return {
+        tools: TOOL_NAMES,
+        analyses,
+        notes: [
+          "Analyses are read-only: they never run a measurement and never change your system.",
+          "Analyses without NETMAX_AI_API_KEY answer from local heuristics, which is a supported mode.",
+          "Call ai_analyze with { analysis, input } where input is a JSON object of measurements.",
+        ],
+      };
+    }
+  );
+
+  // The project's defining constraint, stated so an agent cannot contradict
+  // it. NetMax measures; it does not make a line faster.
+  jsonResource(
+    "netmax://limits",
+    "netmax-limits",
+    "What NetMax can and cannot do. Read before reporting any result to a user.",
+    async () => ({
+      can_do: [
+        "Measure download throughput, baseline and multi-stream, and explain the difference.",
+        "Measure upload speed, packet loss, jitter and latency.",
+        "Grade bufferbloat under load and attribute the likely cause.",
+        "Rank public DNS resolvers and analyse the current WiFi reading.",
+        "Hold a fixed download cap, optionally enforced system-wide with sudo.",
+        "Explain and classify any measurement above, locally or with a model.",
+      ],
+      cannot_do: [
+        "Increase the bandwidth your ISP delivers. Multi-stream figures can exceed a single stream on a contended pipe; that is headroom, not extra bandwidth.",
+        "Improve a link whose limit is upstream. No software on this machine changes that.",
+        "Diagnose a problem on the provider's side of the demarcation point from here.",
+        "Work around a provider policy. A shaping signature can be detected and reported, not bypassed.",
+      ],
+      honesty_rules: [
+        "A failed measurement is reported as failed, never as a low number.",
+        "An estimate from history is labelled as an estimate with its assumptions and sensitivity.",
+        "An unidentifiable question returns 'not_identified' rather than a guess.",
+      ],
+    })
+  );
+
   return server;
 }
 
