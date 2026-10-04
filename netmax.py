@@ -1136,6 +1136,12 @@ AI_ANALYSES: dict[str, tuple[str, str, str]] = {
     "benchmark": ("netmax_ai_p2", "BenchmarkComparator", "compare"),
     "coach": ("netmax_ai_p2", "GamifiedCoach", "week_plan"),
     "metric_rule": ("netmax_ai_p2", "MetricRuleEngine", "evaluate"),
+    # P4 — counterfactual estimation, attribution, adaptation. These refuse
+    # rather than guess when the data cannot identify an answer.
+    "simulate_change": ("netmax_ai_p4", "DigitalTwin", "simulate"),
+    "attribute_change": ("netmax_ai_p4", "CausalAttributor", "attribute"),
+    "recommend_fix": ("netmax_ai_p4", "FixRecommender", "recommend"),
+    "governor_preferences": ("netmax_ai_p4", "PreferenceLearner", "parameters"),
 }
 
 # Analysers that consume `record_sample` kwargs rather than one input dict.
@@ -1145,6 +1151,9 @@ AI_RECORDERS: dict[str, str] = {
     "throttle_signature": "record_sample",
     "coach": "record_sample",
     "isp_profile": "record_sample",
+    # P4 takes whole history rows rather than named scalar fields.
+    "simulate_change": "record",
+    "attribute_change": "record",
 }
 
 # How each recorder turns a history row into record_* kwargs.
@@ -1155,6 +1164,8 @@ AI_RECORD_FIELDS: dict[str, tuple[str, ...]] = {
     # hour is optional in the row; record_sample falls back to wall clock.
     "isp_profile": ("mbps", "hour"),
     "coach": (),          # accepts arbitrary metrics
+    "simulate_change": (),        # whole row
+    "attribute_change": ("hour",),
 }
 
 
@@ -1203,6 +1214,12 @@ AI_SIGNATURES: dict[str, tuple[str | None, dict[str, str]]] = {
                            "cohort_label": "cohort_label"}),
     "coach": ("goal", {"history_limit": "history_limit"}),
     "metric_rule": ("rule", {"metrics": "metrics"}),
+    "simulate_change": (None, {"intervention": "intervention"}),
+    "attribute_change": (None, {"outcome": "outcome",
+                                "intervention_hour": "intervention_hour",
+                                "window": "window"}),
+    "recommend_fix": ("symptom", {}),
+    "governor_preferences": (None, {}),
 }
 
 
@@ -1272,6 +1289,13 @@ def run_ai_analysis(name: str, input_data: dict[str, Any],
             if callable(recorder):
                 fields = AI_RECORD_FIELDS.get(name, ())
                 for row in history:
+                    if recorder_name == "record":
+                        # Takes the whole row, not named fields.
+                        try:
+                            recorder(row)
+                        except TypeError:
+                            continue
+                        continue
                     if fields:
                         # A null metric means "not measured" — recording it
                         # as a real 0.0 would poison a trend or a percentile
@@ -1280,7 +1304,8 @@ def run_ai_analysis(name: str, input_data: dict[str, Any],
                                   if row.get(f) is not None}
                     else:
                         kwargs = {k: v for k, v in row.items()
-                                  if isinstance(v, (int, float))}
+                                  if isinstance(v, (int, float))
+                                  and not isinstance(v, bool)}
                     if kwargs:
                         try:
                             recorder(**kwargs)

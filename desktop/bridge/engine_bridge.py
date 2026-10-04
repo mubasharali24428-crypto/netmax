@@ -104,6 +104,9 @@ ALLOWED_ANALYSES: frozenset[str] = frozenset({
     "explain", "wizard", "wizard_next", "wizard_conclude", "narrate",
     "forecast", "hardware_health", "throttle_signature", "cost_advice",
     "benchmark", "coach", "metric_rule",
+    # P4 — counterfactual estimation, attribution, adaptation.
+    "simulate_change", "attribute_change", "recommend_fix",
+    "governor_preferences",
 })
 
 # The payload is measurement JSON handed over by the UI. macOS caps argv well
