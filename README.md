@@ -132,8 +132,8 @@ subprocess so a failed measurement can never take down the UI.
 
 ## Tests
 
-513 offline tests in the default suite (network fully mocked — safe to run
-anywhere), including the 104 in the engine_store / bridge suites:
+906 offline tests in the default suite (network fully mocked — safe to run
+anywhere), including the 118 in the engine_store / bridge suites:
 
 ```bash
 cd ~/netmax-app

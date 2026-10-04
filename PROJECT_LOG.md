@@ -202,3 +202,17 @@ remains the one item still pending its result.
 - Gates: ruff clean; pytest 482 passed; bridge selftest 4/4; live smoke
   ALL PASS. Open: Swift menu-bar toggle for strict (product/security call);
   ceiling re-verify only if pipe behavior questioned (evidence on file).
+
+## Session — 2026-10-04 remaining-debt sweep (except launch track)
+
+- Upload fix (concurrent editor, `ce55f5a`): `-H "Expect:"` kills the
+  100-continue interim status; bytes parsed before status; 2xx + curl-28
+  accepted. Verified: 28 upload tests pass, ruff clean.
+- Docs: README test count 513→906 (store+bridge 104→118); 17 MCP tools
+  confirmed current. Old wave counts left as history.
+- Untracked triage (left untracked, deliberate): `NetMax-1.1.1.dmg` now
+  gitignored (build artifact); root stub `notarize.sh/sign.sh/optimize.sh/
+  setup-*.sh` are placeholders — real pipeline is `desktop/scripts/`;
+  `netmax.icns/iconset/` unreferenced by any build file; foreign
+  `netmax_ai_provider.py` untouched per collision protocol.
+- Launch track (HN, notarize, submissions, rotations) untouched by request.
