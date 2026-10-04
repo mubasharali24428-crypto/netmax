@@ -17,5 +17,16 @@ charts = ["matplotlib"]
 netmax = "netmax:main"
 
 [tool.setuptools]
-py-modules = ["netmax", "netmax_ai", "netmax_ai_p1", "netmax_ai_p2",
-               "netmax_schedule"]
+py-modules = [
+    "netmax",
+    # Sibling engine modules. netmax.py imports these lazily inside
+    # functions, so a missing entry here leaves `import netmax` working and
+    # only breaks that one mode at runtime with ModuleNotFoundError.
+    # `netmax audit` fails the build if this list and the import graph
+    # disagree in either direction.
+    "netmetrics", "netmax_ai", "netmax_ai_p1", "netmax_ai_p2",
+    "netmax_schedule", "netmax_profiles", "netmax_audit",
+    "netmax_wifievents", "netmax_eco", "netmax_eventstore",
+    "netmax_export", "netmax_fetch", "netmax_gui", "netmax_shape",
+    "netmax_throttle", "netmax_upload", "netmax_watch",
+]

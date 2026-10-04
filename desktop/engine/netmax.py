@@ -1320,6 +1320,86 @@ def run_ai_analysis(name: str, input_data: dict[str, Any],
         raise NetMaxError(f"{name} failed: {exc}") from None
 
 
+def _power_state_for(battery_spec: str) -> Any:
+    """Build a PowerState from a --battery style argument (shared)."""
+    import netmax_schedule as sched
+
+    if battery_spec == "ac":
+        return sched.PowerState(on_ac=True, source="ac")
+    if battery_spec == "battery":
+        return sched.PowerState(on_ac=False, source="battery", percent=100.0)
+    if battery_spec == "auto":
+        return sched.read_power_state()
+    try:
+        pct = float(battery_spec.rstrip("%"))
+    except ValueError:
+        raise NetMaxError(
+            f"--battery must be auto, ac, battery, or a percentage; "
+            f"got {battery_spec!r}"
+        ) from None
+    return sched.PowerState(on_ac=False, source="battery",
+                            percent=max(0.0, min(100.0, pct)))
+
+
+def _read_wifi_snapshot(wifi_json: str) -> dict[str, Any] | None:
+    """Parse a snapshot from --wifi-json, or take a live one."""
+    import netmax_wifievents
+
+    text = (wifi_json or "").strip()
+    if not text:
+        try:
+            return netmax_wifievents.poll_once()
+        except Exception:
+            return None
+    if text.startswith("@"):
+        text = Path(text[1:]).expanduser().read_text(encoding="utf-8")
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise NetMaxError(f"--wifi-json is not valid JSON: {exc}") from None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def run_resolve_settings(
+    *,
+    wifi_json: str = "",
+    profiles_path: str = "",
+    interactive: bool = False,
+    time_sensitive: bool = False,
+    budget_seconds: float | None = None,
+    battery_spec: str = "auto",
+) -> dict[str, Any]:
+    """Resolve the settings one run should use. Reports; never configures."""
+    import netmax_profiles
+    import netmax_schedule as sched
+
+    state = _power_state_for(battery_spec)
+    policy = sched.power_policy(state, forced=time_sensitive)
+    context = netmax_profiles.RunContext(
+        interactive=interactive,
+        time_sensitive=time_sensitive,
+        budget_seconds=budget_seconds,
+        context_known=bool(interactive or time_sensitive
+                           or budget_seconds is not None),
+    )
+    store = (netmax_profiles.ProfileStore.load(profiles_path)
+             if profiles_path else None)
+    resolved = netmax_profiles.resolve_settings(
+        _read_wifi_snapshot(wifi_json),
+        policy=policy, context=context, store=store,
+    )
+    resolved["power"] = {
+        "state": {"source": state.source, "percent": state.percent,
+                  "on_ac": state.on_ac},
+        "reason": policy.reason,
+    }
+    resolved["context"] = {
+        "interactive": interactive, "time_sensitive": time_sensitive,
+        "budget_seconds": budget_seconds, "known": context.context_known,
+    }
+    return resolved
+
+
 def run_plan_advice(
     *,
     history_path: str = "",
@@ -1495,6 +1575,40 @@ def main(argv: list[str] | None = None) -> None:
     sp_plan.add_argument("--pretty", action="store_true",
                          help="indent the JSON output")
 
+    # P3 items 46/43: resolve one run's settings from the network snapshot,
+    # the power state and caller-supplied context. Pure resolution — it
+    # prints settings, it never configures anything.
+    sp_resolve = sub.add_parser(
+        "resolve", help="resolve run settings for a network + context")
+    sp_resolve.add_argument("--wifi-json", default="",
+                            help="a netmax_wifievents snapshot JSON "
+                                 "(default: read one now)")
+    sp_resolve.add_argument("--profiles", default="",
+                            help="path to a configured profile store JSON")
+    sp_resolve.add_argument("--interactive", action="store_true",
+                            help="a call or game is in progress")
+    sp_resolve.add_argument("--time-sensitive", action="store_true",
+                            help="this run must happen now, deferral or not")
+    sp_resolve.add_argument("--budget-seconds", type=float, default=None,
+                            help="the most you are willing to spend")
+    sp_resolve.add_argument("--battery", default="auto",
+                            help="auto (read pmset), ac, battery, or a "
+                                 "percentage like '18'")
+    sp_resolve.add_argument("--pretty", action="store_true",
+                            help="indent the JSON output")
+
+    # P3 item 50: offline dependency and manifest audit.
+    sp_audit = sub.add_parser(
+        "audit", help="offline dependency/manifest audit (no network)")
+    sp_audit.add_argument("--root", default=".",
+                          help="repository root to audit (default %(default)s)")
+    sp_audit.add_argument("--pretty", action="store_true",
+                          help="indent the JSON output")
+    sp_audit.add_argument("--strict", action="store_true",
+                          help="exit non-zero if any error-level finding")
+    sp_audit.add_argument("--list-advisories", action="store_true",
+                          help="print the offline advisory table and exit")
+
     # watch mode (v0.4 diagnostics; the dispatch branch at 'elif cmd == "watch"'
     # existed without this parser — register it so the mode actually runs).
     sp_watch = sub.add_parser("watch", help="continuous monitor (bloat+DNS per cycle)")
@@ -1615,6 +1729,34 @@ def main(argv: list[str] | None = None) -> None:
             import netmax_export
             netmax_export.export_results(args.fmt, args.out)
             print(f"exported ({args.fmt}) → {args.out}")
+        elif cmd == "resolve":
+            result = run_resolve_settings(
+                wifi_json=args.wifi_json,
+                profiles_path=args.profiles,
+                interactive=args.interactive,
+                time_sensitive=args.time_sensitive,
+                budget_seconds=args.budget_seconds,
+                battery_spec=args.battery,
+            )
+            print(json.dumps(result, indent=2 if args.pretty else None,
+                             default=str))
+        elif cmd == "audit":
+            import netmax_audit
+
+            if args.list_advisories:
+                print(json.dumps(
+                    {name: [{"affected_through": hi, "why": why}
+                            for _lo, hi, why in entries]
+                     for name, entries in netmax_audit.ADVISORIES.items()},
+                    indent=2))
+            else:
+                report = netmax_audit.audit(args.root)
+                print(json.dumps(report, indent=2 if args.pretty else None,
+                                 default=str))
+                if args.strict and report["errors"]:
+                    raise NetMaxError(
+                        f"audit found {report['errors']} error-level "
+                        "finding(s)")
         elif cmd == "plan":
             result = run_plan_advice(
                 history_path=args.history,
