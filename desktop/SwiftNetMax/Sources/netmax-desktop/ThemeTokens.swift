@@ -172,6 +172,12 @@ enum ThemeVariation: String, CaseIterable {
 
     var name: String { rawValue.capitalized }
 
+    /// Theme environment key
+    static var current: ThemeVariation {
+        let saved = UserDefaults.standard.string(forKey: "netmax.theme") ?? "dark"
+        return ThemeVariation(rawValue: saved) ?? .dark
+    }
+
     var canvas: Color {
         switch self {
         case .dark: return Color(hex: 0x0a0a0a)
@@ -318,4 +324,28 @@ extension Color {
         let b = Double(hex & 0xFF) / 255.0
         self.init(.sRGB, red: r, green: g, blue: b, opacity: 1.0)
     }
+}
+
+// MARK: - Theme Environment Modifier
+
+/// Applies the selected theme to a view, changing colors dynamically.
+struct ThemeModifier: ViewModifier {
+    let theme: ThemeVariation
+    
+    func body(content: Content) -> some View {
+        content
+            .background(theme.canvas)
+            .foregroundColor(theme.ink)
+    }
+}
+
+extension View {
+    func theme(_ theme: ThemeVariation) -> some View {
+        modifier(ThemeModifier(theme: theme))
+    }
+}
+
+/// Current theme from UserDefaults
+func currentTheme() -> ThemeVariation {
+    ThemeVariation.current
 }

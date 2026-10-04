@@ -85,6 +85,8 @@ struct SettingsView: View {
     var body: some View {
         ScrollViewReader { proxy in
             Form {
+                // Phase 5: Theme selector
+                themeSelector
                 sectionPicker
                 planCapSection
                 featureDiscovery
@@ -138,6 +140,28 @@ struct SettingsView: View {
             .accessibilityLabel(Text("Jump to settings section"))
             .accessibilityHint(Text("Scrolls the settings list to the chosen section."))
             .accessibilityIdentifier("settings.sectionPicker")
+        }
+    }
+
+    // MARK: - Phase 5: Theme Selector
+
+    /// Theme selector — switch between 8 design themes.
+    @AppStorage("netmax.theme") private var selectedTheme: String = "dark"
+
+    private var themeSelector: some View {
+        Section {
+            Picker("Theme", selection: $selectedTheme) {
+                ForEach(ThemeVariation.allCases, id: \.self) { theme in
+                    Text(theme.name).tag(theme.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityLabel(Text("Select UI theme"))
+            .accessibilityHint(Text("Choose from 8 design themes: dark, light, cinematic, minimalist, enterprise, playful, fintech, terminal"))
+        } header: {
+            Label("Appearance", systemImage: "paintpalette")
+        } footer: {
+            Text("Current theme: \(selectedTheme.capitalized). Matches \(ThemeVariation.allCases.count) design systems from awesome-design-md.")
         }
     }
 

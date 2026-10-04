@@ -9,6 +9,9 @@ struct RootView: View {
     /// Mirrors `DefaultOnboardingFlow.isCompleted()` — same exact key.
     @AppStorage(OnboardingConstants.completionKey) private var onboardingComplete = false
 
+    /// Phase 5: Theme selector — reads current theme from UserDefaults
+    @AppStorage("netmax.theme") private var selectedTheme: String = "dark"
+
     var body: some View {
         Group {
             if onboardingComplete {
@@ -21,6 +24,8 @@ struct RootView: View {
                 }
             }
         }
+        // Phase 5: Apply theme colors
+        .theme(ThemeVariation.current)
         // Phase 3: Toast notifications overlay
         .overlay(ToastView())
     }
