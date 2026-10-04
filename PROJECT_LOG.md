@@ -216,3 +216,51 @@ remains the one item still pending its result.
   `netmax.icns/iconset/` unreferenced by any build file; foreign
   `netmax_ai_provider.py` untouched per collision protocol.
 - Launch track (HN, notarize, submissions, rotations) untouched by request.
+
+## Session — 2026-10-04 AI refinements + BYOK/local-LLM slice
+
+- Docs: `docs/product/ai-refinements-100.md` (105 AI items, A–K; F-group
+  NOW, rest NEXT) + `docs/product/ml-algorithms-research.md` (verdict:
+  Tier-0 stdlib stats now, streaming later, DL on-device only; with sources).
+- Code (mine): `netmax_ai_endpoint.py` — 11 presets (openai/anthropic/
+  gemini/deepseek/groq/mistral/openrouter/ollama/lmstudio/llamacpp/local),
+  key precedence explicit>env>Keychain, keyless loopback, `--verify-provider`
+  / `--detect-local` / `--save-key` on `netmax ai`, provider flags exported
+  via `apply_to_env` so analysers change nothing. 17 tests, all green.
+  `py-modules` +1 (audit gate caught it), engine copy re-synced.
+- Live: `--detect-local` found local Ollama; unknown-provider/verify paths
+  honest, no crashes. Gates: pytest 923, ruff clean.
+- Untouched (concurrent editor): `netmax_ai.py` provider rewire +
+  `netmax_ai_provider.py` — left byte-identical per collision protocol.
+- Queued: Swift Settings provider picker (AI-064); bridge `ai` flags
+  (MCP BYOK works today via `env` in MCP config).
+
+## Session — 2026-10-04 Tier-0 stats slice (clash-free lane)
+
+- New `netmax_stats.py` (pure stdlib, zero imports of ai/provider code):
+  Welford, EWMA+bands, two-sided CUSUM, MAD scores/flags, STL-lite +
+  seasonal anomalies (interior-only; edges documented unreliable),
+  Holt forecast with sqrt(h) bands, piecewise-linear-vs-line changepoints
+  (detects steps + slope-changes, silent on pure ramps — two wrong
+  criteria tried and replaced first), `summarize()` bundle entry.
+- 16 tests, all green; engine copy synced. Full suite 977 passed, ruff clean.
+- Overlap noted, not touched: their `netmax model` subcommand (uncommitted,
+  same worktree netmax.py) vs my `ai --verify-provider` flags — propose
+  dedup onto one surface after both land; my endpoint module may shrink
+  onto their `has_provider` gate. No commit (their hunks present).
+
+## Session — 2026-10-04 merge verdict (endpoint vs provider)
+
+- Analysed both fully: provider transport wins on integration (11 analyser
+  gates, committed, 38 tests); endpoint module deleted, its 4 unique
+  capabilities folded into `netmax_ai_provider.py`: correct local ports
+  (lmstudio→1234, llamacpp→8080; shared 11434 was a real bug), 5 cloud
+  presets, Keychain get/set + `live_env()`, `detect_local()`,
+  `apply_to_env()`. resolve() untouched (their 38 tests green unmodified).
+- One CLI: `netmax model` = setup (resolve/verify/--save-key/
+  --detect-local/--provider/--model-name/--base); `ai` keeps per-run
+  --provider/--model/--llm-base only. 9 repointed tests, green live
+  (`--detect-local` found Ollama; lmstudio/groq resolve correctly).
+- Gates: pytest 969, ruff clean, engine re-synced, py-modules endpoint
+  line removed. Their `model`/`watch` hunks still uncommitted in shared
+  netmax.py — no commit from me.

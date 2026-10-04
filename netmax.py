@@ -1596,6 +1596,13 @@ def main(argv: list[str] | None = None) -> None:
                        help="indent the JSON output")
     sp_ai.add_argument("--list-analyses", action="store_true",
                        help="print the available analysers and exit")
+    sp_ai.add_argument("--provider", default="",
+                       help="per-run LLM preset (same names as `netmax model`; "
+                            "or set NETMAX_AI_PROVIDER)")
+    sp_ai.add_argument("--model", default="",
+                       help="per-run model name override (or NETMAX_AI_MODEL)")
+    sp_ai.add_argument("--llm-base", default="",
+                       help="per-run endpoint base URL (or NETMAX_AI_BASE)")
 
     # P3 items 35/45: scheduling policy. Advice only — this prints what it
     # would do and why; it never schedules or launches anything itself.
@@ -1652,6 +1659,29 @@ def main(argv: list[str] | None = None) -> None:
                           help="exit non-zero if any error-level finding")
     sp_audit.add_argument("--list-advisories", action="store_true",
                           help="print the offline advisory table and exit")
+
+    # P3-48: point the AI layer at any OpenAI-compatible endpoint —
+    # including a keyless local one — and check that it answers.
+    sp_model = sub.add_parser(
+        "model", help="show or verify the AI model provider")
+    sp_model.add_argument("--verify", action="store_true",
+                          help="make one small real call to check the setup "
+                               "(this is the only networked command here)")
+    sp_model.add_argument("--provider", default="",
+                          help="preset for this call: openai/anthropic/gemini/"
+                               "deepseek/groq/mistral/openrouter/ollama/"
+                               "lmstudio/llamacpp/local")
+    sp_model.add_argument("--model-name", default="",
+                          help="model name override for this call")
+    sp_model.add_argument("--base", default="",
+                          help="endpoint base URL override for this call")
+    sp_model.add_argument("--save-key", metavar="KEY",
+                          help="store KEY in macOS Keychain and exit")
+    sp_model.add_argument("--detect-local", action="store_true",
+                          help="probe 11434/1234/8080 and show the first "
+                               "live local server")
+    sp_model.add_argument("--pretty", action="store_true",
+                          help="indent the JSON output")
 
     # watch mode (v0.4 diagnostics; the dispatch branch at 'elif cmd == "watch"'
     # existed without this parser — register it so the mode actually runs).
@@ -1784,6 +1814,45 @@ def main(argv: list[str] | None = None) -> None:
             )
             print(json.dumps(result, indent=2 if args.pretty else None,
                              default=str))
+        elif cmd == "model":
+            import netmax_ai_provider
+
+            if args.save_key:
+                print(json.dumps(
+                    {"saved": netmax_ai_provider.keychain_set(args.save_key)}))
+                return
+            if args.detect_local:
+                print(json.dumps(
+                    {"local": netmax_ai_provider.detect_local() or None}))
+                return
+            env = netmax_ai_provider.live_env()
+            if args.provider:
+                env[netmax_ai_provider.ENV_PROVIDER] = args.provider
+            if args.model_name:
+                env[netmax_ai_provider.ENV_MODEL] = args.model_name
+            if args.base:
+                env[netmax_ai_provider.ENV_BASE] = args.base
+            if args.verify:
+                result = netmax_ai_provider.verify(env)
+            else:
+                provider = netmax_ai_provider.resolve(env)
+                result = {
+                    "provider": provider.name, "model": provider.model,
+                    "base": provider.base,
+                    "configured": provider.configured,
+                    "requires_key": provider.requires_key,
+                    "has_key": bool(provider.api_key),
+                    "supports_json_mode": provider.supports_json_mode,
+                    "local": netmax_ai_provider._is_loopback(provider.base),
+                    "hint": (
+                        "set NETMAX_AI_API_KEY / NETMAX_AI_BASE / "
+                        "NETMAX_AI_MODEL, or NETMAX_AI_PROVIDER=ollama|"
+                        "anthropic|local for a preset. A loopback base needs "
+                        "no key. Without a key every analysis falls back to "
+                        "its local heuristics, which is a supported mode."),
+                }
+            print(json.dumps(result, indent=2 if args.pretty else None,
+                             default=str))
         elif cmd == "audit":
             import netmax_audit
 
@@ -1818,6 +1887,17 @@ def main(argv: list[str] | None = None) -> None:
                 for key, (mod, cls, method) in sorted(AI_ANALYSES.items()):
                     print(f"{key:<{width}}  {mod}.{cls}.{method}")
                 return
+            import netmax_ai_provider
+            if args.provider or args.model or args.llm_base:
+                env = netmax_ai_provider.live_env()
+                if args.provider:
+                    env[netmax_ai_provider.ENV_PROVIDER] = args.provider
+                if args.model:
+                    env[netmax_ai_provider.ENV_MODEL] = args.model
+                if args.llm_base:
+                    env[netmax_ai_provider.ENV_BASE] = args.llm_base
+                netmax_ai_provider.apply_to_env(
+                    netmax_ai_provider.resolve(env))
             if not args.analysis:
                 raise NetMaxError(
                     "ai needs --analysis NAME (or --list-analyses)")

@@ -36,6 +36,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
+import urllib.request
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -50,8 +52,41 @@ ENV_TIMEOUT = "NETMAX_AI_TIMEOUT"
 
 OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_BASE = "https://api.openai.com/v1/chat/completions"
-ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-5"
+ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-5"
 ANTHROPIC_DEFAULT_BASE = "https://api.anthropic.com/v1/messages"
+
+# OpenAI-compatible cloud presets: (chat base, default model).
+CLOUD_PRESETS = {
+    "gemini": ("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+               "gemini-2.0-flash"),
+    "deepseek": ("https://api.deepseek.com/v1/chat/completions",
+                 "deepseek-chat"),
+    "groq": ("https://api.groq.com/openai/v1/chat/completions",
+             "llama-3.3-70b-versatile"),
+    "mistral": ("https://api.mistral.ai/v1/chat/completions",
+                "mistral-small-latest"),
+    "openrouter": ("https://openrouter.ai/api/v1/chat/completions",
+                   "openai/gpt-4o-mini"),
+}
+
+# Local servers each speak on their own port — sharing one default here
+# pointed every local preset at Ollama and silently broke the others.
+LOCAL_PRESETS = {
+    "ollama": ("http://127.0.0.1:11434/v1/chat/completions", "llama3.1"),
+    "local": ("http://127.0.0.1:11434/v1/chat/completions", "llama3.1"),
+    "self-hosted": ("http://127.0.0.1:11434/v1/chat/completions", "llama3.1"),
+    "lmstudio": ("http://127.0.0.1:1234/v1/chat/completions", "local-model"),
+    "llamacpp": ("http://127.0.0.1:8080/v1/chat/completions", "default"),
+}
+
+# Health-check URLs for --detect-local.
+LOCAL_PROBES = (
+    ("ollama", "http://127.0.0.1:11434/api/tags"),
+    ("lmstudio", "http://127.0.0.1:1234/v1/models"),
+    ("llamacpp", "http://127.0.0.1:8080/v1/models"),
+)
+
+KEYCHAIN_SERVICE = "netmax-ai"
 
 
 @dataclass
@@ -115,14 +150,27 @@ def resolve(env: dict[str, str] | None = None) -> Provider:
         )
 
     if preset in ("local", "ollama", "llamacpp", "lmstudio", "self-hosted"):
+        default_base, default_model = LOCAL_PRESETS[preset]
         return Provider(
             name=preset,
-            base=base or "http://127.0.0.1:11434/v1/chat/completions",
-            model=model or "llama3.1",
+            base=base or default_base,
+            model=model or default_model,
             # A self-hosted endpoint may legitimately need no key.
             requires_key=False,
             supports_json_mode=False,
             auth_style="bearer" if key else "none",
+            api_key=key or None,
+        )
+
+    if preset in CLOUD_PRESETS:
+        default_base, default_model = CLOUD_PRESETS[preset]
+        return Provider(
+            name=preset,
+            base=base or default_base,
+            model=model or default_model,
+            requires_key=True,
+            supports_json_mode=True,
+            auth_style="bearer",
             api_key=key or None,
         )
 
@@ -155,6 +203,71 @@ def _is_loopback(url: str) -> bool:
     lowered = url.lower()
     return any(host in lowered for host in
                ("127.0.0.1", "localhost", "[::1]", "0.0.0.0"))
+
+
+def keychain_get(account: str = "default") -> str:
+    """Best-effort read from macOS Keychain. "" on any failure."""
+    try:
+        out = subprocess.run(
+            ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE,
+             "-a", account, "-w"],
+            capture_output=True, text=True, timeout=5)
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def live_env() -> dict[str, str]:
+    """os.environ overlaid with the Keychain key when no key is set.
+
+    The CLI setup path (`netmax model`) resolves through this; resolve()
+    itself stays side-effect free so tests and analysers keep passing
+    explicit dicts hermetically.
+    """
+    env = dict(os.environ)
+    if not env.get(ENV_API_KEY, "").strip():
+        key = keychain_get()
+        if key:
+            env[ENV_API_KEY] = key
+    return env
+
+
+def keychain_set(api_key: str, account: str = "default") -> bool:
+    """Store a key in macOS Keychain (update if present). False on failure."""
+    try:
+        subprocess.run(
+            ["security", "add-generic-password", "-U", "-s",
+             KEYCHAIN_SERVICE, "-a", account, "-w", api_key],
+            capture_output=True, text=True, timeout=10, check=True)
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return False
+    return True
+
+
+def detect_local(timeout_s: float = 1.5) -> str:
+    """Probe well-known local servers. Returns preset name or "".
+
+    Explicit action only — resolve() never probes, so configuring a
+    provider stays a pure, offline operation.
+    """
+    for preset, url in LOCAL_PROBES:
+        try:
+            with urllib.request.urlopen(url, timeout=timeout_s) as resp:
+                if resp.status == 200:
+                    return preset
+        except Exception:
+            continue
+    return ""
+
+
+def apply_to_env(provider: Provider) -> None:
+    """Export a resolution so already-constructed code paths (analysers
+    reading env at construction) pick up per-run --provider/--model/--base
+    overrides without signature changes."""
+    os.environ[ENV_BASE] = provider.base
+    os.environ[ENV_MODEL] = provider.model
+    if provider.api_key:
+        os.environ[ENV_API_KEY] = provider.api_key
 
 
 # ── request shaping ──────────────────────────────────────────────────────────
