@@ -29,6 +29,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+import netmax_ai_provider as provider_mod
 from netmax_ai import DEFAULT_AI_BASE, DEFAULT_AI_MODEL, _chat_json
 
 # Grade ordering mirrors netmax.py's BLOAT_GRADES rubric so callers can
@@ -75,7 +76,7 @@ class _Base:
 
     def _ask(self, prompt: str, *, max_tokens: int = 300) -> dict[str, Any] | None:
         """JSON-mode model call, or None on any failure. Never raises."""
-        if not self.api_key:
+        if not provider_mod.has_provider(api_key=self.api_key):
             return None
         try:
             return _chat_json(
@@ -187,7 +188,7 @@ class MultiObjectiveOptimizer(_Base):
         )
         best = scored[0]
         self._remember({"kind": "optimize", "n_options": len(options)})
-        if self.api_key and len(scored) > 1:
+        if provider_mod.has_provider(api_key=self.api_key) and len(scored) > 1:
             raw = self._ask(
                 "Pick the best network configuration from these scored "
                 "options. Return JSON only.\n"
@@ -423,7 +424,7 @@ class RootCauseClassifier(_Base):
         causes = self._local_causes(diagnostics)
         self._remember({"kind": "classify", "n_causes": len(causes)})
 
-        if self.api_key and causes:
+        if provider_mod.has_provider(api_key=self.api_key) and causes:
             raw = self._ask(
                 "Explain why this network is slow. Return JSON only.\n"
                 "Schema: { causes: [{ cause: string, severity: string, "
@@ -630,7 +631,7 @@ class ISPBehaviorFingerprinter(_Base):
             confidence=confidence,
         )
 
-        if self.api_key and n >= self.MIN_SAMPLES_FOR_CONFIDENCE:
+        if provider_mod.has_provider(api_key=self.api_key) and n >= self.MIN_SAMPLES_FOR_CONFIDENCE:
             raw = self._ask(
                 "Assess whether this ISP shows evidence of shaping or "
                 "congestion. Return JSON only.\n"
@@ -1054,7 +1055,7 @@ class NaturalLanguageCLI(_Base):
             return {"argv": argv, "reasoning": "matched a known phrasing",
                     "confidence": "high", "source": "local"}
 
-        if not self.api_key:
+        if not provider_mod.has_provider(api_key=self.api_key):
             return {"error": "could not parse that offline — set NETMAX_AI_API_KEY "
                              "or use the explicit flags (see --help)",
                     "source": "local"}

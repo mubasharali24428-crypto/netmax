@@ -225,3 +225,88 @@ class TestVerify:
         out = prov.verify({"NETMAX_AI_BASE": "http://127.0.0.1:11434/v1/chat/completions"})
         assert out["local"] is True
         assert out["has_key"] is False
+
+
+class TestKeylessLocalIsActuallyReachable:
+    """Regression: fixing the transport is not the same as fixing the gate.
+
+    An earlier version made `_chat_json` accept a keyless loopback base but
+    left every analyser asking `if self.api_key:`. A local model was then
+    still unreachable — the transport said yes and the caller never asked.
+    """
+
+    def test_has_provider_is_true_for_a_keyless_loopback(self):
+        assert prov.has_provider(
+            {"NETMAX_AI_BASE": "http://127.0.0.1:11434/v1/chat/completions"}) is True
+
+    def test_has_provider_is_false_with_nothing_configured(self):
+        assert prov.has_provider({}) is False
+
+    def test_an_explicit_key_counts_without_the_environment(self):
+        assert prov.has_provider({}, api_key="k") is True
+
+    def test_an_explicit_key_does_not_rescue_a_broken_env(self):
+        """A supplied key is sufficient on its own."""
+        assert prov.has_provider({"NETMAX_AI_BASE": "https://x/v1/chat/completions"},
+                                 api_key="k") is True
+
+    def test_analysers_take_the_model_path_with_only_a_local_base(self, monkeypatch):
+        """The end-to-end property, across all three AI modules.
+
+        With ONLY a loopback base set, every analyser must be willing to
+        consult a model. Transport is stubbed so this stays offline.
+        """
+        import netmax_ai
+        import netmax_ai_p1
+        import netmax_ai_p2
+
+        monkeypatch.setenv("NETMAX_AI_BASE",
+                           "http://127.0.0.1:11434/v1/chat/completions")
+        monkeypatch.delenv("NETMAX_AI_API_KEY", raising=False)
+
+        for cls in (netmax_ai.PredictiveShaper,
+                    netmax_ai.EndpointStrategySelector,
+                    netmax_ai_p1.RootCauseClassifier,
+                    netmax_ai_p1.MultiObjectiveOptimizer,
+                    netmax_ai_p2.ResultExplainer):
+            assert prov.has_provider(api_key=cls().api_key) is True, cls.__name__
+
+        # And the governor really does attempt the call — then degrades
+        # safely when the endpoint is not there, instead of raising.
+        fake, state = _reply(json.dumps({"streams": 2}))
+        monkeypatch.setattr(prov, "urlopen", fake)
+        decision = netmax_ai.AISpeedGovernor().decide(5.0, {"mbps": 5})
+        assert state["calls"] == 1
+        assert decision.streams == 2
+
+    def test_unreachable_local_endpoint_degrades_without_raising(self, monkeypatch):
+        """A configured-but-dead local model must not break the run."""
+        import netmax_ai
+
+        monkeypatch.setenv("NETMAX_AI_BASE",
+                           "http://127.0.0.1:11434/v1/chat/completions")
+        monkeypatch.delenv("NETMAX_AI_API_KEY", raising=False)
+
+        def boom(req, timeout=None):
+            raise prov.URLError("connection refused")
+
+        monkeypatch.setattr(prov, "urlopen", boom)
+        # A dead endpoint must not raise: decide() swallows the transport
+        # error and returns None, which tells the caller to keep the
+        # hardcoded pace. That is the whole safety property.
+        assert netmax_ai.AISpeedGovernor().decide(5.0, {"mbps": 5}) is None
+
+    def test_analysers_stay_local_with_no_configuration(self, monkeypatch):
+        import netmax_ai
+        monkeypatch.delenv("NETMAX_AI_BASE", raising=False)
+        monkeypatch.delenv("NETMAX_AI_API_KEY", raising=False)
+        monkeypatch.delenv("NETMAX_AI_PROVIDER", raising=False)
+
+        governor = netmax_ai.AISpeedGovernor()
+        assert governor.decide(5.0, {"mbps": 5}) is None      # no call attempted
+        shaper = netmax_ai.PredictiveShaper()
+        for _ in range(3):
+            shaper.record_interval(50.0, 4, 50.0)
+        out = shaper.suggest(50.0, 50.0, 12.0, 5.0, 5.0, 4)
+        assert out["type"] == "high_jitter_loss"               # heuristics answered
+        assert "source" not in out

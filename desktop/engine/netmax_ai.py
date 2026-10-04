@@ -60,9 +60,9 @@ def _chat_json(
         name="inline",
         base=(api_base or DEFAULT_AI_BASE),
         model=(model or DEFAULT_AI_MODEL),
-        requires_key=True,
+        requires_key=bool(api_key),
         supports_json_mode=True,
-        auth_style="bearer",
+        auth_style="bearer" if api_key else "none",
         api_key=api_key or None,
     )
     return provider_mod.chat_json(
@@ -505,7 +505,7 @@ class EndpointStrategySelector:
         
         # Model second opinion on the locally-ranked shortlist. Bounded to
         # endpoints we actually measured, so the model cannot invent a host.
-        if self.api_key and len(candidate_endpoints) > 1:
+        if provider_mod.has_provider(api_key=self.api_key) and len(candidate_endpoints) > 1:
             try:
                 ai_pick = self._ai_pick_endpoint(
                     current_endpoint, candidate_endpoints
@@ -579,7 +579,7 @@ class AISpeedGovernor:
         telemetry: dict[str, Any],
     ) -> GovernorDecision | None:
         """Return an AI decision, or None if API is unavailable."""
-        if not self.api_key:
+        if not provider_mod.has_provider(api_key=self.api_key):
             return None
         try:
             payload = self._build_payload(target_mbps, telemetry)
@@ -657,7 +657,7 @@ class AISpeedGovernor:
             name="governor",
             base=(self.api_base or DEFAULT_AI_BASE),
             model=(self.model or DEFAULT_AI_MODEL),
-            requires_key=True,
+            requires_key=bool(self.api_key),
             supports_json_mode=True,
             auth_style="bearer",
             api_key=self.api_key or None,

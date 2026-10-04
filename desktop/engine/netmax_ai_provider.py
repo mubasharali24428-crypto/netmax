@@ -316,6 +316,25 @@ def chat_json(
     raise last_error or ValueError("provider call failed")
 
 
+def has_provider(env: dict[str, str] | None = None,
+                 api_key: str | None = None) -> bool:
+    """True when a model is usable.
+
+    Deliberately NOT "is there an API key string". A loopback self-hosted
+    server is configured without one, so gating on the key made local
+    models unreachable even after the transport had been taught to accept
+    them — the analyser asked a different question from the one the
+    provider layer answers.
+
+    `api_key` is an explicitly-supplied key from a caller who constructed
+    the analyser directly; it counts on its own, without the environment
+    needing to repeat it.
+    """
+    if api_key:
+        return True
+    return resolve(env).configured
+
+
 def verify(env: dict[str, str] | None = None) -> dict[str, Any]:
     """Check the configured provider with a tiny real call.
 

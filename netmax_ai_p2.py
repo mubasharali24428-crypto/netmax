@@ -24,6 +24,7 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+import netmax_ai_provider as provider_mod
 from netmax_ai_p1 import GRADE_RANK, _Base
 
 
@@ -122,7 +123,7 @@ class ResultExplainer(_Base):
             "tone": tone,
             "source": "local",
         }
-        if self.api_key and statements:
+        if provider_mod.has_provider(api_key=self.api_key) and statements:
             raw = self._ask(
                 "Explain this network measurement to a non-expert. Return "
                 "JSON only.\n"
