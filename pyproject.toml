@@ -25,6 +25,8 @@ py-modules = [
     # `netmax audit` fails the build if this list and the import graph
     # disagree in either direction.
     "netmetrics", "netmax_ai", "netmax_ai_p1", "netmax_ai_p2", "netmax_ai_p4",
+    "netmax_ai_provider",
+    "netmax_ai_endpoint",
     "netmax_schedule", "netmax_profiles", "netmax_audit",
     "netmax_wifievents", "netmax_eco", "netmax_eventstore",
     "netmax_history",

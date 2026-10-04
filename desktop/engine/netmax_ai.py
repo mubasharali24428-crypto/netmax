@@ -16,7 +16,8 @@ import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.request import Request, urlopen
+
+import netmax_ai_provider as provider_mod
 
 
 @dataclass
@@ -43,46 +44,29 @@ def _chat_json(
     max_tokens: int = 120,
     system: str = "You are a JSON-only network assistant.",
 ) -> dict[str, Any]:
-    """POST a JSON-mode chat completion and return the parsed content.
+    """POST a chat completion and return the parsed JSON object.
+
+    Delegates to netmax_ai_provider so the whole AI layer picks up
+    NETMAX_AI_PROVIDER / NETMAX_AI_BASE / NETMAX_AI_MODEL — including a
+    keyless local server, and providers that reject `response_format`.
+
+    api_key / model / api_base still win when passed explicitly, so every
+    existing caller and test behaves exactly as before.
 
     Raises on any transport/protocol problem — callers decide whether that
     means "fall back to heuristics" (best-effort callers) or "fail".
     """
-    payload = {
-        "model": model,
-        "temperature": 0.1,
-        "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
-        "max_tokens": max_tokens,
-    }
-    data = json.dumps(payload).encode("utf-8")
-    req = Request(
-        api_base.rstrip("/"),
-        data=data,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="POST",
+    provider = provider_mod.Provider(
+        name="inline",
+        base=(api_base or DEFAULT_AI_BASE),
+        model=(model or DEFAULT_AI_MODEL),
+        requires_key=True,
+        supports_json_mode=True,
+        auth_style="bearer",
+        api_key=api_key or None,
     )
-    with urlopen(req, timeout=timeout_s) as resp:
-        body = json.loads(resp.read().decode("utf-8"))
-    choices = body.get("choices") or []
-    if not choices:
-        raise ValueError("empty choices")
-    content = choices[0].get("message", {}).get("content", "")
-    if not content:
-        raise ValueError("empty content")
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError:
-        return {"reasoning": content[:200], "confidence": "low"}
-    if not isinstance(parsed, dict):
-        raise TypeError("model content was not a JSON object")
-    return parsed
+    return provider_mod.chat_json(
+        prompt, system=system, max_tokens=max_tokens, provider=provider)
 
 
 class PredictiveAdjustment:
@@ -661,29 +645,41 @@ class AISpeedGovernor:
         }
 
     def _call_api(self, payload: dict[str, Any]) -> dict[str, Any]:
-        data = json.dumps(payload).encode("utf-8")
-        req = Request(
-            self.api_base,
-            data=data,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}",
-            },
-            method="POST",
-        )
-        with urlopen(req, timeout=self.timeout_s) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
+        """Send a prepared governor payload through the shared provider path.
 
-        choices = body.get("choices") or []
-        if not choices:
-            raise ValueError("empty choices")
-        content = choices[0].get("message", {}).get("content", "")
-        if not content:
-            raise ValueError("empty content")
+        Kept as a method taking the already-built payload so the prompt
+        assembly above stays exactly as it was, but the transport is now
+        the SAME one every other class uses — so the governor honours
+        NETMAX_AI_BASE / NETMAX_AI_PROVIDER and works against a local or
+        non-OpenAI-shaped endpoint instead of being quietly OpenAI-only.
+        """
+        provider = provider_mod.Provider(
+            name="governor",
+            base=(self.api_base or DEFAULT_AI_BASE),
+            model=(self.model or DEFAULT_AI_MODEL),
+            requires_key=True,
+            supports_json_mode=True,
+            auth_style="bearer",
+            api_key=self.api_key or None,
+        )
+        user_prompt = next(
+            (m["content"] for m in payload.get("messages", [])
+             if m.get("role") == "user"), "")
+        system = next(
+            (m["content"] for m in payload.get("messages", [])
+             if m.get("role") == "system"),
+            "You are a JSON-only network governor.")
         try:
-            return json.loads(content)
-        except json.JSONDecodeError:
-            return {"raw": content, "reasoning": content[:200]}
+            return provider_mod.chat_json(
+                user_prompt, system=system,
+                max_tokens=int(payload.get("max_tokens", 120)),
+                provider=provider)
+        except (ValueError, TypeError):
+            # The governor is a best-effort caller: a model that answers in
+            # prose must degrade to "keep the current pace", not abort the
+            # run. The hardcoded governor takes over on a None decision.
+            return {"raw": "", "reasoning": "model reply was not JSON"}
+
 
     @staticmethod
     def _parse(raw: dict[str, Any]) -> GovernorDecision:

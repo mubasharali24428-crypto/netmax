@@ -84,7 +84,7 @@ def test_optimizer_model_cannot_invent_a_stream_count(monkeypatch):
         {"streams": 4, "throughput_mbps": 60, "latency_ms": 40},
     ]
     opt = MultiObjectiveOptimizer(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _reply(
         {"pick_streams": 999, "reasoning": "many!", "confidence": "high"}))
     out = opt.optimize(opts)
     assert out["streams"] in {1, 4}          # 999 refused
@@ -96,7 +96,7 @@ def test_optimizer_model_pick_is_honoured_when_legal(monkeypatch):
         {"streams": 4, "throughput_mbps": 60, "latency_ms": 40},
     ]
     opt = MultiObjectiveOptimizer(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _reply(
         {"pick_streams": 1, "reasoning": "latency matters", "confidence": "high"}))
     out = opt.optimize(opts)
     assert out["streams"] == 1
@@ -133,7 +133,7 @@ def test_chunk_respects_hard_bounds():
 
 def test_chunk_model_value_is_clamped(monkeypatch):
     sz = AdaptiveChunkSizer(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _reply(
         {"chunk_bytes": 999_999_999, "reasoning": "huge"}))
     out = sz.suggest_chunk_bytes(rtt_ms=50)
     assert out["chunk_bytes"] == sz.max_bytes
@@ -142,7 +142,7 @@ def test_chunk_model_value_is_clamped(monkeypatch):
 
 def test_chunk_model_failure_keeps_local_answer(monkeypatch):
     sz = AdaptiveChunkSizer(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _boom)
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _boom)
     out = sz.suggest_chunk_bytes(rtt_ms=50)
     assert sz.min_bytes <= out["chunk_bytes"] <= sz.max_bytes
     assert out["source"] == "local"
@@ -221,7 +221,7 @@ def test_classifier_always_attaches_a_fix():
 
 def test_classifier_drops_hallucinated_causes(monkeypatch):
     rc = RootCauseClassifier(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _reply({
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _reply({
         "summary": "quantum flux",
         "causes": [
             {"cause": "bufferbloat", "severity": "high",
@@ -237,7 +237,7 @@ def test_classifier_drops_hallucinated_causes(monkeypatch):
 
 def test_classifier_model_failure_keeps_local_ranking(monkeypatch):
     rc = RootCauseClassifier(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _boom)
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _boom)
     out = rc.classify({"bloat_grade": "D", "mbps": 40.0})
     assert out["source"] == "local"
     assert out["causes"]
@@ -341,7 +341,7 @@ def test_dns_notes_when_switching_is_pointless():
 
 def test_dns_refuses_an_unmeasured_resolver(monkeypatch):
     dns = DNSStrategyOptimizer(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _reply(
         {"recommended": "SomeRandomResolver", "notes": ["trust me"],
          "confidence": "high"}))
     out = dns.advise([{"name": "Google 8.8.8.8", "latency_ms": 60}])
@@ -421,7 +421,7 @@ def test_jitter_with_no_data_is_unknown():
 
 def test_jitter_refuses_a_hop_that_was_not_measured(monkeypatch):
     j = JitterSourceAttributor(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _reply(
         {"dominant": "quantum_link", "advice": "x", "confidence": "high"}))
     out = j.attribute(gateway_ms=45, internet_ms=50)
     assert out["dominant"] in {"local_wifi", "isp_path"}
@@ -468,7 +468,7 @@ def test_nl_unparseable_offline_says_so():
 
 def test_nl_refuses_a_command_outside_the_allowlist(monkeypatch):
     cli = NaturalLanguageCLI(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _reply(
         {"command": "rm", "mbps": 5, "reasoning": "x", "confidence": "high"}))
     out = cli.parse("please do the needful")
     assert "error" in out
@@ -477,7 +477,7 @@ def test_nl_refuses_a_command_outside_the_allowlist(monkeypatch):
 
 def test_nl_model_translation_is_range_checked(monkeypatch):
     cli = NaturalLanguageCLI(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _reply(
         {"command": "limit", "mbps": 100_000, "seconds": 999_999,
          "streams": 900, "reasoning": "go fast", "confidence": "high"}))
     out = cli.parse("hold my line steady somehow")
@@ -489,13 +489,13 @@ def test_nl_model_translation_is_range_checked(monkeypatch):
 
 def test_nl_model_failure_reports_an_error(monkeypatch):
     cli = NaturalLanguageCLI(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _boom)
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _boom)
     assert "error" in cli.parse("please do the needful")
 
 
 def test_nl_limit_without_mbps_is_refused(monkeypatch):
     cli = NaturalLanguageCLI(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _reply(
         {"command": "limit", "reasoning": "no number given", "confidence": "low"}))
     out = cli.parse("please hold my bandwidth steady somehow")
     assert "error" in out

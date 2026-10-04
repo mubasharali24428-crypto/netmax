@@ -102,7 +102,7 @@ def test_decide_success_with_mocked_api(monkeypatch):
         seen["method"] = req.method
         return DummyResp()
 
-    monkeypatch.setattr("netmax_ai.urlopen", fake_urlopen)
+    monkeypatch.setattr("netmax_ai_provider.urlopen", fake_urlopen)
     d = gov.decide(5.0, {"mbps": 5.1, "streams": 2, "endpoint_health": {}})
     assert d is not None
     assert d.streams == 4
@@ -119,7 +119,7 @@ def test_decide_api_failure_returns_none(monkeypatch):
     def boom(req, timeout=None):
         raise OSError("network down")
 
-    monkeypatch.setattr("netmax_ai.urlopen", boom)
+    monkeypatch.setattr("netmax_ai_provider.urlopen", boom)
     assert gov.decide(5.0, {}) is None
 
 
@@ -138,11 +138,13 @@ def test_decide_non_json_content_returns_raw(monkeypatch):
             return json.dumps(api_payload).encode("utf-8")
         status = 200
 
-    monkeypatch.setattr("netmax_ai.urlopen", lambda req, timeout=None: DummyResp())
+    monkeypatch.setattr("netmax_ai_provider.urlopen", lambda req, timeout=None: DummyResp())
     d = gov.decide(5.0, {})
+    # The governor degrades rather than aborting: a prose reply means
+    # "keep the current pace", and the hardcoded governor takes over.
     assert d is not None
-    assert d.reasoning == "not-json"
-    assert d.raw == {"raw": "not-json", "reasoning": "not-json"}
+    assert d.reasoning == "model reply was not JSON"
+    assert d.streams is None and d.pace_bps is None
 
 
 def test_predictive_adjustment_defaults():
@@ -314,7 +316,7 @@ def test_shaper_uses_model_when_heuristics_abstain(monkeypatch):
     for _ in range(3):
         shaper.record_interval(50.0, 4, 50.0)      # benign — heuristics abstain
     seen = {}
-    monkeypatch.setattr("netmax_ai.urlopen", _chat_reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _chat_reply(
         {"type": "sustained_negative_trend", "streams_adjustment": -1,
          "pace_adjustment": -0.15, "reasoning": "drifting down",
          "confidence": "medium"}, seen))
@@ -330,7 +332,7 @@ def test_shaper_prefers_local_answer_over_model(monkeypatch):
     """High loss is unambiguous — the model must not be consulted."""
     shaper = PredictiveShaper(api_key="k")
     shaper.record_interval(50.0, 4, 50.0)
-    monkeypatch.setattr("netmax_ai.urlopen", _chat_reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _chat_reply(
         {"type": "maintain_current", "streams_adjustment": 0,
          "pace_adjustment": 0.0, "reasoning": "x", "confidence": "high"}))
     out = shaper.suggest(50.0, 50.0, 12.0, 5.0, 5.0, 4)
@@ -345,7 +347,7 @@ def test_shaper_model_failure_falls_back_to_local(monkeypatch):
     def boom(req, timeout=None):
         raise OSError("down")
 
-    monkeypatch.setattr("netmax_ai.urlopen", boom)
+    monkeypatch.setattr("netmax_ai_provider.urlopen", boom)
     out = shaper.suggest(50.0, 50.0, 12.0, 5.0, 0.1, 4)
     assert out["type"] == "maintain_current"       # local answer survives
 
@@ -354,7 +356,7 @@ def test_shaper_clamps_model_moves(monkeypatch):
     """A model must not be able to command an unbounded correction."""
     shaper = PredictiveShaper(api_key="k")
     shaper.record_interval(50.0, 4, 50.0)
-    monkeypatch.setattr("netmax_ai.urlopen", _chat_reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _chat_reply(
         {"type": "sustained_negative_trend", "streams_adjustment": -99,
          "pace_adjustment": -12.0, "reasoning": "x", "confidence": "high"}))
     out = shaper.suggest(50.0, 50.0, 12.0, 5.0, 0.1, 4)
@@ -372,7 +374,7 @@ def _seed_selector(sel):
 
 def test_selector_model_can_rerank(monkeypatch):
     sel = _seed_selector(EndpointStrategySelector(api_key="k"))
-    monkeypatch.setattr("netmax_ai.urlopen", _chat_reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _chat_reply(
         {"order": ["Hetzner", "CacheFly", "OVH"],
          "reasoning": "CacheFly 429s under sustained pulls", "confidence": "high"}))
     out = sel.suggest("OVH", 0.8, 10.0)
@@ -383,7 +385,7 @@ def test_selector_model_can_rerank(monkeypatch):
 def test_selector_rejects_hallucinated_endpoint(monkeypatch):
     """An endpoint we never measured must be discarded, not trusted."""
     sel = _seed_selector(EndpointStrategySelector(api_key="k"))
-    monkeypatch.setattr("netmax_ai.urlopen", _chat_reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _chat_reply(
         {"order": ["Fastly", "Hetzner", "CacheFly", "OVH"],
          "reasoning": "trust me", "confidence": "high"}))
     out = sel.suggest("OVH", 0.8, 10.0)
@@ -392,7 +394,7 @@ def test_selector_rejects_hallucinated_endpoint(monkeypatch):
 
 def test_selector_rejects_partial_order(monkeypatch):
     sel = _seed_selector(EndpointStrategySelector(api_key="k"))
-    monkeypatch.setattr("netmax_ai.urlopen", _chat_reply(
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _chat_reply(
         {"order": ["Hetzner"], "reasoning": "only one", "confidence": "low"}))
     out = sel.suggest("OVH", 0.8, 10.0)
     assert out["endpoint"] == "CacheFly"
@@ -404,7 +406,7 @@ def test_selector_model_failure_keeps_local_rank(monkeypatch):
     def boom(req, timeout=None):
         raise OSError("down")
 
-    monkeypatch.setattr("netmax_ai.urlopen", boom)
+    monkeypatch.setattr("netmax_ai_provider.urlopen", boom)
     out = sel.suggest("OVH", 0.8, 10.0)
     assert out["endpoint"] == "CacheFly"
 
@@ -414,7 +416,7 @@ def test_no_api_key_means_no_api_call(monkeypatch):
     def forbidden(req, timeout=None):
         raise AssertionError("urlopen must not be called without a key")
 
-    monkeypatch.setattr("netmax_ai.urlopen", forbidden)
+    monkeypatch.setattr("netmax_ai_provider.urlopen", forbidden)
     shaper = PredictiveShaper(api_key="")
     shaper.record_interval(50.0, 4, 50.0)
     assert shaper.suggest(50.0, 50.0, 12.0, 5.0, 0.1, 4)["type"] == "maintain_current"

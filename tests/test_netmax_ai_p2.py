@@ -89,7 +89,7 @@ def test_explainer_rejects_unknown_tone():
 
 def test_explainer_model_failure_keeps_local(monkeypatch):
     ex = ResultExplainer(api_key="k")
-    monkeypatch.setattr("netmax_ai.urlopen", _boom)
+    monkeypatch.setattr("netmax_ai_provider.urlopen", _boom)
     out = ex.explain({"mbps": 40.0})
     assert out["source"] == "local"
     assert out["statements"]
