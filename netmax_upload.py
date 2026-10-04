@@ -104,6 +104,13 @@ def upload_probe(seconds: float) -> tuple[float, float]:
             try:
                 proc = subprocess.run(
                     ["curl", "-s", "-o", "/dev/null", "-w", _WRITE_OUT_FMT,
+                     # Disable the Expect: 100-continue handshake. Without
+                     # this, curl's %write-out reports the INTERIM 100 as
+                     # the status for any body over ~1 KB, so a transfer
+                     # that uploaded megabytes was rejected as "HTTP 100".
+                     # It also costs a round trip before the body starts,
+                     # which is charged to the measurement.
+                     "-H", "Expect:",
                      "-X", "POST", "--data-binary", data_arg,
                      "--max-time", str(max(1.0, round(seconds, 3))),
                      endpoint],
@@ -126,10 +133,13 @@ def upload_probe(seconds: float) -> tuple[float, float]:
                 problems.append(f"{endpoint}: curl exit {proc.returncode}: {detail}")
                 continue
             code_s, nbytes_s, secs_s = parts
-            # Non-200 (rate limit / 4xx) → discard sample, next endpoint.
-            if code_s != "200":
-                problems.append(f"{endpoint}: HTTP {code_s}")
-                continue
+            # Parse the NUMBERS before judging the status. A transfer cut
+            # short by --max-time reports a non-final status (100 Continue
+            # with the default Expect handshake, 000 once that is disabled)
+            # while still having uploaded real bytes — and this probe's
+            # documented intent is that "a stream cut short by --max-time
+            # measures exactly what was sent". Checking the code first threw
+            # that sample away before the bytes were ever read.
             try:
                 nbytes, secs = int(nbytes_s), float(secs_s)
             except ValueError:
@@ -142,8 +152,19 @@ def upload_probe(seconds: float) -> tuple[float, float]:
                 continue
             if nbytes == 0:
                 # Proxy interception guard: nothing actually left the machine.
-                problems.append(f"{endpoint}: 0 bytes uploaded (HTTP 200)")
+                problems.append(f"{endpoint}: 0 bytes uploaded (HTTP {code_s})")
                 continue
+
+            # A POST sink may legitimately answer 201/204, not only 200.
+            completed = code_s.isdigit() and 200 <= int(code_s) < 300
+            # curl exit 28 = the --max-time cap fired mid-transfer. The bytes
+            # counted are what curl actually sent, over the time it took, so
+            # this is a real sample rather than a discarded one.
+            cut_short = proc.returncode == 28
+            if not completed and not cut_short:
+                problems.append(f"{endpoint}: HTTP {code_s}")
+                continue
+
             # Mbps math divides bytes sent by curl's own time_total, so a
             # capped payload ending its last POST early stays exact — and a
             # stream cut short by --max-time measures exactly what was sent.

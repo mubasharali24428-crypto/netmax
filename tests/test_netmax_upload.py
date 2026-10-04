@@ -12,6 +12,8 @@ from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
+from unittest.mock import patch
+
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -301,3 +303,108 @@ def test_payload_cleaned_up_when_write_fails(monkeypatch, tmp_path):
     with pytest.raises(OSError, match="disk full"):
         netmax_upload.upload_probe(seconds=1.0)
     assert created and not os.path.exists(created[0])
+
+
+def _upload_argv(endpoint, max_time, data_arg):
+    """The exact argv netmax_upload builds for one POST."""
+    return ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code} %{size_upload} %{time_total}",
+            "-H", "Expect:", "-X", "POST", "--data-binary", data_arg,
+            "--max-time", str(max_time), endpoint]
+
+
+def _probe_with_stdout(stdout, returncode=0):
+    """Drive upload_probe with a scripted curl result."""
+    class FakeProc:
+        def __init__(self):
+            self.stdout = stdout
+            self.stderr = ""
+            self.returncode = returncode
+
+    def fake_run(argv, **kwargs):
+        return FakeProc()
+
+    with patch.object(subprocess, "run", fake_run):
+        return netmax_upload.upload_probe(seconds=8)
+
+
+# ── live-bug regressions ─────────────────────────────────────────────────────
+# Found by running the probe against the real internet, not by a test: every
+# endpoint reported "HTTP 100" and the probe failed outright.
+
+
+class TestExpectHandshake:
+    """curl's Expect: 100-continue made %write-out report the INTERIM status.
+
+    For any body over ~1 KB curl asks permission first; the server answers
+    100 Continue, and that interim code is what %write-out reported. A
+    transfer that had uploaded megabytes was therefore rejected as
+    "HTTP 100" and the probe failed on every endpoint.
+    """
+
+    def test_argv_disables_the_expect_handshake(self):
+        argv = _upload_argv("https://example.invalid", "10", "/tmp/x.bin")
+        assert "Expect:" in argv
+        # It must be the header NAME with an empty value, passed as one argv
+        # element pair — not "--expect" or a bare "Expect".
+        assert argv[argv.index("Expect:") - 1] == "-H"
+
+    def test_argv_still_posts_the_binary_payload(self):
+        argv = _upload_argv("https://example.invalid", "10", "/tmp/x.bin")
+        assert "--data-binary" in argv
+        assert "-X" in argv and argv[argv.index("-X") + 1] == "POST"
+
+
+class TestResultParsing:
+    """A transfer cut short by --max-time is a REAL sample, not a failure.
+
+    The module's own comment states the intent — "a stream cut short by
+    --max-time measures exactly what was sent" — but the parser checked the
+    HTTP status BEFORE reading the byte count, so that sample was thrown
+    away before the numbers were ever seen.
+    """
+
+    def test_completed_2xx_is_accepted(self):
+        mbps, mb = _probe_with_stdout("201 10000000 8.0")
+        assert mb == pytest.approx(10.0)
+        assert mbps == pytest.approx(10.0)
+
+    def test_204_counts_as_success(self):
+        mbps, _mb = _probe_with_stdout("204 10000000 8.0", returncode=0)
+        assert mbps > 0
+
+    def test_cut_short_transfer_is_accepted(self):
+        """curl exit 28 = the time cap fired mid-transfer."""
+        mbps, mb = _probe_with_stdout("000 6881117 8.0", returncode=28)
+        assert mb == pytest.approx(6.881117, rel=1e-3)
+        assert mbps > 0
+
+    def test_interim_100_with_real_bytes_is_not_rejected_as_http_100(self):
+        """The exact live failure: code 100, but 6.9 MB really moved."""
+        mbps, mb = _probe_with_stdout("100 6881117 8.0", returncode=28)
+        assert mb > 0 and mbps > 0
+
+    def test_zero_bytes_is_still_refused(self):
+        """The proxy-interception guard must survive the fix."""
+        with pytest.raises(netmax.NetMaxError, match="0 bytes uploaded"):
+            _probe_with_stdout("200 0 8.0", returncode=0)
+
+    def test_genuine_http_error_is_still_refused(self):
+        with pytest.raises(netmax.NetMaxError):
+            _probe_with_stdout("429 5000 0.5", returncode=0)
+
+    def test_4xx_with_no_timeout_is_refused(self):
+        with pytest.raises(netmax.NetMaxError):
+            _probe_with_stdout("503 5000 0.5", returncode=0)
+
+    def test_timeout_with_zero_bytes_is_refused(self):
+        """A cut transfer that sent nothing proves nothing."""
+        with pytest.raises(netmax.NetMaxError, match="0 bytes uploaded"):
+            _probe_with_stdout("000 0 8.0", returncode=28)
+
+    def test_unparseable_output_is_refused(self):
+        with pytest.raises(netmax.NetMaxError):
+            _probe_with_stdout("garbage")
+
+    def test_zero_duration_is_refused(self):
+        with pytest.raises(netmax.NetMaxError):
+            _probe_with_stdout("200 1000 0", returncode=0)
