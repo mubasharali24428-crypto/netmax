@@ -26,9 +26,48 @@ py-modules = [
     # disagree in either direction.
     "netmetrics", "netmax_ai", "netmax_ai_p1", "netmax_ai_p2", "netmax_ai_p4",
     "netmax_ai_provider",
+    "netmax_stats",
     "netmax_schedule", "netmax_profiles", "netmax_audit",
     "netmax_wifievents", "netmax_eco", "netmax_eventstore",
     "netmax_history",
     "netmax_export", "netmax_fetch", "netmax_gui", "netmax_shape",
     "netmax_throttle", "netmax_upload", "netmax_watch",
 ]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "tests/*",
+    "test_*.py",
+    "scripts/*",
+    "desktop/bridge/test_*",
+    ".venv/*",
+    "desktop/SwiftNetMax/*",
+    "desktop/build/*",
+    "desktop/node_modules/*",
+    "desktop/engine/*",
+    "desktop/engine_store/*",
+    # Phase 0 (2026-10-08): one-off build/patch helpers, not product code,
+    # excluded from the release change set (see .gitignore).
+    "builder*.py",
+    "clean_themes.py",
+    "deduplicate.py",
+    "find_brace*.py",
+    "fix_*.py",
+    "full_patch*.py",
+    "mega_patch*.py",
+    "parse_transcript*.py",
+    "patch.py",
+    "patch_*.py",
+    "remove_bracket.py",
+    "restore_*.py",
+    "rewrite_funcs.py",
+    "update_tokens.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
+[tool.coverage.xml]
+output = "coverage.xml"

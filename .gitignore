@@ -19,3 +19,36 @@ docs/HN-REPLY-TEMPLATES.md
 results.json
 results.png
 results/
+# Phase 0 (2026-10-08): one-off build/patch helpers and ad-hoc test scripts.
+# Not product code; not part of the release change set. builder6.py is the
+# active pipeline and is intentionally NOT ignored.
+/builder.py
+/builder[1-5].py
+/clean_themes.py
+/deduplicate.py
+/diff.patch
+/find_brace*
+/fix_*.py
+/fix_*.js
+/full_patch*.py
+/mega_patch*
+/parse_transcript*.py
+/patch.py
+/patch.mjs
+/patch_*.py
+/patch_*.mjs
+/patch_*.js
+/remove_bracket.py
+/restore_*.py
+/rewrite_funcs.py
+/run_*.mjs
+/run_*.js
+/test_braces.js
+/test_cost.mjs
+/update_tokens.py
+/desktop/run_res_test*.mjs
+/plugins/vscode/test_debug*.js
+/desktop/prototypes/
+node_modules/
+.coverage
+coverage.xml
