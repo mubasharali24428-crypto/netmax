@@ -95,14 +95,27 @@ let toolCallCount = 0;
 
 // Single source for the banner count. It was a hardcoded "15" in two
 // places and silently under-reported the moment a tool was added.
-const TOOL_COUNT = 20;
+// Registry: tool names are recorded as server.tool() runs, so the count
+// and the capability list derive from one source and cannot drift.
+// TOOL_NAMES is the let-bound array below, overwritten on each registration.
+const REGISTERED_TOOL_NAMES = [];
+let TOOL_COUNT = 0;
+
+// Mirrors the engine's validate_mcp_output_name: one safe basename,
+// never a caller-selected path. Rejects before the engine spawns.
+function validateMcpOutputName(name) {
+  if (typeof name !== "string" || name.length === 0 || name === "." || name === "..")
+    throw new Error("MCP output name must be a non-empty basename");
+  if (Buffer.byteLength(name, "utf8") > 180 || name.includes("/") || name.includes("\\") ||
+      /[\x00-\x1f\x7f]/.test(name) || /^[a-zA-Z]:/.test(name))
+    throw new Error("MCP output name must be a basename of at most 180 UTF-8 bytes");
+}
 
 // Names, for the netmax://capabilities resource so an agent can discover
 // what exists without guessing. Kept beside TOOL_COUNT on purpose: the
 // audit checks that constant against the tools actually defined, and a
 // list sitting next to it invites the same check to cover both.
-const TOOL_NAMES = [
-  "fleet_drift_workbench", "policy_bound_workflow", "evidence_export",
+let TOOL_NAMES = [
   "measure_speed", "dns_ranking", "bufferbloat", "upload_speed",
   "packet_loss", "jitter", "wifi_info", "download_file", "eco_bloat",
   "full_diagnostics", "diagnostic_summary", "boost",
@@ -357,6 +370,17 @@ function buildServer() {
     description: "NetMax Desktop network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
   });
 
+  // Tool registry: record every tool name as it registers. TOOL_COUNT and
+  // TOOL_NAMES update on each registration, so they cannot drift.
+  REGISTERED_TOOL_NAMES.length = 0;
+  const __rawTool = server.tool.bind(server);
+  server.tool = function (name, ...rest) {
+    REGISTERED_TOOL_NAMES.push(name);
+    TOOL_COUNT = REGISTERED_TOOL_NAMES.length;
+    TOOL_NAMES = [...REGISTERED_TOOL_NAMES];
+    return __rawTool(name, ...rest);
+  };
+
   const globalBudget = createMeasurementBudget();
 
   function costFor(name, params) {
@@ -549,12 +573,21 @@ function buildServer() {
     async (params, extra) => {
       const { url, streams, output } = params;
       const args = [url];
-      if (output) {
-        if (typeof output !== "string" || !output.trim()) throw new Error("invalid output format");
-        if (/[\x00-\x1F]/.test(output)) throw new Error("invalid output format");
-        if (output.includes("/") || output.includes("\\")) throw new Error("invalid output format");
-        if (output === "." || output === "..") throw new Error("invalid output format");
-        args.push(output);
+      if (output !== undefined) {
+        validateMcpOutputName(output);
+        args.push("--mcp-output-name", output);
+      } else {
+        // Derive a safe basename from the URL path; fallback to "download".
+        let derived = "download";
+        try {
+          const pathname = new URL(url).pathname;
+          if (!pathname.endsWith("/")) {
+            const pathParts = pathname.split("/").filter(Boolean);
+            if (pathParts.length > 0) derived = pathParts[pathParts.length - 1];
+          }
+        } catch {}
+        validateMcpOutputName(derived);
+        args.push("--mcp-output-name", derived);
       }
       args.push("--streams", String(streams));
 
@@ -835,12 +868,10 @@ function buildServer() {
     },
     async (params, extra) => {
       const { analysis, input, history_path, pretty } = params;
-      const args = ["ai", "--analysis", String(analysis ?? "")];
+      // --mcp-request: engine enforces canonical history file, rejects @path inputs.
+      const args = ["ai", "--mcp-request", "--analysis", String(analysis ?? "")];
       if (input !== undefined) args.push("--input", String(input));
-      if (history_path !== undefined) {
-        if (!history_path.endsWith(".json") || history_path.includes("..") || history_path.includes("/") || history_path.includes("\\") || !/^netmax-history-.+\.json$/.test(history_path)) throw new Error("invalid path");
-        args.push("--history", String(history_path));
-      }
+      if (history_path !== undefined) args.push("--history", String(history_path));
       if (pretty) args.push("--pretty");
       return runTool("ai_analyze", () => runEngineDirect(args, extra?.signal), extra?.signal);
     }

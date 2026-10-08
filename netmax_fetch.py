@@ -237,6 +237,8 @@ def validate_mcp_output_name(name: str) -> str:
         size = len(name.encode("utf-8", "strict"))
     except UnicodeError as exc:
         raise NetMaxError("MCP output name is not valid UTF-8") from exc
+    if len(name) >= 2 and name[1] == ":" and name[0].isalpha():
+        raise NetMaxError("MCP output name must be a basename, not a drive path")
     if size > 180 or "/" in name or "\\" in name or any(
             ord(ch) < 32 or ord(ch) == 127 for ch in name):
         raise NetMaxError("MCP output name must be a basename of at most 180 UTF-8 bytes")
