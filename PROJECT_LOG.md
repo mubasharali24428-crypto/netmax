@@ -552,3 +552,56 @@ the statuses below supersede them where they conflict.
 - **Not started (need Mac shell / Antigravity)**: `git diff --check`, full
   `ruff check .` on the live tree, pytest re-run, review of modified/untracked
   paths, release-branch commits.
+
+## Phase 2 — Paid detect→explain→prove→export workflow (2026-10-08)
+
+Repairs the Gate G items downgraded in Phase 0. Commits on local main:
+6b9f7f3 (G-01), e09fce1 (G-03), 8de4236 (G-05), ea8b712 (G-04).
+
+- **G-01 trust report**: `generate_trust_report` now enforces the accepted
+  10-sample rule (exactly 10 samples, ValueError otherwise);
+  `report_to_json` produces canonical JSON (sorted keys, fixed separators —
+  byte-identical for identical inputs); every report carries a sha256
+  `report_id`. tests/test_trust_report.py: 9 tests.
+- **G-03 evidence export**: `netmax_export_manifest.py` is real —
+  `select_records` resolves `rec-<index>` IDs against the canonical history
+  (malformed/out-of-range IDs raise before any work);
+  `redact_record` redacts IPv4/IPv6, MACs, and secret-like fields with per-
+  category counts; `generate_export_manifest` bundles redacted records with
+  sha256 per record and real redaction summaries; `write_evidence_pdf`
+  writes a pure-stdlib PDF evidence report. New engine command
+  `netmax export-evidence --records rec-0,rec-1 --fmt json|pdf --out PATH`
+  (declared in pyproject py-modules). tests/test_export_manifest.py: 10 tests.
+- **G-05 regression**: `check_regression_alert` kept pure; added
+  `load_metric_series` (reads real history via netmax_history.normalize),
+  `check_regression_from_history` returning {alert, suppressed, reason,
+  samples}, and dismiss/disable state in
+  ~/Library/Application\ Support/NetMaxDesktop/regression_state.json
+  (atomic write, 0600; NETMAX_REGRESSION_STATE override for tests).
+  tests/test_local_regression.py: 11 tests.
+- **G-04 MCP tools**: `policy_bound_workflow` and `evidence_export` are real
+  tools in original_server.mjs; the canned `stub_tools_code` injection was
+  deleted from builder6.py and the shipped server regenerated deterministically
+  (byte-identical across runs, node --check clean). policy_bound_workflow runs
+  a WORKFLOWS registry (network_baseline, dns_audit) with envelope checks
+  (max steps, max duration) before any spawn; unknown names throw with zero
+  child processes. evidence_export validates `rec-\d+` IDs before spawning and
+  returns the engine-built redacted manifest. New
+  desktop/test_mcp_workflows.mjs (5 tests); schema-contract CASES updated for
+  the real semantics; tool-surfaces pinned order updated for the new
+  registration order.
+
+**Verification (2026-10-08, Mac, conda python 3.13 / node v26.10.0)**:
+- pytest: 1256 passed, 0 failed; total coverage 86% (>=85%).
+- MCP tests: 60 passed, 0 failed (incl. 5 new workflow tests).
+- `node --check` on regenerated desktop/netmax-mcp-server.mjs: clean.
+- `ruff check .`: clean. `git diff --check`: clean.
+- Note: tests/test_netmax_audit.py TestAuditSubcommand (5 tests) fails when run
+  standalone on the pristine Phase 1 tree too (stdlib ssl import quirk under
+  pytest); it passes in full-suite ordering. Pre-existing, not Phase 2.
+- Note: two MCP test files hang on process exit (pre-existing); run with
+  --test-force-exit.
+- Left untouched (pre-existing dirty tree, not Phase 2):
+  desktop/MCP-README.md, desktop/package.json,
+  desktop/test_mcp_download_boundary.mjs, docs/reviews/upgrade-evidence.md,
+  ~10 untracked helper scripts.
