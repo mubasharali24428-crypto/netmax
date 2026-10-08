@@ -365,7 +365,7 @@ async function fleetStatus() {
 
 // ── Server factory (one instance per transport lifetime) ─────────────────
 
-function buildServer() {
+export function buildServer() {
   const server = new McpServer({
     name: "netmax-mcp-server",
     version: "1.0.7",

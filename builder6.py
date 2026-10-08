@@ -945,7 +945,7 @@ code = code.replace(
   '''// Registry: tool names are recorded as server.tool() runs, so the count
 // and the capability list derive from one source and cannot drift.
 // TOOL_NAMES is the let-bound array below, overwritten on each registration.
-const REGISTERED_TOOL_NAMES = [];
+export const REGISTERED_TOOL_NAMES = [];
 let TOOL_COUNT = 0;
 
 // Mirrors the engine's validate_mcp_output_name: one safe basename,
