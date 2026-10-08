@@ -51,7 +51,7 @@ final class SwiftHarnessTests: XCTestCase {
         run("TimelineEventMarkersTests") { TimelineEventMarkersTests.runAll() }
         run("TimelineModelTests") { TimelineModelTests.runAll(now: Date(timeIntervalSinceReferenceDate: 900_000_000)) }
         run("TimelineTests") { TimelineTests.runAll(now: Date(timeIntervalSinceReferenceDate: 1_000_000_000)) }
-        run("UpdateCheckerTests") { UpdateCheckerTests.runAll() }
+        run("UpdateCheckerTests") { netmax_desktop.UpdateCheckerTests.runAll() }
 
         XCTAssertEqual(ran, 28, "expected 28 harnesses")
         XCTAssertEqual(total, 0, "swift harness failures: \(total)")

@@ -37,6 +37,7 @@ final class AppPreferences: ObservableObject {
         static let defaultCount   = "netmax.prefs.defaultCount"     // Int,    default 10
         static let pythonOverride = "netmax.prefs.pythonOverride"   // String, default ""
         static let launchWindow   = "netmax.prefs.launchWindow"     // Bool,   default true (lane C-owned)
+        static let allowRemoteAI  = "netmax.prefs.allowRemoteAI"    // Bool,   default false
     }
 
     // MARK: Sane ranges enforced on every set.
@@ -61,6 +62,7 @@ final class AppPreferences: ObservableObject {
         static let count          = 10
         static let pythonOverride = ""
         static let launchWindow   = true
+        static let allowRemoteAI  = false
     }
 
     // MARK: Observed, self-persisting values
@@ -121,6 +123,15 @@ final class AppPreferences: ObservableObject {
         }
     }
 
+    /// Remote model requests require explicit user consent; MCP cannot set this.
+    @Published var allowRemoteAI: Bool {
+        didSet {
+            if oldValue != allowRemoteAI {
+                defaults.set(allowRemoteAI, forKey: Keys.allowRemoteAI)
+            }
+        }
+    }
+
     // MARK: Setup
 
     private let defaults: UserDefaults
@@ -138,12 +149,14 @@ final class AppPreferences: ObservableObject {
             .map { Self.clamp($0, to: Limits.count) } ?? Fallbacks.count
         let python = defaults.string(forKey: Keys.pythonOverride) ?? Fallbacks.pythonOverride
         let launch = (defaults.object(forKey: Keys.launchWindow) as? Bool) ?? Fallbacks.launchWindow
+        let remoteAI = (defaults.object(forKey: Keys.allowRemoteAI) as? Bool) ?? Fallbacks.allowRemoteAI
 
         _defaultStreams = Published(initialValue: streams)
         _defaultSeconds = Published(initialValue: seconds)
         _defaultCount   = Published(initialValue: count)
         _pythonOverride = Published(initialValue: python)
         _launchWindow   = Published(initialValue: launch)
+        _allowRemoteAI  = Published(initialValue: remoteAI)
     }
 
     // MARK: Helpers for non-UI consumers (lanes A/B/D)

@@ -70,10 +70,10 @@ struct EmptyStateView: View {
             VStack(spacing: 6) {
                 Text(title)
                     .font(.title3.weight(.semibold))
-                    .foregroundColor(.primary)
+                    .foregroundColor(DesignTokens.primaryText)
                 Text(message)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -100,13 +100,13 @@ struct EmptyStateView: View {
         ZStack {
             Circle()
                 .strokeBorder(
-                    Color.accentColor.opacity(0.30),
+                    DesignTokens.accent.opacity(0.30),
                     style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
                 )
                 .frame(width: 88, height: 88)
 
             Circle()
-                .fill(Color.accentColor.opacity(0.14))
+                .fill(DesignTokens.accent.opacity(0.14))
                 .frame(width: 62, height: 62)
 
             Image(systemName: symbolName)

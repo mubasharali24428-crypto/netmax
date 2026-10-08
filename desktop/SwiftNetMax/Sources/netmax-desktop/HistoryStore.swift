@@ -336,6 +336,62 @@ final class HistoryStore {
         }
     }
 
+    // MARK: - Permanent Erase (B-13-STORE-ERASE)
+
+    /// Permanently erases all history files (history.jsonl, archive-history.jsonl,
+    /// cleared-history.jsonl) and checkpoints/removes the SQLite database and sidecars.
+    /// Returns per-file status dictionary. Preserves other directory contents.
+    @discardableResult
+    func eraseAll() -> [String: Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        var status: [String: Bool] = [:]
+
+        let dbName = sqlite.dbURL.lastPathComponent
+        do {
+            try sqlite.erase()
+            status[dbName] = true
+        } catch {
+            #if DEBUG
+            print("[HistoryStore] sqlite erase failed: \(error.localizedDescription)")
+            #endif
+            status[dbName] = false
+        }
+
+        let fm = FileManager.default
+        let targets = [
+            fileURL,
+            Self.archiveFileURL(forFileAt: fileURL),
+            Self.holdingBinURL(forFileAt: fileURL)
+        ]
+
+        for target in targets {
+            let name = target.lastPathComponent
+            if fm.fileExists(atPath: target.path) {
+                do {
+                    try fm.removeItem(at: target)
+                    status[name] = true
+                } catch {
+                    #if DEBUG
+                    print("[HistoryStore] erase \(name) failed: \(error.localizedDescription)")
+                    #endif
+                    status[name] = false
+                }
+            } else {
+                status[name] = true
+            }
+        }
+
+        Self.postHistoryDidChange()
+        return status
+    }
+
+    /// Process-wide permanent erase helper.
+    @discardableResult
+    static func eraseAll() -> [String: Bool] {
+        HistoryStore.shared.eraseAll()
+    }
+
     // MARK: Holding bin (W12 T1-a)
 
     /// Location of the clear-holding bin: `cleared-history.jsonl` in the same

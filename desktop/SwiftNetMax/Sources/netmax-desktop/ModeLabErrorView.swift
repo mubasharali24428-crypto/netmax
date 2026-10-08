@@ -78,7 +78,7 @@ struct ModeLabErrorView: View {
                         .accessibilityAddTraits(.isHeader)
                     Text(advice.advice)
                         .font(.subheadline)
-                        .foregroundStyle(.primary)
+                        .foregroundColor(DesignTokens.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -91,14 +91,14 @@ struct ModeLabErrorView: View {
             DisclosureGroup(isExpanded: $showsDetails) {
                 Text(technicalDetails)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
             } label: {
                 Label("Technical details", systemImage: "chevron.left.forwardslash.chevron.right")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
             }
             .accessibilityLabel("Technical details")
             .accessibilityHint("Shows or hides the raw engine error text")
@@ -120,7 +120,7 @@ struct ModeLabErrorView: View {
                 if !advice.isKnown {
                     Text("Unrecognized failure — report welcome")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(DesignTokens.secondaryText)
                 }
             }
         }

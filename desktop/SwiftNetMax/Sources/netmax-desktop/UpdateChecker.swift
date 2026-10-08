@@ -23,12 +23,89 @@ enum UpdateChecker {
         let currentVersion: String
         /// Latest tag with a leading `v` stripped (e.g. "1.0.6"), nil when unknown.
         let latestVersion: String?
+        /// Exact release tag name from GitHub Releases (e.g. "v1.0.6").
+        let latestTag: String?
         /// True only when both versions parse and latest > current.
         let updateAvailable: Bool
-        /// Release page to open when an update is available / for "view releases".
-        let htmlURL: String?
+        /// Verified release page URL constructed from the fixed repo and release tag.
+        let releaseURL: URL?
         /// Non-nil when the network/API check failed (offline, rate limit, …).
         let errorMessage: String?
+
+        var htmlURL: String? {
+            releaseURL?.absoluteString
+        }
+
+        init(
+            currentVersion: String,
+            latestVersion: String?,
+            latestTag: String? = nil,
+            updateAvailable: Bool,
+            releaseURL: URL? = nil,
+            htmlURL: String? = nil,
+            errorMessage: String?
+        ) {
+            self.currentVersion = currentVersion
+            self.latestVersion = latestVersion
+            self.latestTag = latestTag
+            self.updateAvailable = updateAvailable
+            if let r = releaseURL {
+                self.releaseURL = r
+            } else if let t = latestTag, let constructed = UpdateChecker.releaseURL(for: t) {
+                self.releaseURL = constructed
+            } else if let h = htmlURL, let u = URL(string: h), UpdateChecker.isValidReleaseURL(u) {
+                self.releaseURL = u
+            } else {
+                self.releaseURL = nil
+            }
+            self.errorMessage = errorMessage
+        }
+    }
+
+    /// Construct a verified release URL from the fixed repo owner/name and release tag.
+    static func releaseURL(for tag: String?) -> URL? {
+        guard let rawTag = tag?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawTag.isEmpty else {
+            return nil
+        }
+        guard !rawTag.contains("/"), !rawTag.contains("\\"), !rawTag.contains(".."),
+              !rawTag.contains("?"), !rawTag.contains("#") else {
+            return nil
+        }
+        guard let encodedTag = rawTag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return nil
+        }
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "github.com"
+        components.path = "/\(repoSlug)/releases/tag/\(encodedTag)"
+        guard let url = components.url else { return nil }
+        guard isValidReleaseURL(url, expectedTag: rawTag) else { return nil }
+        return url
+    }
+
+    /// Validate that a URL strictly points to this repository's release tag on github.com.
+    static func isValidReleaseURL(_ url: URL, expectedTag: String? = nil) -> Bool {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return false
+        }
+        guard components.scheme == "https" else { return false }
+        guard components.host == "github.com" else { return false }
+        guard components.port == nil else { return false }
+        guard components.user == nil && components.password == nil else { return false }
+        guard components.query == nil && components.fragment == nil else { return false }
+
+        let expectedPrefix = "/\(repoSlug)/releases/tag/"
+        guard components.path.hasPrefix(expectedPrefix) else { return false }
+        let tagPart = String(components.path.dropFirst(expectedPrefix.count))
+        guard !tagPart.isEmpty && !tagPart.contains("/") else { return false }
+
+        if let expectedTag = expectedTag {
+            guard let decoded = tagPart.removingPercentEncoding, decoded == expectedTag else {
+                return false
+            }
+        }
+        return true
     }
 
     /// Installed app version from the bundle ("?" outside a real bundle).
@@ -70,16 +147,20 @@ enum UpdateChecker {
     static func compare(
         current: String,
         latestTag: String?,
-        htmlURL: String?,
+        releaseURL: URL? = nil,
+        htmlURL: String? = nil,
         errorMessage: String?
     ) -> Outcome {
         let latest = latestTag.map { normalize($0) }
         let canCompare = latest != nil && current != "?"
         let available = canCompare && isNewer(latest!, than: current)
+        let resolvedURL = releaseURL ?? latestTag.flatMap { UpdateChecker.releaseURL(for: $0) }
         return Outcome(
             currentVersion: current,
             latestVersion: latest,
+            latestTag: latestTag,
             updateAvailable: available,
+            releaseURL: resolvedURL,
             htmlURL: htmlURL,
             errorMessage: errorMessage
         )
@@ -90,7 +171,7 @@ enum UpdateChecker {
     static func check(timeout: TimeInterval = 15) async -> Outcome {
         let current = currentVersion()
         guard let url = URL(string: apiURL) else {
-            return compare(current: current, latestTag: nil, htmlURL: nil,
+            return compare(current: current, latestTag: nil, releaseURL: nil,
                            errorMessage: "Invalid update URL.")
         }
         var request = URLRequest(url: url, timeoutInterval: timeout)
@@ -102,20 +183,21 @@ enum UpdateChecker {
             if let http = response as? HTTPURLResponse, http.statusCode != 200 {
                 let body = String(data: data.prefix(400), encoding: .utf8) ?? ""
                 return compare(
-                    current: current, latestTag: nil, htmlURL: nil,
+                    current: current, latestTag: nil, releaseURL: nil,
                     errorMessage: "GitHub API returned HTTP \(http.statusCode). \(body)"
                 )
             }
             guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                return compare(current: current, latestTag: nil, htmlURL: nil,
+                return compare(current: current, latestTag: nil, releaseURL: nil,
                                errorMessage: "Could not parse GitHub release JSON.")
             }
             let tag = obj["tag_name"] as? String
-            let html = obj["html_url"] as? String ?? releasesPageURL
-            return compare(current: current, latestTag: tag, htmlURL: html,
+            // D-03: Never use API-returned html_url as destination. Construct strictly from fixed repo and tag.
+            let constructedURL = releaseURL(for: tag)
+            return compare(current: current, latestTag: tag, releaseURL: constructedURL,
                            errorMessage: tag == nil ? "No release tag found." : nil)
         } catch {
-            return compare(current: current, latestTag: nil, htmlURL: nil,
+            return compare(current: current, latestTag: nil, releaseURL: nil,
                            errorMessage: "Network error: \(error.localizedDescription)")
         }
     }

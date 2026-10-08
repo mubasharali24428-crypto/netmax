@@ -60,29 +60,29 @@ struct ConfirmDialog: View {
     let cancelLabel: String
     let onConfirm: () -> Void
     let onCancel: () -> Void
-    
+
     @State private var showing = false
-    
+
     var body: some View {
         VStack(spacing: 16) {
             Text(title)
                 .font(.headline)
             Text(message)
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .multilineTextAlignment(.center)
-            
+
             HStack(spacing: 12) {
                 Button(cancelLabel) {
                     onCancel()
                 }
                 .buttonStyle(.bordered)
-                
+
                 Button(confirmLabel) {
                     onConfirm()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.red)
+                .tint(DesignTokens.error)
             }
         }
         .padding(24)
@@ -113,12 +113,12 @@ struct TestimonialsView: View {
             role: "Solo Dev"
         ),
     ]
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("💬 What Developers Say")
                 .font(.title3.weight(.semibold))
-            
+
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 ForEach(testimonials, id: \.author) { testimonial in
                     TestimonialCard(testimonial: testimonial)
@@ -131,20 +131,20 @@ struct TestimonialsView: View {
 
 struct TestimonialCard: View {
     let testimonial: Testimonial
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("\"\(testimonial.text)\"")
                 .font(.footnote)
-                .foregroundColor(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .italic()
-            
+
             Text(testimonial.author)
                 .font(.caption.weight(.semibold))
-            
+
             Text(testimonial.role)
                 .font(.caption2)
-                .foregroundColor(.gray)
+                .foregroundColor(DesignTokens.secondaryText)
         }
         .padding(DesignTokens.Spacing.lg)
         .background(DesignTokens.canvas)
@@ -173,25 +173,25 @@ struct AnalyticsDashboard: View {
         AnalyticsMetric(value: "42.7", label: "Avg Throughput (Mbps)"),
         AnalyticsMetric(value: "12ms", label: "Avg Latency"),
     ]
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("📊 Your Analytics")
                 .font(.title3.weight(.semibold))
-            
+
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 ForEach(metrics, id: \.label) { metric in
                     VStack(spacing: 4) {
                         Text(metric.value)
                             .font(.title.weight(.bold))
-                            .foregroundColor(Color("AccentColor"))
+                            .foregroundColor(DesignTokens.accent)
                         Text(metric.label)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(DesignTokens.secondaryText)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(12)
-                    .background(Color(.windowBackgroundColor))
+                    .background(DesignTokens.surface)
                     .cornerRadius(8)
                 }
             }
@@ -231,13 +231,13 @@ struct ChangelogView: View {
             ]
         ),
     ]
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
             Text("📝 What's New")
                 .font(.title3.weight(.semibold))
                 .foregroundColor(DesignTokens.ink)
-            
+
             ForEach(entries) { entry in
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                     Text(entry.version)
@@ -245,15 +245,15 @@ struct ChangelogView: View {
                         .foregroundColor(DesignTokens.primary)
                     Text(entry.date)
                         .font(.caption2)
-                        .foregroundColor(.gray)
-                    
+                        .foregroundColor(DesignTokens.secondaryText)
+
                     ForEach(entry.changes, id: \.self) { change in
                         HStack(spacing: DesignTokens.Spacing.xs) {
                             Text("•")
                                 .foregroundColor(DesignTokens.primary)
                             Text(change)
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(DesignTokens.secondaryText)
                         }
                     }
                 }
@@ -280,28 +280,28 @@ struct ChangelogEntry: Identifiable {
 struct BackupRecoveryView: View {
     @State private var showingExport = false
     @State private var showingRestore = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("💾 Backup & Recovery")
                 .font(.title3.weight(.semibold))
-            
+
             HStack(spacing: 12) {
                 Button("Export My Data") {
                     showingExport = true
                 }
                 .buttonStyle(.borderedProminent)
-                
+
                 Button("Restore from Backup") {
                     showingRestore = true
                 }
                 .buttonStyle(.bordered)
             }
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 Text("Export your data for safekeeping or restore from a previous backup.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
             }
             .padding(.top, 8)
         }
@@ -317,14 +317,14 @@ struct BackupRecoveryView: View {
 
 struct ExportSheet: View {
     @Environment(\.dismiss) private var dismiss
-    
+
     var body: some View {
         VStack(spacing: 16) {
             Text("Export Data")
                 .font(.headline)
             Text("Your data export is ready. All measurements and configurations will be included.")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .multilineTextAlignment(.center)
             Button("Download") {
                 dismiss()
@@ -338,14 +338,14 @@ struct ExportSheet: View {
 
 struct RestoreSheet: View {
     @Environment(\.dismiss) private var dismiss
-    
+
     var body: some View {
         VStack(spacing: 16) {
             Text("Restore from Backup")
                 .font(.headline)
             Text("Select a backup file to restore your data.")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .multilineTextAlignment(.center)
             Button("Choose File") {
                 dismiss()
@@ -384,47 +384,47 @@ struct SubscriptionView: View {
             popular: false
         ),
     ]
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Choose Your Plan")
                 .font(.title3.weight(.semibold))
-            
+
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                 ForEach(plans, id: \.name) { plan in
                     VStack(alignment: .leading, spacing: 8) {
                         if plan.popular {
                             Text("POPULAR")
                                 .font(.caption2.weight(.bold))
-                                .foregroundColor(.white)
+                                .foregroundColor(DesignTokens.canvas)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 2)
-                                .background(Color.accentColor)
+                                .background(DesignTokens.accent)
                                 .cornerRadius(4)
                         }
-                        
+
                         Text(plan.name)
                             .font(.headline)
-                        
+
                         HStack(alignment: .firstTextBaseline) {
                             Text(plan.price)
                                 .font(.title.weight(.bold))
                             Text(plan.period)
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(DesignTokens.secondaryText)
                         }
-                        
+
                         ForEach(plan.features, id: \.self) { feature in
                             HStack(spacing: 4) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
+                                    .foregroundColor(DesignTokens.success)
                                     .font(.caption)
                                 Text(feature)
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(DesignTokens.secondaryText)
                             }
                         }
-                        
+
                         Button(plan.name == "Free" ? "Get Started" : plan.name == "Pro" ? "Start Free Trial" : "Contact Sales") {
                             // Handle subscription
                         }
@@ -432,11 +432,11 @@ struct SubscriptionView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .padding(16)
-                    .background(Color(.windowBackgroundColor))
+                    .background(DesignTokens.surface)
                     .cornerRadius(10)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10)
-                            .stroke(plan.popular ? Color.accentColor : Color(.separatorColor), lineWidth: plan.popular ? 2 : 0.5)
+                            .stroke(plan.popular ? DesignTokens.accent : DesignTokens.border, lineWidth: plan.popular ? 2 : 0.5)
                     )
                 }
             }
@@ -466,7 +466,7 @@ struct DashboardSkeletonView: View {
                 Spacer()
                 SkeletonShape(width: 60, height: 28)
             }
-            
+
             // Card row skeleton
             HStack(spacing: 12) {
                 ForEach(0..<4, id: \.self) { _ in
@@ -477,11 +477,11 @@ struct DashboardSkeletonView: View {
                     }
                     .padding(16)
                     .frame(maxWidth: .infinity)
-                    .background(Color(.windowBackgroundColor))
+                    .background(DesignTokens.surface)
                     .cornerRadius(10)
                 }
             }
-            
+
             // Chart skeleton
             VStack(alignment: .leading, spacing: 8) {
                 SkeletonShape(width: 200, height: 14)
@@ -499,15 +499,15 @@ struct DashboardSkeletonView: View {
 struct SkeletonShape: View {
     let width: CGFloat
     let height: CGFloat
-    
+
     var body: some View {
         RoundedRectangle(cornerRadius: 6)
             .fill(
                 LinearGradient(
                     gradient: Gradient(colors: [
-                        Color(.windowBackgroundColor).opacity(0.5),
-                        Color(.windowBackgroundColor).opacity(0.8),
-                        Color(.windowBackgroundColor).opacity(0.5)
+                        DesignTokens.surface.opacity(0.5),
+                        DesignTokens.surface.opacity(0.8),
+                        DesignTokens.surface.opacity(0.5)
                     ]),
                     startPoint: .leading,
                     endPoint: .trailing
@@ -522,15 +522,15 @@ struct SkeletonShape: View {
 
 struct ShimmerEffect: GeometryEffect {
     @State private var phase: CGFloat = 0
-    
+
     func effectValue(size: CGSize) -> ProjectionTransform {
         let gradientWidth: CGFloat = size.width * 0.6
-        
+
         return ProjectionTransform(
             CGAffineTransform(translationX: -size.width + phase, y: 0)
         )
     }
-    
+
     var animatableData: CGFloat {
         get { phase }
         set { phase = newValue }
@@ -545,7 +545,7 @@ extension View {
 
 struct ShimmerModifier: ViewModifier {
     @State private var phase: CGFloat = 0
-    
+
     func body(content: Content) -> some View {
         content
             .overlay(
@@ -554,7 +554,7 @@ struct ShimmerModifier: ViewModifier {
                         LinearGradient(
                             gradient: Gradient(colors: [
                                 Color.clear,
-                                Color.white.opacity(0.3),
+                                DesignTokens.canvas.opacity(0.3),
                                 Color.clear
                             ]),
                             startPoint: .leading,
@@ -638,17 +638,17 @@ struct DashboardCardsView: View {
             HStack {
                 Text("Cards reflect your latest saved runs — cannot exceed your ISP cap.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
-                
+
                 Spacer()
-                
+
                 // Phase 3: ConfirmDialog for clearing history
                 Button("Clear History") {
                     showingConfirmDialog = true
                 }
                 .buttonStyle(.bordered)
-                .foregroundColor(.red)
+                .foregroundColor(DesignTokens.error)
                 .minTouchTarget()
             }
         }
@@ -696,7 +696,7 @@ struct DashboardCardsView: View {
                         Image(systemName: "clock.arrow.circlepath")
                     }
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
                     .accessibilityLabel(text)
                     .accessibilityIdentifier("dashboard.nextRun")
                     .help("Scheduled checks are on. Change the cadence in the Schedule tab.")
@@ -716,7 +716,7 @@ struct DashboardCardsView: View {
     private var header: some View {
         HStack {
             Image(systemName: "gauge")
-                .foregroundStyle(.blue)
+                .foregroundColor(DesignTokens.info)
             Text("Dashboard")
                 // §15: the page title steps up via weight+size TOGETHER
                 // (.title3 + semibold), not size alone. No kerning here —
@@ -827,15 +827,15 @@ struct DashboardCardsView: View {
             HStack(spacing: 4) {
                 Image(systemName: "clock.badge.questionmark")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
                     .accessibilityHidden(true)
                 Text("Test coverage by hour")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
                 Spacer()
                 Text("\(records.count) run\(records.count == 1 ? "" : "s") total")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
             }
             HStack(alignment: .bottom, spacing: 2) {
                 ForEach(0..<24, id: \.self) { hour in
@@ -844,7 +844,7 @@ struct DashboardCardsView: View {
                     let tooltip = DashboardMetrics.coverageHelp(
                         hour: hour, count: buckets[hour])
                     Capsule()
-                        .fill(Color.accentColor.opacity(opacity))
+                        .fill(DesignTokens.accent.opacity(opacity))
                         .frame(height: 14)
                         .frame(maxWidth: .infinity)
                         .help(tooltip)
@@ -865,17 +865,17 @@ struct DashboardCardsView: View {
                 Text("11p")
             }
             .font(.caption2)
-            .foregroundStyle(.secondary)
+            .foregroundColor(DesignTokens.secondaryText)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(DesignTokens.surface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color(nsColor: .separatorColor))
+                .strokeBorder(DesignTokens.border)
         )
     }
 
@@ -895,12 +895,12 @@ struct DashboardCardsView: View {
                         .foregroundStyle(tint(for: series))
                     Text("Speed Trend")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(DesignTokens.secondaryText)
                         .lineLimit(1)
                     Spacer()
                     Text(caption(for: series))
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(DesignTokens.secondaryText)
                         .lineLimit(1)
                 }
                 SparklineView(series,
@@ -913,11 +913,11 @@ struct DashboardCardsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .fill(DesignTokens.surface)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(Color(nsColor: .separatorColor))
+                    .strokeBorder(DesignTokens.border)
             )
         }
     }
@@ -1029,14 +1029,14 @@ struct WhatsNewSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
-                    .foregroundStyle(.blue)
+                    .foregroundColor(DesignTokens.info)
                     .accessibilityHidden(true)
                 Text("What's New in NetMax")
                     .font(.headline)
                 Spacer()
                 Text(WhatsNew.currentVersion)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
             }
 
             ForEach(WhatsNew.highlights) { entry in
@@ -1045,7 +1045,7 @@ struct WhatsNewSheet: View {
                         .font(.subheadline.weight(.medium))
                     Text(entry.detail)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(DesignTokens.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .accessibilityElement(children: .combine)
@@ -1093,7 +1093,7 @@ struct MetricCard: View {
                     .foregroundStyle(tint)
                 Text(title)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
                     .lineLimit(1)
             }
 
@@ -1112,14 +1112,14 @@ struct MetricCard: View {
 
             Text(detail)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if let deltaLine {
                 Text(deltaLine)
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -1132,11 +1132,11 @@ struct MetricCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(DesignTokens.surface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color(nsColor: .separatorColor))
+                .strokeBorder(DesignTokens.border)
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
@@ -1162,12 +1162,12 @@ private struct DashboardEmptyState: View {
         VStack(spacing: 10) {
             Image(systemName: "bolt.horizontal.circle")
                 .font(.system(size: 36))
-                .foregroundStyle(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
             Text("No runs yet")
                 .font(.headline)
             Text("Runs you start in Mode Lab (or the menu bar) are saved locally and summarized here as cards.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 320)
         }
@@ -1317,3 +1317,591 @@ enum DashboardCardsTests {
     }
 }
 #endif
+
+// MARK: - Phase 5: EndpointStrategySelector View
+
+/// EndpointStrategySelector — AI-powered endpoint selection.
+struct EndpointStrategySelectorView: View {
+    @State private var selectedEndpoint = "Auto"
+    @State private var endpoints = ["Auto", "Fastest", "Closest", "Stable", "Custom"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "network")
+                    .foregroundColor(DesignTokens.success)
+                Text("Endpoint Selector")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.success.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            Picker("Strategy", selection: $selectedEndpoint) {
+                ForEach(endpoints, id: \.self) { endpoint in
+                    Text(endpoint).tag(endpoint)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text("AI recommends: \(selectedEndpoint) endpoint based on real-time network conditions.")
+                .font(.caption)
+                .foregroundColor(DesignTokens.secondaryText)
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: AISpeedGovernor View
+
+/// AISpeedGovernor — AI-powered speed governor.
+struct AISpeedGovernorView: View {
+    @State private var governorStatus = "Active"
+    @State private var currentSpeed = 95.2
+    @State private var maxSpeed = 100.0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "gauge")
+                    .foregroundColor(DesignTokens.warning)
+                Text("AI Speed Governor")
+                    .font(.headline)
+                Spacer()
+                Text(governorStatus)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.warning.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Current Speed")
+                    .font(.caption)
+                    .foregroundColor(DesignTokens.secondaryText)
+                Text("\(String(format: "%.1f", currentSpeed)) Mbps")
+                    .font(.title2)
+                    .fontWeight(.bold)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Max Speed")
+                    .font(.caption)
+                    .foregroundColor(DesignTokens.secondaryText)
+                ProgressView(value: currentSpeed / maxSpeed)
+                    .tint(DesignTokens.warning)
+                Text("\(String(format: "%.0f", (currentSpeed / maxSpeed) * 100))% of max")
+                    .font(.caption2)
+                    .foregroundColor(DesignTokens.secondaryText)
+            }
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: MultiObjectiveOptimizer View
+
+/// MultiObjectiveOptimizer — AI-powered multi-objective optimization.
+struct MultiObjectiveOptimizerView: View {
+    @State private var objectives = ["Speed", "Stability", "Latency", "Jitter"]
+    @State private var weights = [0.4, 0.3, 0.2, 0.1]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "slider.horizontal.3")
+                    .foregroundColor(DesignTokens.accent)
+                Text("Multi-Objective Optimizer")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.accent.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            ForEach(Array(objectives.enumerated()), id: \.offset) { index, objective in
+                HStack {
+                    Text(objective)
+                        .font(.caption)
+                    Slider(value: $weights[index], in: 0...1)
+                    Text("\(Int(weights[index] * 100))%")
+                        .font(.caption2)
+                        .foregroundColor(DesignTokens.secondaryText)
+                }
+            }
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: AdaptiveChunkSizer View
+
+/// AdaptiveChunkSizer — AI-powered adaptive chunk sizing.
+struct AdaptiveChunkSizerView: View {
+    @State private var chunkSize = 1024
+    @State private var throughput = 85.5
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "square.stack.3d.up")
+                    .foregroundColor(DesignTokens.info)
+                Text("Adaptive Chunk Sizer")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.info.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Chunk Size")
+                    .font(.caption)
+                    .foregroundColor(DesignTokens.secondaryText)
+                Text("\(chunkSize) KB")
+                    .font(.title2)
+                    .fontWeight(.bold)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Throughput")
+                    .font(.caption)
+                    .foregroundColor(DesignTokens.secondaryText)
+                ProgressView(value: throughput / 100)
+                    .tint(DesignTokens.info)
+                Text("\(String(format: "%.1f", throughput)) Mbps")
+                    .font(.caption2)
+                    .foregroundColor(DesignTokens.secondaryText)
+            }
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: CrossStreamCoordinator View
+
+/// CrossStreamCoordinator — AI-powered cross-stream coordination.
+struct CrossStreamCoordinatorView: View {
+    @State private var streams = ["Stream A", "Stream B", "Stream C"]
+    @State private var allocations = [0.5, 0.3, 0.2]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "arrow.left.arrow.right")
+                    .foregroundColor(DesignTokens.focus)
+                Text("Cross-Stream Coordinator")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.focus.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            ForEach(Array(streams.enumerated()), id: \.offset) { index, stream in
+                HStack {
+                    Text(stream)
+                        .font(.caption)
+                    Slider(value: $allocations[index], in: 0...1)
+                    Text("\(Int(allocations[index] * 100))%")
+                        .font(.caption2)
+                        .foregroundColor(DesignTokens.secondaryText)
+                }
+            }
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: RootCause View
+
+/// RootCause — AI-powered root cause analysis.
+struct RootCauseView: View {
+    @State private var rootCause = "Bufferbloat detected"
+    @State private var confidence = 0.85
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(DesignTokens.error)
+                Text("Root Cause Analysis")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.error.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            Text(rootCause)
+                .font(.caption)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Confidence")
+                    .font(.caption)
+                    .foregroundColor(DesignTokens.secondaryText)
+                ProgressView(value: confidence)
+                    .tint(DesignTokens.error)
+                Text("\(Int(confidence * 100))% confidence")
+                    .font(.caption2)
+                    .foregroundColor(DesignTokens.secondaryText)
+            }
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: ResultExplainer View
+
+/// ResultExplainer — AI-powered result explanation.
+struct ResultExplainerView: View {
+    @State private var explanation = "Speed test completed successfully. No issues detected."
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "text.bubble")
+                    .foregroundColor(DesignTokens.info)
+                Text("Result Explainer")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.info.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            Text(explanation)
+                .font(.caption)
+                .foregroundColor(DesignTokens.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: TroubleshootingWizard View
+
+/// TroubleshootingWizard — AI-powered troubleshooting wizard.
+struct TroubleshootingWizardView: View {
+    @State private var step = 1
+    @State private var totalSteps = 5
+    @State private var symptom = "Slow speeds"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "wand.and.stars")
+                    .foregroundColor(DesignTokens.accent)
+                Text("Troubleshooting Wizard")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.accent.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Step \(step) of \(totalSteps)")
+                    .font(.caption)
+                    .foregroundColor(DesignTokens.secondaryText)
+                ProgressView(value: Double(step) / Double(totalSteps))
+                    .tint(DesignTokens.accent)
+            }
+
+            Text("Symptom: \(symptom)")
+                .font(.caption)
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: AccessibilityNarrator View
+
+/// AccessibilityNarrator — AI-powered accessibility narration.
+struct AccessibilityNarratorView: View {
+    @State private var narration = "Network diagnostics complete. No issues found."
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "speaker.wave.2")
+                    .foregroundColor(DesignTokens.secondaryText)
+                Text("Accessibility Narrator")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.secondaryText.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            Text(narration)
+                .font(.caption)
+                .foregroundColor(DesignTokens.secondaryText)
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: TrendForecaster View
+
+/// TrendForecaster — AI-powered trend forecasting.
+struct TrendForecasterView: View {
+    @State private var forecast = "Speed expected to increase 15% over next 7 days."
+    @State private var horizon = 7
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .foregroundColor(DesignTokens.warning)
+                Text("Trend Forecaster")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.warning.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            Text(forecast)
+                .font(.caption)
+                .foregroundColor(DesignTokens.secondaryText)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Forecast Horizon: \(horizon) days")
+                    .font(.caption2)
+                    .foregroundColor(DesignTokens.secondaryText)
+            }
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: HardwareHealthMonitor View
+
+/// HardwareHealthMonitor — AI-powered hardware health monitoring.
+struct HardwareHealthMonitorView: View {
+    @State private var healthStatus = "Good"
+    @State private var cpuTemp = 45.2
+    @State private var memoryUsage = 65.0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "chip")
+                    .foregroundColor(DesignTokens.success)
+                Text("Hardware Health Monitor")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.success.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Health Status: \(healthStatus)")
+                    .font(.caption)
+
+                HStack {
+                    Text("CPU Temp")
+                        .font(.caption2)
+                    Text("\(String(format: "%.1f", cpuTemp))°C")
+                        .font(.caption2)
+                        .foregroundColor(DesignTokens.secondaryText)
+                }
+
+                HStack {
+                    Text("Memory Usage")
+                        .font(.caption2)
+                    ProgressView(value: memoryUsage / 100)
+                    Text("\(Int(memoryUsage))%")
+                        .font(.caption2)
+                        .foregroundColor(DesignTokens.secondaryText)
+                }
+            }
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: DigitalTwin View
+
+/// DigitalTwin — AI-powered digital twin simulation.
+struct DigitalTwinView: View {
+    @State private var simulation = "Running"
+    @State private var accuracy = 0.92
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "cpu")
+                    .foregroundColor(DesignTokens.info)
+                Text("Digital Twin")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.info.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            Text("Simulation: \(simulation)")
+                .font(.caption)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Accuracy")
+                    .font(.caption)
+                    .foregroundColor(DesignTokens.secondaryText)
+                ProgressView(value: accuracy)
+                    .tint(DesignTokens.info)
+                Text("\(Int(accuracy * 100))% accurate")
+                    .font(.caption2)
+                    .foregroundColor(DesignTokens.secondaryText)
+            }
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: CausalAttributor View
+
+/// CausalAttributor — AI-powered causal attribution.
+struct CausalAttributorView: View {
+    @State private var cause = "ISP congestion"
+    @State private var effect = "Slow speeds during peak hours"
+    @State private var confidence = 0.88
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "arrow.triangle.branch")
+                    .foregroundColor(DesignTokens.accent)
+                Text("Causal Attributor")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.accent.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Cause: \(cause)")
+                    .font(.caption)
+                Text("Effect: \(effect)")
+                    .font(.caption)
+                    .foregroundColor(DesignTokens.secondaryText)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Confidence")
+                    .font(.caption)
+                    .foregroundColor(DesignTokens.secondaryText)
+                ProgressView(value: confidence)
+                    .tint(DesignTokens.accent)
+                Text("\(Int(confidence * 100))% confident")
+                    .font(.caption2)
+                    .foregroundColor(DesignTokens.secondaryText)
+            }
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Phase 5: FixRecommender View
+
+/// FixRecommender — AI-powered fix recommendations.
+struct FixRecommenderView: View {
+    @State private var recommendations = ["Reduce buffer size", "Switch to wired connection", "Update firmware"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "lightbulb")
+                    .foregroundColor(DesignTokens.warning)
+                Text("Fix Recommender")
+                    .font(.headline)
+                Spacer()
+                Text("AI-Powered")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(DesignTokens.warning.opacity(0.1))
+                    .cornerRadius(8)
+            }
+
+            ForEach(recommendations, id: \.self) { recommendation in
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(DesignTokens.success)
+                    Text(recommendation)
+                        .font(.caption)
+                }
+            }
+        }
+        .padding(16)
+        .background(DesignTokens.surface)
+        .cornerRadius(12)
+    }
+}

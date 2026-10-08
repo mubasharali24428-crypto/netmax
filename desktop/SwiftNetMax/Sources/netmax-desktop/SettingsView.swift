@@ -21,11 +21,11 @@ import SwiftUI
 
 /// Color-blind friendly palette: blue/orange instead of red/green.
 extension Color {
-    static let badgeSafe = Color(hex: 0x3882d8)     // Blue
-    static let badgeWarning = Color(hex: 0xd9730d)  // Orange
-    static let badgeDanger = Color(hex: 0xda3633)   // Red (errors only)
-    static let badgeInfo = Color(hex: 0x5e6ad2)     // Lavender-purple (universal)
-    static let badgeSuccess = Color(hex: 0x00d4aa)  // Emerald (NetMax brand)
+    static let badgeSafe = DesignTokens.info     // Blue
+    static let badgeWarning = DesignTokens.warning  // Orange
+    static let badgeDanger = DesignTokens.error   // Red (errors only)
+    static let badgeInfo = DesignTokens.focus     // Lavender-purple (universal)
+    static let badgeSuccess = DesignTokens.success  // Emerald (NetMax brand)
 }
 
 // MARK: - Section anchors (W12 T4-a, audit 150)
@@ -36,6 +36,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     case discovery
     case modeLabDefaults
     case interpreter
+    case remoteAI
     case startup
     case historyRetention
     case notifications
@@ -50,6 +51,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .discovery: "Feature Discovery"
         case .modeLabDefaults: "Mode Lab Defaults"
         case .interpreter: "Python Interpreter"
+        case .remoteAI: "Remote AI"
         case .startup: "Startup"
         case .historyRetention: "History Housekeeping"
         case .notifications: "Notifications"
@@ -92,6 +94,7 @@ struct SettingsView: View {
                 featureDiscovery
                 modeLabDefaults
                 interpreter
+                remoteAIConsent
                 startup
                 historyRetention // W13B UB-4
                 notifications
@@ -178,7 +181,7 @@ struct SettingsView: View {
                     Text(planMbps >= 1000
                          ? "1 Gbps"
                          : "\(Int(planMbps)) Mbps")
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(DesignTokens.secondaryText)
                 }
             }
             .accessibilityLabel(Text("Your internet plan's advertised speed"))
@@ -238,7 +241,7 @@ struct SettingsView: View {
                 Text(label)
                 Spacer()
                 Text("\(value.wrappedValue)")
-                    .foregroundColor(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
                     .monospacedDigit()
             }
         }
@@ -269,12 +272,12 @@ struct SettingsView: View {
             if !prefs.pythonOverride.isEmpty {
                 if overrideLooksValid {
                     Label("Executable found", systemImage: "checkmark.circle.fill")
-                        .foregroundColor(.green)
+                        .foregroundColor(DesignTokens.success)
                         .font(.caption)
                         .accessibilityLabel(Text("Interpreter override looks valid"))
                 } else {
                     Label("No executable at this path — run will fall back to /usr/bin/python3", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundColor(.orange)
+                        .foregroundColor(DesignTokens.warning)
                         .font(.caption)
                         .accessibilityLabel(Text("Interpreter override path not found"))
                 }
@@ -285,6 +288,41 @@ struct SettingsView: View {
             Text("/usr/bin/python3 or a full path — leave empty to use /usr/bin/python3.")
         }
         .id(SettingsSection.interpreter.id) // T4-a anchor
+    }
+
+    // MARK: - Remote AI consent
+
+    private var remoteAIConsent: some View {
+        Section {
+            Toggle("Allow remote AI analysis", isOn: $prefs.allowRemoteAI)
+                .accessibilityLabel(Text("Allow remote AI analysis"))
+                .accessibilityHint(Text("When enabled, approved measurement fields may be sent to the configured AI provider. MCP cannot change this setting."))
+                .accessibilityIdentifier("settings.remoteAIConsent")
+
+            LabeledContent("Provider", value: RemoteAIProviderLabel.current)
+                .accessibilityIdentifier("settings.remoteAIProvider")
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Data sent when enabled")
+                    .font(.subheadline.weight(.semibold))
+                Text(RemoteAISettingsDisclosure.payloadSummary)
+                    .font(.caption)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(Text(RemoteAISettingsDisclosure.accessibilitySummary))
+            }
+
+            Text(RemoteAISettingsDisclosure.mcpConsent)
+                .font(.caption)
+                .foregroundColor(DesignTokens.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(Text(RemoteAISettingsDisclosure.mcpConsent))
+        } header: {
+            Label("Remote AI Privacy", systemImage: "network.badge.shield.half.filled")
+        } footer: {
+            Text("Off by default. Provider API keys and endpoint URLs are not displayed here.")
+        }
+        .id(SettingsSection.remoteAI.id)
     }
 
     // MARK: - Startup
@@ -488,7 +526,7 @@ struct SettingsView: View {
                 Text(title)
                 Text(subtitle)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
             }
         }
         .accessibilityLabel(Text(title))
@@ -513,7 +551,7 @@ struct SettingsView: View {
                     Text(retentionDays == 0
                          ? "Forever"
                          : "\(retentionDays) day\(retentionDays == 1 ? "" : "s")")
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(DesignTokens.secondaryText)
                         .monospacedDigit()
                 }
             }
@@ -579,14 +617,14 @@ struct SettingsView: View {
                 Text("Current tier")
                 Spacer()
                 Text(tierLabel)
-                    .foregroundStyle(.secondary)
+                    .foregroundColor(DesignTokens.secondaryText)
                     .accessibilityLabel(Text("Current license tier: \(tierLabel)"))
             }
 
             switch LicenseGate.effectiveTier(license) {
             case .Pro:
                 Label("Pro — activated", systemImage: "checkmark.seal.fill")
-                    .foregroundColor(.green)
+                    .foregroundColor(DesignTokens.success)
                     .accessibilityLabel(Text("Pro tier activated"))
                 Button("Deactivate key") { license.deactivate() }
                     .accessibilityLabel(Text("Deactivate license key"))
@@ -594,7 +632,7 @@ struct SettingsView: View {
             case .Trial:
                 let ends = license.trialEndsAt
                 Label("Trial active until \(ends)", systemImage: "clock.badge.checkmark")
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(DesignTokens.accent)
                     .accessibilityLabel(Text("Trial active until \(ends)"))
             case .Free:
                 if license.trialStartedAt.isEmpty && license.trialEndsAt.isEmpty {
@@ -604,7 +642,7 @@ struct SettingsView: View {
                         .accessibilityIdentifier("license.startTrial")
                 } else {
                     Label("Trial expired — enter a key for Pro", systemImage: "lock.fill")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(DesignTokens.secondaryText)
                         .accessibilityLabel(Text("Trial expired. Enter a license key for Pro."))
                 }
                 HStack {
@@ -703,7 +741,7 @@ struct SettingsView: View {
                         "Update available: \(outcome.latestVersion ?? "?") "
                         + "(you have \(outcome.currentVersion))."
                     updateStatusIsError = false
-                    if let s = outcome.htmlURL, let u = URL(string: s) {
+                    if let u = outcome.releaseURL ?? UpdateChecker.releaseURL(for: outcome.latestTag) {
                         NSWorkspace.shared.open(u)
                     }
                 } else {
@@ -734,7 +772,7 @@ struct SettingsView: View {
 
             Text("engine: 192 offline tests")
                 .font(.callout)
-                .foregroundColor(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .accessibilityLabel(Text("engine: 192 offline tests"))
 
             // T3-c (W11-A-102): telemetry stance, stated in-app. Task 2
@@ -742,7 +780,7 @@ struct SettingsView: View {
             // Releases check below (no background polling).
             Text("Privacy: All data stays on this Mac. No telemetry. Updates check GitHub only when you press the button.")
                 .font(.callout)
-                .foregroundColor(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .accessibilityLabel(Text("Privacy: all data stays on this Mac. No telemetry. Updates check GitHub only when you press the button."))
 
             // W13B UA-4 (S-079/S-080): the full "What leaves your Mac"
@@ -766,27 +804,27 @@ struct SettingsView: View {
                 .accessibilityLabel(Text("Your Privacy"))
             Text("All measurement data stays on this Mac.")
                 .font(.callout)
-                .foregroundColor(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .accessibilityLabel(Text("All measurement data stays on this Mac"))
             Text("No telemetry, no analytics, no tracking calls.")
                 .font(.callout)
-                .foregroundColor(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .accessibilityLabel(Text("No telemetry, no analytics, no tracking calls"))
             Text("Only outbound connections: the speed-test and upload-test endpoints a run tests against (proof.ovh.net, speed.cloudflare.com for downloads; httpbin.org / postman-echo.com only when you run an upload probe), plus GitHub's Releases API when you press “Check for Updates…”.")
                 .font(.callout)
-                .foregroundColor(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .accessibilityLabel(Text("Only outbound connections are the speed-test endpoints you choose to test against, plus GitHub Releases when you check for updates"))
 
             // T3-c (W11-A-101): grading rubric surfaced in-app.
             Text("Methodology: Grades use Waveform/DSLReports-style latency-under-load rubric.")
                 .font(.callout)
-                .foregroundColor(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .accessibilityLabel(Text("Methodology: grades use a Waveform/DSLReports-style latency-under-load rubric."))
 
             // T3-c (W11-A-132): license posture, stated in-app.
             Text("Licenses: SwiftUI · Apple engines · no third-party runtime deps")
                 .font(.callout)
-                .foregroundColor(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .accessibilityLabel(Text("Licenses: SwiftUI, Apple engines, no third-party runtime dependencies"))
 
             // Task 2: real GitHub Releases check (button-triggered; no
@@ -800,11 +838,11 @@ struct SettingsView: View {
                         Text(updateButtonTitle)
                         Text(buildDateLine)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(DesignTokens.secondaryText)
                     }
                     Spacer()
                     Image(systemName: "arrow.up.right.square")
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(DesignTokens.accent)
                 }
             }
             .buttonStyle(.plain)
@@ -816,7 +854,7 @@ struct SettingsView: View {
             if let msg = updateStatusMessage {
                 Text(msg)
                     .font(.caption)
-                    .foregroundColor(updateStatusIsError ? .orange : .secondary)
+                    .foregroundColor(updateStatusIsError ? DesignTokens.warning : DesignTokens.secondaryText)
                     .accessibilityLabel(Text(msg))
             }
 
@@ -830,11 +868,11 @@ struct SettingsView: View {
                         Text("Send Feedback…")
                         Text("Opens GitHub Discussions in your browser")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(DesignTokens.secondaryText)
                     }
                     Spacer()
                     Image(systemName: "envelope")
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(DesignTokens.accent)
                 }
             }
             .buttonStyle(.plain)
@@ -852,11 +890,11 @@ struct SettingsView: View {
                         Text("Export Support Bundle…")
                         Text("Zip with last 10 runs + versions — sanitized (no history dump, no SSID, no env)")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(DesignTokens.secondaryText)
                     }
                     Spacer()
                     Image(systemName: "archivebox")
-                        .foregroundColor(.accentColor)
+                        .foregroundColor(DesignTokens.accent)
                 }
             }
             .buttonStyle(.plain)
@@ -922,6 +960,44 @@ struct SettingsView: View {
             Label("Subscription", systemImage: "cart")
         }
     }
+}
+
+enum RemoteAIProviderLabel {
+    static var current: String { resolve(ProcessInfo.processInfo.environment) }
+
+    static func resolve(_ environment: [String: String]) -> String {
+        switch environment["NETMAX_AI_PROVIDER"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "anthropic", "claude": return "Anthropic"
+        case "gemini": return "Gemini"
+        case "deepseek": return "DeepSeek"
+        case "groq": return "Groq"
+        case "mistral": return "Mistral"
+        case "openrouter": return "OpenRouter"
+        case "ollama", "local": return "Ollama-compatible local server"
+        case "llamacpp": return "llama.cpp local server"
+        case "lmstudio": return "LM Studio local server"
+        case "self-hosted": return "Self-hosted local server"
+        default:
+            let base = environment["NETMAX_AI_BASE"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return base.isEmpty ? "OpenAI (default)" : "Custom endpoint"
+        }
+    }
+}
+
+enum RemoteAISettingsDisclosure {
+    static let metricsFields = [
+        "mode", "streams", "duration_seconds", "download_mbps", "upload_mbps",
+        "latency_ms", "jitter_ms", "packet_loss_percent", "bufferbloat_grade",
+        "sample_count", "dns_latency_ms",
+    ]
+    static var payloadSummary: String {
+        "schema_version, analysis_id, and metrics: \(metricsFields.joined(separator: ", "))."
+    }
+    static let accessibilitySummary = "Exact remote AI fields: schema version, analysis identifier, " +
+        "mode, stream count, duration, download and upload rates, latency, jitter, packet loss, " +
+        "bufferbloat grade, sample count, and DNS latency."
+    static let mcpConsent = "MCP clients cannot enable or override this preference. " +
+        "Local analysis remains available when remote AI is off."
 }
 
 #if DEBUG

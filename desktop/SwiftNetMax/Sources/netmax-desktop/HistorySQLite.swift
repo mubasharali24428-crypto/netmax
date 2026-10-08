@@ -231,6 +231,32 @@ final class HistorySQLite {
         guard let c = sqlite3_column_text(stmt, i) else { return nil }
         return String(cString: c)
     }
+
+    // MARK: - Erase Primitive (B-13-SQLITE-ERASE)
+
+    /// Checkpoints, closes, and removes the SQLite database plus `-wal` and `-shm` sidecars.
+    /// Resets cached connection state so subsequent access creates a fresh database.
+    /// Returns true on success or if the files were already absent; throws on permission/IO error.
+    @discardableResult
+    func erase() throws -> Bool {
+        if let handle = db {
+            sqlite3_wal_checkpoint_v2(handle, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil)
+            sqlite3_close(handle)
+            db = nil
+        }
+        openFailed = false
+
+        let fm = FileManager.default
+        let base = dbURL.path
+        let targets = [base, base + "-wal", base + "-shm"]
+
+        for path in targets {
+            if fm.fileExists(atPath: path) {
+                try fm.removeItem(atPath: path)
+            }
+        }
+        return true
+    }
 }
 
 // SQLITE_TRANSIENT tells SQLite to COPY the bytes (Swift strings can move).

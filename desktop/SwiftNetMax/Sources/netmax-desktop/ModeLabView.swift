@@ -304,13 +304,13 @@ struct ModeLabView: View {
             Label("You appear to be offline — measurement modes need a network connection.",
                   systemImage: "wifi.slash")
                 .font(.footnote)
-                .foregroundColor(.red)
+                .foregroundColor(DesignTokens.error)
                 .accessibilityLabel(Text("You appear to be offline"))
         } else if netContext.vpn {
             Label("VPN detected — results may reflect VPN routing.",
                   systemImage: "lock.shield")
                 .font(.footnote)
-                .foregroundColor(.orange)
+                .foregroundColor(DesignTokens.warning)
                 .accessibilityLabel(Text("VPN detected"))
                 .accessibilityValue(Text("Results may reflect VPN routing"))
         }
@@ -328,7 +328,7 @@ struct ModeLabView: View {
     private var modeSummary: some View {
         Text(selectedMode.summary)
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundColor(DesignTokens.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel("Mode description")
             .accessibilityValue(selectedMode.summary)
@@ -450,7 +450,7 @@ struct ModeLabView: View {
     private var header: some View {
         HStack {
             Image(systemName: "dial.max.fill")
-                .foregroundStyle(.blue)
+                .foregroundColor(DesignTokens.info)
                 // ALPHA-A4-06 (A2-09 finding 2): purely decorative.
                 .accessibilityHidden(true)
             Text("Mode Lab")
@@ -562,7 +562,7 @@ struct ModeLabView: View {
                 if !supported {
                     Text("not used by \(selectedMode.id)")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundColor(DesignTokens.secondaryText)
                         // ALPHA-A4-06 (A2-09 finding 7): stays silent; the fact is
                         // conveyed by rowHint above.
                         .accessibilityHidden(true)
@@ -570,7 +570,7 @@ struct ModeLabView: View {
             }
             Text(rangeCaption(for: parameter))
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundColor(DesignTokens.secondaryText)
                 .accessibilityHidden(true) // range is already in rowHint above
         }
         .opacity(supported ? 1 : 0.55)
@@ -635,7 +635,7 @@ struct ModeLabView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("sequence · \(leg.mode)")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundColor(DesignTokens.secondaryText)
                         legText(leg.raw)
                     }
                 }
@@ -648,7 +648,7 @@ struct ModeLabView: View {
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .font(.footnote)
-                .foregroundColor(.orange)
+                .foregroundColor(DesignTokens.warning)
                 .accessibilityLabel(Text("Measured without unsupported flags"))
                 .accessibilityValue(Text(droppedFlagNames.joined(separator: ", ")))
             } else if status == .error, let lastErrorText {
@@ -683,10 +683,10 @@ struct ModeLabView: View {
         }
         .font(.system(.caption, design: .monospaced))
         .scrollContentBackground(.hidden)
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(DesignTokens.surface)
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(Color(nsColor: .separatorColor))
+                .strokeBorder(DesignTokens.border)
         )
         .cornerRadius(6)
         .accessibilityLabel(editable ? "Mode Lab results" : "Sequence leg result")

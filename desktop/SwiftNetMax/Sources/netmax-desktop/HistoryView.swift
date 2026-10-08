@@ -27,6 +27,8 @@ struct HistoryView: View {
     @State private var records: [HistoryRecord] = []
     @State private var trendMode: String?
     @State private var showingClearConfirmation = false
+    @State private var showingEraseConfirmation = false
+    @State var eraseCoordinator = HistoryEraseCoordinator()
     @State private var selectedRun: IdentifiedRun?
     @State private var showingTimeline = false
     @State private var timelineRange: TimelineRange = .oneDay
@@ -148,6 +150,32 @@ struct HistoryView: View {
             if showingUndoBanner {
                 undoBanner
             }
+            if eraseCoordinator.isErasing {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Erasing all history permanently…").font(.callout)
+                }
+                .padding(.horizontal, Theme.Spacing.sm).padding(.vertical, Theme.Spacing.xs)
+                .background(RoundedRectangle(cornerRadius: Theme.Radius.control).fill(hintFill))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Erasing all history permanently in progress")
+                .listRowSeparator(.hidden)
+            }
+            if let errorMsg = eraseCoordinator.errorMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                    Text(errorMsg).font(.callout)
+                    Spacer()
+                    Button("Dismiss") { eraseCoordinator.errorMessage = nil }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss error")
+                }
+                .padding(.horizontal, Theme.Spacing.sm).padding(.vertical, Theme.Spacing.xs)
+                .background(RoundedRectangle(cornerRadius: Theme.Radius.control).fill(hintFill))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Erase error: \(errorMsg)")
+                .listRowSeparator(.hidden)
+            }
             searchBar
             trendsSection
             runsSection
@@ -231,6 +259,15 @@ struct HistoryView: View {
                 .disabled(records.isEmpty)
                 .help("Delete all saved runs")
             }
+            ToolbarItem {
+                Button {
+                    showingEraseConfirmation = true
+                } label: {
+                    Label("Erase All History…", systemImage: "trash.slash")
+                }
+                .help("Permanently and irreversibly erase all history, archives, and holding bin")
+                .accessibilityIdentifier("history.eraseAll")
+            }
             // W13B UB-4 (S-035): bulk delete — destructive-only confirmation.
             if bulkEditMode {
                 ToolbarItem {
@@ -244,6 +281,20 @@ struct HistoryView: View {
                     .accessibilityIdentifier("history.bulkDelete")
                 }
             }
+        }
+        .confirmationDialog(
+            HistoryEraseCoordinator.confirmationTitle,
+            isPresented: $showingEraseConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(HistoryEraseCoordinator.eraseButtonTitle, role: .destructive) {
+                performEraseAll()
+            }
+            Button("Cancel", role: .cancel) {
+                eraseCoordinator.cancel()
+            }
+        } message: {
+            Text(HistoryEraseCoordinator.confirmationMessage)
         }
         .confirmationDialog(
             "Clear all history?",
@@ -737,6 +788,17 @@ struct HistoryView: View {
         }
     }
 
+    private func performEraseAll() {
+        let ok = eraseCoordinator.confirm {
+            HistoryStore.eraseAll()
+        }
+        if ok {
+            showingUndoBanner = false
+            undoBannerTask?.cancel()
+        }
+        reload()
+    }
+
     /// W12 T4-a (audit 151): re-collapse Trends on reload once the log passes
     /// the threshold, unless the user expanded it during this visit.
     private func applyTrendsCollapseDefault() {
@@ -767,6 +829,33 @@ struct HistoryView: View {
         reduceTransparency
             ? AnyShapeStyle(Color(nsColor: .controlBackgroundColor))
             : AnyShapeStyle(.ultraThinMaterial)
+    }
+}
+
+struct HistoryEraseCoordinator {
+    var isErasing = false
+    var errorMessage: String?
+    private(set) var storeCallCount = 0
+
+    static let confirmationTitle = "Erase All History Permanently?"
+    static let confirmationMessage = "This permanently and irreversibly erases your live history, retention archive, and cleared-history holding bin. This action cannot be undone."
+    static let eraseButtonTitle = "Erase Everything Permanently"
+
+    mutating func cancel() {}
+
+    @discardableResult
+    mutating func confirm(eraseAction: () -> [String: Bool]) -> Bool {
+        isErasing = true
+        storeCallCount += 1
+        let results = eraseAction()
+        isErasing = false
+        let success = !results.isEmpty && results.values.allSatisfy { $0 }
+        if !success {
+            errorMessage = "Failed to erase history files completely. Please check file permissions."
+        } else {
+            errorMessage = nil
+        }
+        return success
     }
 }
 
