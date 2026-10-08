@@ -1,0 +1,75 @@
+name: Security Scans
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  security-audit:
+    name: Security Scans & Test Suite
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: "20"
+
+      - name: Install dependencies from frozen manifests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-ci.txt
+          cd desktop && npm ci --ignore-scripts
+          cd ../plugins/vscode && npm ci --ignore-scripts
+
+      - name: Code quality & lint (Ruff)
+        run: ruff check .
+
+      - name: Python test suite & bridge tests
+        run: |
+          pytest -q
+          pytest desktop/bridge/test_engine_bridge.py -q
+
+      - name: Python dependency vulnerability scan (pip-audit)
+        run: pip-audit -r requirements-ci.txt
+
+      - name: npm dependency audits (Desktop & VS Code)
+        run: |
+          cd desktop && npm audit --audit-level=high
+          cd ../plugins/vscode && npm audit --audit-level=high
+
+      - name: Static security analysis (Bandit)
+        run: |
+          bandit -r . -lll -x './.git,./.venv,./node_modules,./desktop/SwiftNetMax/.build,./tests' -f sarif -o bandit.sarif
+
+      - name: Static security analysis (Semgrep)
+        run: |
+          semgrep --config=p/python --error --sarif --output=semgrep.sarif .
+
+      - name: Node MCP package tests
+        run: cd desktop && npm test
+
+      - name: Swift package tests (SPM)
+        run: cd desktop/SwiftNetMax && swift test
+
+      - name: Upload Bandit SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@4c50b6f6fd9dc6fe03111c2d045c8be2a724cce1 # v3.28.11
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+
+      - name: Upload Semgrep SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@4c50b6f6fd9dc6fe03111c2d045c8be2a724cce1 # v3.28.11
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep

@@ -17,10 +17,10 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
         with:
           python-version: "3.12"
           cache: pip
@@ -36,8 +36,25 @@ jobs:
       - name: Prime matplotlib font cache (avoids subprocess in offline tests)
         run: python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot"
 
-      - name: Run engine + bridge suite
-        run: python -m pytest -q -n auto
+      - name: Engine mirror parity check (C-08)
+        run: python scripts/check_engine_mirrors.py
+
+      - name: Targeted module coverage checks (C-10, C-11, C-12, C-13)
+        run: |
+          python -m pytest tests/test_fetch_mcp_boundary.py tests/test_fetch_url_policy.py tests/test_netmax_fetch.py --cov=netmax_fetch --cov-report=term-missing --cov-fail-under=90
+          python -m pytest tests/test_ai_endpoint_policy.py tests/test_ai_egress_policy.py tests/test_netmax_ai_provider.py --cov=netmax_ai_provider --cov-report=term-missing --cov-fail-under=90
+          python -m pytest tests/test_pf_transactional.py tests/test_pf_locking.py tests/test_netmax_shape.py --cov=netmax_shape --cov-report=term-missing --cov-fail-under=90
+          python -m pytest desktop/bridge/test_engine_bridge.py --cov=desktop/bridge --cov-report=term-missing --cov-fail-under=90
+
+      - name: Run engine + bridge suite (with coverage, >= 85% gate)
+        run: python -m pytest -q --cov --cov-report=term-missing --cov-report=xml --cov-fail-under=85
+
+      - name: Upload Python coverage XML
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: python-coverage-xml
+          path: coverage.xml
+          retention-days: 7
 
       - name: Bridge offline selftest
         run: python desktop/bridge/engine_bridge.py selftest
@@ -54,6 +71,42 @@ jobs:
         run: |
           python -c "import json, tomllib; py = tomllib.load(open('pyproject.toml','rb'))['project']['version']; pkg = json.load(open('desktop/package.json'))['version']; srv = json.load(open('server.json')); assert len({py, pkg, srv['version'], srv['packages'][0]['version']}) == 1, (py, pkg, srv); print('versions agree:', py)"
 
+  security-scans:
+    name: Security scans (pip-audit, bandit, semgrep)
+    # A-03: one documented command per scanner, all pinned in
+    # requirements-ci.txt. Local setup: pip install -r requirements-ci.txt
+    # then run the same three commands below.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned scanners
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit==2.10.1 bandit==1.9.4 semgrep==1.179.0
+
+      # Gate: any known-vulnerable pinned dependency fails CI.
+      - name: Dependency audit (pip-audit)
+        run: pip-audit -r requirements-ci.txt
+
+      # Gate: fails on High only — the release-blocking severity per the
+      # roadmap severity gate. Medium/Low findings are reported for
+      # product-owner disposition (an AI agent cannot accept that risk).
+      # Excluded: build artifacts, vendored deps, and test fixtures —
+      # none are shipped product code paths.
+      - name: Static analysis (bandit, High = gate)
+        run: bandit -r . -lll -x './.git,./.venv,./node_modules,./output,./tmp,./results,./desktop/SwiftNetMax/.build,./desktop/build,./tests'
+
+      # Gate: community python rules; any finding fails CI.
+      - name: Semgrep (p/python, blocking)
+        run: semgrep --config=p/python --error .
+
   mcp-concurrency-smoke:
     name: MCP transport concurrency smoke (loopback, offline)
     # ubuntu on purpose: the probe only exercises the HTTP transport with
@@ -66,10 +119,10 @@ jobs:
       run:
         working-directory: desktop
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: "20"
           cache: npm
@@ -81,8 +134,9 @@ jobs:
       - name: Syntax gate
         run: npm test
 
-      - name: VS Code trends unit tests (zero-dep node:test)
-        run: node --test ../plugins/vscode/test/trends.test.js
+      - name: VS Code extension tests
+        working-directory: plugins/vscode
+        run: npm ci && npm test
 
       - name: Start server (loopback) + run parallel smoke
         run: |
@@ -134,7 +188,7 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Build (release)
         working-directory: desktop/SwiftNetMax
@@ -151,21 +205,35 @@ jobs:
         working-directory: desktop
         run: bash scripts/run_swift_selftests.sh
 
+      # A-03: the SPM test target (Package.swift .testTarget) must
+      # run in CI — the compile-probe above does not execute it.
+      - name: Swift package tests (SPM)
+        working-directory: desktop/SwiftNetMax
+        run: swift test
+
   bundle-package:
     name: App bundle + codesign
     runs-on: macos-14
     timeout-minutes: 30
     needs: [swift-build]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Build (release)
+      - name: Build (release universal)
         working-directory: desktop/SwiftNetMax
-        run: swift build -c release
+        run: swift build -c release --arch arm64 --arch x86_64
 
       - name: Build app bundle
         working-directory: desktop
         run: bash scripts/build_app.sh
+
+      - name: Assert universal slices (lipo) and Info.plist
+        working-directory: desktop
+        run: |
+          lipo -info build/NetMaxDesktop.app/Contents/MacOS/NetMaxDesktop | grep -q 'arm64'
+          lipo -info build/NetMaxDesktop.app/Contents/MacOS/NetMaxDesktop | grep -q 'x86_64'
+          plutil -lint build/NetMaxDesktop.app/Contents/Info.plist
+          echo "universal architecture and Info.plist OK"
 
       - name: Codesign verify (ad-hoc)
         working-directory: desktop
@@ -230,7 +298,7 @@ jobs:
           echo "engine perms OK"
 
       - name: Upload app artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: NetMaxDesktop-app
           path: desktop/build/NetMaxDesktop.app

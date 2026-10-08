@@ -52,3 +52,5 @@ results/
 node_modules/
 .coverage
 coverage.xml
+tmp/
+output/

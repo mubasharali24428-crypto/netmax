@@ -1,17 +1,8 @@
 'use strict';
 
-/**
- * Pure history parsing + SVG charting for the NetMax VS Code webview.
- * Framework-free on purpose: extension.js requires it AND node --test
- * exercises it with zero dependencies. No network, no disk here — the
- * caller supplies file text / row arrays.
- *
- * Row shape: { t: epochMs (number), mode: string, mbps: number|null }.
- */
-
 function toEpochMs(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return value > 1e12 ? value : value * 1000; // s vs ms epoch
+    return value > 1e12 ? value : value * 1000;
   }
   if (typeof value === 'string' && value) {
     const ms = Date.parse(value);
@@ -20,8 +11,6 @@ function toEpochMs(value) {
   return null;
 }
 
-/** Mbps from a result payload: JSON {"mbps": N} wins (even embedded in
- * prose), else the first "N Mbps". */
 function extractMbps(raw) {
   if (raw === null || raw === undefined) return null;
   const text = typeof raw === 'string' ? raw : JSON.stringify(raw);
@@ -33,33 +22,37 @@ function extractMbps(raw) {
       const parsed = JSON.parse(chunk);
       const direct = parsed && (parsed.mbps ?? parsed.Mbps ?? parsed.download_mbps);
       if (typeof direct === 'number' && Number.isFinite(direct)) return direct;
-    } catch { /* not JSON — keep looking */ }
+    } catch { }
   }
   const m = /([\d.]+)\s*Mbps/.exec(text);
   return m ? parseFloat(m[1]) : null;
 }
 
-/** Parse Swift history.jsonl lines (defensive across schema versions). */
+function parseSwiftJsonlLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  let obj;
+  try {
+    obj = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!obj || typeof obj !== 'object') return null;
+  const t = toEpochMs(obj.ts ?? obj.timestamp ?? obj.time);
+  if (t === null) return null;
+  const mode = typeof obj.mode === 'string' ? obj.mode : 'unknown';
+  return {
+    t,
+    mode,
+    mbps: extractMbps(obj.resultRaw ?? obj.result_raw ?? obj.result ?? obj.raw),
+  };
+}
+
 function parseSwiftJsonl(text) {
   const rows = [];
   for (const line of String(text || '').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let obj;
-    try {
-      obj = JSON.parse(trimmed);
-    } catch {
-      continue; // corrupt/partial line (crash mid-write) — skip silently
-    }
-    if (!obj || typeof obj !== 'object') continue;
-    const t = toEpochMs(obj.ts ?? obj.timestamp ?? obj.time);
-    if (t === null) continue;
-    const mode = typeof obj.mode === 'string' ? obj.mode : 'unknown';
-    rows.push({
-      t,
-      mode,
-      mbps: extractMbps(obj.resultRaw ?? obj.result_raw ?? obj.result ?? obj.raw),
-    });
+    const parsed = parseSwiftJsonlLine(line);
+    if (parsed) rows.push(parsed);
   }
   return rows.sort((a, b) => a.t - b.t);
 }
@@ -69,7 +62,6 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** Hand-rolled SVG line chart (no chart lib — zero dependencies). */
 function svgChart(rows) {
   const pts = rows.filter((r) => typeof r.mbps === 'number');
   if (pts.length === 0) {
@@ -97,7 +89,6 @@ function svgChart(rows) {
     dots + `</svg>`;
 }
 
-/** Full webview page: chart + run list (static HTML, no scripts). */
 function renderPage(rows, sourceLabel) {
   const withMbps = rows.filter((r) => typeof r.mbps === 'number');
   const items = rows.slice(-30).reverse().map((r) =>
@@ -117,9 +108,8 @@ function renderPage(rows, sourceLabel) {
     `</body></html>`;
 }
 
-/** Build a run row from engine CLI stdout (Run command results). */
 function rowFromEngineOutput(text, mode) {
   return { t: Date.now(), mode, mbps: extractMbps(text) };
 }
 
-module.exports = { toEpochMs, extractMbps, parseSwiftJsonl, escapeHtml, svgChart, renderPage, rowFromEngineOutput };
+module.exports = { toEpochMs, extractMbps, parseSwiftJsonlLine, parseSwiftJsonl, escapeHtml, svgChart, renderPage, rowFromEngineOutput };

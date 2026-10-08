@@ -1,0 +1,56 @@
+name: Reproducible Build Verification
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'Commit SHA to verify for reproducibility'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  reproducible-build:
+    name: Clean universal build reproducibility
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Set up Node
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: "20"
+
+      - name: Run build reproducibility harness
+        run: |
+          TARGET_SHA="${{ github.event.inputs.commit_sha || github.sha }}"
+          echo "Verifying reproducibility for commit: $TARGET_SHA"
+          mkdir -p output/manifests
+          REPRO_MANIFEST_DIR="output/manifests" bash desktop/scripts/verify_reproducible_build.sh "$TARGET_SHA"
+
+      - name: Upload build manifests
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: reproducible-build-manifests-${{ github.sha }}
+          path: output/manifests/
+          retention-days: 7

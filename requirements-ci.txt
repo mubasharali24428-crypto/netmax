@@ -1,7 +1,16 @@
 # Pinned ranges for CI; bump deliberately
-pytest>=8,<9
-pytest-asyncio>=0.24,<1
-pytest-xdist>=3,<4
+# pytest >=9.0.3 fixes PYSEC-2026-1845 (A-03 pip-audit finding);
+# the old >=8,<9 range resolves to the vulnerable 8.4.2.
+pytest>=9.0.3,<10
+pytest-asyncio>=1.4,<2
+pytest-xdist>=3.8,<4
+pytest-cov==6.0.0
 aiosqlite>=0.20,<1
 matplotlib>=3.8,<4
 ruff>=0.8,<1
+
+# Security scanners (A-03). Exact pins, not ranges: the scanner version
+# is part of the audit record. Bump deliberately and re-baseline findings.
+pip-audit==2.10.1
+bandit==1.9.4
+semgrep==1.179.0

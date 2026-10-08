@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-universal:
+    name: Build, notarize, and publish universal release
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Set up Node
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-ci.txt
+          cd desktop && npm ci --no-audit --no-fund
+
+      - name: Build universal app bundle (C-06)
+        working-directory: desktop
+        run: bash scripts/build_app.sh
+
+      - name: Sign with Developer ID (C-07-SIGN)
+        env:
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+        run: bash desktop/scripts/sign.sh
+
+      - name: Notarize and package DMG (C-07-NOTARIZE)
+        env:
+          NOTARY_PROFILE: ${{ secrets.NOTARY_PROFILE || 'NetMaxNotary' }}
+          DMG_OUT: desktop/build/release/NetMaxDesktop-universal.dmg
+        run: bash desktop/scripts/notarize.sh
+
+      - name: Generate checksums and provenance (C-07-PROVENANCE)
+        run: |
+          mkdir -p desktop/build/release
+          cd desktop/build/release
+          shasum -a 256 NetMaxDesktop-universal.dmg > NetMaxDesktop-universal.dmg.sha256
+          shasum -a 256 -c NetMaxDesktop-universal.dmg.sha256
+          echo "commit: ${{ github.sha }}" > provenance.txt
+          echo "ref: ${{ github.ref }}" >> provenance.txt
+          echo "date: $(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> provenance.txt
+
+      - name: Upload release distribution artifacts
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: NetMaxDesktop-release-universal
+          path: desktop/build/release/
+          retention-days: 14
