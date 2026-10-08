@@ -1594,6 +1594,17 @@ def main(argv: list[str] | None = None) -> None:
     sp_exp.add_argument("--fmt", choices=["csv", "json"], default="csv")
     sp_exp.add_argument("--out", required=True)
 
+    sp_eve = sub.add_parser(
+        "export-evidence",
+        help="export selected history records as an evidence bundle (JSON manifest or PDF)",
+    )
+    sp_eve.add_argument(
+        "--records", required=True,
+        help="comma-separated record IDs, e.g. rec-0,rec-1 (rec-<index> over canonical history)",
+    )
+    sp_eve.add_argument("--fmt", choices=["json", "pdf"], default="json")
+    sp_eve.add_argument("--out", required=True)
+
     # v0.5 modes
     sp_fetch = sub.add_parser("fetch", help="multi-stream download accelerator")
     sp_fetch.add_argument("url")
@@ -1843,6 +1854,19 @@ def main(argv: list[str] | None = None) -> None:
             import netmax_export
             netmax_export.export_results(args.fmt, args.out)
             print(f"exported ({args.fmt}) → {args.out}")
+        elif cmd == "export-evidence":
+            import netmax_export_manifest as _evm
+
+            try:
+                ids = [r.strip() for r in args.records.split(",") if r.strip()]
+                manifest = _evm.generate_export_manifest(ids)
+                if args.fmt == "pdf":
+                    _evm.write_evidence_pdf(manifest, args.out)
+                else:
+                    Path(args.out).write_text(_evm.manifest_to_json(manifest) + "\n")
+            except ValueError as exc:
+                parser.error(str(exc))
+            print(f"exported evidence ({args.fmt}) → {args.out}")
         elif cmd == "resolve":
             result = run_resolve_settings(
                 wifi_json=args.wifi_json,
