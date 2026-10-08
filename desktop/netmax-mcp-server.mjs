@@ -359,6 +359,13 @@ function escHtml(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/**
+ * Extract a numeric value from engine text output.
+ */
+function extractValue(text, pattern) {
+  const match = text.match(pattern);
+  return match ? parseFloat(match[1]) : null;
+}
 // ── Server ──────────────────────────────────────────────────────────────────
 
 // ── Server factory (one instance per transport lifetime) ─────────────────

@@ -988,6 +988,22 @@ code = code.replace(
   drift_code + stub_tools_code + '\n  // ── Resources ──'
 )
 
+# Safety net: 805e1b8 dropped extractValue from the output; re-add if missing.
+if 'function extractValue' not in code:
+    _ev = """/**
+ * Extract a numeric value from engine text output.
+ */
+function extractValue(text, pattern) {
+  const match = text.match(pattern);
+  return match ? parseFloat(match[1]) : null;
+}
+"""
+    _marker = '// ── Server ─'
+    if _marker in code:
+        code = code.replace(_marker, _ev + _marker, 1)
+    else:
+        code = _ev + code
+
 code = code.rstrip('\n') + '\n'
 with open('desktop/netmax-mcp-server.mjs', 'w') as f:
     f.write(code)
