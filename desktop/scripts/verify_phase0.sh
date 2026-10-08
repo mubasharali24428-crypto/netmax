@@ -14,7 +14,29 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SWIFT_DIR="$REPO_ROOT/desktop/SwiftNetMax"
 BRIDGE_DIR="$REPO_ROOT/desktop/bridge"
 APP="$REPO_ROOT/desktop/build/NetMaxDesktop.app"
-PY="${NETMAX_PYTHON:-python3}"
+PY="${NETMAX_PYTHON:-}"
+if [[ -z "$PY" ]]; then
+  if [[ -x "$REPO_ROOT/.venv/bin/python3" ]]; then
+    PY="$REPO_ROOT/.venv/bin/python3"
+  else
+    PY="$(command -v python3 || true)"
+  fi
+fi
+if [[ -z "$PY" ]] || ! command -v "$PY" >/dev/null 2>&1; then
+  printf 'FATAL: no usable Python interpreter (install Python or set NETMAX_PYTHON)\n' >&2
+  exit 2
+fi
+if ! "$PY" -m pytest --version >/dev/null 2>&1; then
+  printf 'FATAL: pytest is missing from %s; install the project test dependencies or set NETMAX_PYTHON\n' "$PY" >&2
+  exit 2
+fi
+
+SWIFT_CACHE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/netmax-phase0-swift.XXXXXX")"
+mkdir -p "$SWIFT_CACHE_ROOT/clang" "$SWIFT_CACHE_ROOT/swift" \
+  "$SWIFT_CACHE_ROOT/cache" "$SWIFT_CACHE_ROOT/config" "$SWIFT_CACHE_ROOT/security"
+export CLANG_MODULE_CACHE_PATH="$SWIFT_CACHE_ROOT/clang"
+export SWIFT_MODULECACHE_PATH="$SWIFT_CACHE_ROOT/swift"
+trap 'rm -rf "$SWIFT_CACHE_ROOT"' EXIT
 WAIT_TOTAL_SECS=900   # 15 min
 WAIT_INTERVAL=45
 
@@ -61,7 +83,11 @@ report PASS deps "all present after ${SECONDS}s wait"
 
 # --- a) swift build -c release green ----------------------------------------
 step_header a "swift build -c release"
-if ( cd "$SWIFT_DIR" && swift build -c release ); then
+if ( cd "$SWIFT_DIR" && swift build -c release \
+     --cache-path "$SWIFT_CACHE_ROOT/cache" \
+     --config-path "$SWIFT_CACHE_ROOT/config" \
+     --security-path "$SWIFT_CACHE_ROOT/security" \
+     --manifest-cache local ); then
   report PASS a "swift build -c release green"
 else
   report FAIL a "swift build -c release failed"

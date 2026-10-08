@@ -9,7 +9,7 @@ The MCP server calls the **same Python engine scripts** that the Swift GUI uses
 via `engine_bridge.py`. Your app, its data, its running state, its daemons —
 **nothing is modified**.
 
-## 14 Tools exposed
+## 17 Tools exposed
 
 | Tool | What it does |
 |---|---|---|
@@ -28,6 +28,63 @@ via `engine_bridge.py`. Your app, its data, its running state, its daemons —
 | `mcp__netmax__parallel_diagnostics` | All test concurrently in one call |
 | `mcp__netmax__session_info` | Server uptime, call count, PID |
 | `mcp__netmax__strict_limit` | System-wide speed ceiling via dnctl+pf (macOS, needs server as root; ≤150 s) |
+| `mcp__netmax__ai_analyze` | Analyze supplied measurements; no measurement or system changes |
+| `mcp__netmax__list_analyses` | List supported analysis names |
+
+## Remote AI privacy
+
+`ai_analyze` does not grant remote-provider consent. Remote AI is off by
+default and can only be enabled in the desktop app under **Settings → Remote AI
+Privacy → Allow remote AI analysis**. MCP has no argument or environment
+override for this preference. When remote egress is denied, an analysis may
+return a local result labeled `source: local` instead of failing the MCP call.
+
+The provider boundary accepts only a versioned allowlist of measurement
+aggregates; it does not send arbitrary prompts, raw history rows, SSID/BSSID,
+hostnames, IP addresses, or paths. See the
+[`remote-AI data-flow contract`](../docs/privacy/remote-ai-data-flow.md) for
+the exact fields, provider metadata, local behavior, and current limitation:
+existing analyzers are not yet adapted to send the approved remote payload, so
+they currently use local fallback even when consent is enabled. Remote MCP
+transport configuration is separate from remote-AI consent.
+
+## Kernel traffic shaping (`strict_limit`) & recovery
+
+The `strict_limit` tool enforces a system-wide download bandwidth ceiling via macOS
+kernel packet filtering (`pf`) and dummynet pipes (`dnctl`).
+
+- **Privilege requirement**: Controlling kernel packet filters requires the MCP
+  server to execute with root privileges (`sudo`).
+- **Owner locking & safety**: NetMax acquires an exclusive `fcntl.flock` on
+  `/var/run/netmax-shaping.lock`, allocates an unused pipe ID (20000–29999), and
+  atomically records the session in `/var/run/netmax-shaping/owner.json` (mode 0600).
+- **Transactional rollback**: Failures during rule injection automatically roll back
+  allocated pipes and restore prior `pf` state.
+- **Manual operator recovery**: If the server process is killed abruptly (SIGKILL),
+  lingering shaping rules can be manually flushed by the operator:
+  ```bash
+  sudo dnctl -q pipe delete <pipe_id>
+  sudo pfctl -a netmax_strict_limit -F all
+  ```
+
+## Resource budgets & concurrency bounds
+
+The MCP server enforces strict resource limits before spawning subprocesses:
+- **Stream-seconds budget**: At most 300 aggregate stream-seconds per call.
+- **Wall-clock timeout**: At most 180 seconds execution time per operation.
+- **Concurrency bounds**: At most 2 active measurement jobs process-wide, and at
+  most 1 active measurement job per MCP session. Busy responses are returned if saturated.
+- **Subprocess reaping**: On request cancellation or client disconnection, the server
+  sends SIGTERM, waits up to 2 seconds, and escalates to SIGKILL to prevent orphaned jobs.
+
+## Download file controls (`download_file`)
+
+The `download_file` tool accelerates downloads using parallel streams with strict bounds:
+- **SSRF & scheme restrictions**: Accepts only public HTTPS URLs; validates DNS answers
+  before connecting and rejects private, loopback, link-local, and multicast addresses.
+- **Size & redirect bounds**: Bounded to at most 5 redirects and a maximum file size of 1 GiB.
+- **Output path confinement**: Output paths are constrained to safe authorized directories
+  with sanitized basenames. Arbitrary filesystem or system directory writes are rejected.
 ## Run standalone
 
 ```bash
@@ -70,14 +127,23 @@ Client config (Claude / Cursor / DSH remote MCP):
 
 ## Team fleet view: multiple Macs, one endpoint
 
-- `NETMAX_FLEET="desk=http://mac1:8808,mini=http://mac2:8808"` makes
-  `GET /fleet` return every peer's dashboard excerpt as JSON
-  (`[{name, ok, status}]`). Unreachable peers report `ok: false` inline —
-  the call itself never fails because one box is down.
-- Optional `NETMAX_FLEET_TOKEN` is sent as Bearer to every peer (use one
-  shared team token). Peer URLs are operator config, not user input.
+- `NETMAX_FLEET_ALLOWLIST='{"desk":"https://mac1:8808","mini":"https://mac2:8808"}'`
+  makes `GET /fleet` return every peer's dashboard excerpt as JSON
+  (`{peers:[{name, ok, status}]}`, `name` is the alias). Aliases match
+  `[a-z][a-z0-9_-]{0,31}`; at most 32 peers; origins must be exact HTTPS
+  origins (no credentials, path, query, or fragment). Unreachable peers
+  report `ok: false` inline.
+- Optional `NETMAX_FLEET_TOKENS='{"desk":"token-for-desk"}'` gives each alias
+  its own bearer token; a token is only ever sent to its own peer, and a
+  token for an unknown alias is a configuration error.
+- Requests are HTTPS-only, resolve DNS immediately before connecting and
+  refuse private/loopback/link-local/reserved addresses, pin the validated
+  address with normal certificate/hostname checks, never follow redirects,
+  and cap time at 5 s and body at 16 KiB. Invalid configuration makes zero
+  peer requests and is reported as `error`. The legacy `NETMAX_FLEET` and
+  `NETMAX_FLEET_TOKEN` variables are ignored.
 - `GET /fleet/board` renders the same data as a self-refreshing status
-  page (no client JS); empty fleet explains the env var instead of 404ing.
+  page (no client JS); an empty or invalid fleet explains the env var instead of 404ing.
 
 ## Failure alerts: Slack webhook
 

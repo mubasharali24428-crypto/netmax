@@ -85,15 +85,19 @@ EOF
 }
 
 # --- Gate: is there a Developer ID Application identity? --------------------
+DEV_OVERRIDE="${DEVELOPER_ID_APPLICATION:-${SIGN_IDENTITY:-}}"
 log "checking for 'Developer ID Application' codesigning identity..."
 IDENTITIES="$(security find-identity -v -p codesigning 2>/dev/null | grep 'Developer ID Application' || true)"
-if [[ -z "$IDENTITIES" ]]; then
+if [[ -n "$DEV_OVERRIDE" ]]; then
+  IDENTITY="$DEV_OVERRIDE"
+elif [[ -n "$IDENTITIES" ]]; then
+  IDENTITY="$(printf '%s\n' "$IDENTITIES" | head -1 | sed -E 's/^[[:space:]]*[0-9]+\) ([A-F0-9]+) "?(.*)"?$/\2/')"
+else
   log "none found. Full identity check output:"
   security find-identity -v -p codesigning 2>/dev/null | sed 's/^/[notarize]     /' || \
     printf '[notarize]     (security find-identity produced no list)\n'
   blocked   # exits 2
 fi
-IDENTITY="$(printf '%s\n' "$IDENTITIES" | head -1 | sed -E 's/^[[:space:]]*[0-9]+\) ([A-F0-9]+) "?(.*)"?$/\2/')"
 log "using identity: $IDENTITY"
 
 # --- Preconditions ----------------------------------------------------------
@@ -128,7 +132,7 @@ if ! xcrun notarytool submit "$ZIP" --wait --keychain-profile "$NOTARY_PROFILE";
 fi
 log "Apple status: Accepted."
 
-# --- 4. Staple ---------------------------------------------------------------
+# --- 4. Staple app -----------------------------------------------------------
 log "xcrun stapler staple $APP"
 xcrun stapler staple "$APP" || die "stapler failed — run 'xcrun stapler validate $APP' for details"
 xcrun stapler validate "$APP" | sed 's/^/[notarize]     /'
@@ -138,4 +142,21 @@ log "spctl assessment:"
 spctl -a -vv -t exec "$APP" | sed 's/^/[notarize]     /'
 
 rm -f "$ZIP"
-log "DONE — $APP is signed, notarized, and stapled."
+
+# --- 6. Package, notarize, staple, and validate DMG --------------------------
+RELEASE_DIR="$BUILD_DIR/release"
+mkdir -p "$RELEASE_DIR"
+DMG_PATH="${DMG_OUT:-$RELEASE_DIR/NetMaxDesktop-universal.dmg}"
+log "building DMG: $DMG_PATH"
+DMG_OUT="$DMG_PATH" "$SCRIPT_DIR/build_dmg.sh"
+
+log "submitting DMG for notarization: $DMG_PATH"
+if ! xcrun notarytool submit "$DMG_PATH" --wait --keychain-profile "$NOTARY_PROFILE"; then
+  die "DMG notarytool submit failed"
+fi
+
+log "stapling DMG ticket: $DMG_PATH"
+xcrun stapler staple "$DMG_PATH" || die "DMG stapler failed"
+xcrun stapler validate "$DMG_PATH" | sed 's/^/[notarize]     /'
+
+log "DONE — $APP and $DMG_PATH are signed, notarized, and stapled."

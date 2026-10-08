@@ -29,8 +29,17 @@ die() { printf '[build_app] ERROR: %s\n' "$*" >&2; exit 1; }
 
 # P2.5 (Strategic Revenue Plan): 1.0 signals a product a buyer can trust.
 APP_VERSION="$(python3 -c "import json;print(json.load(open('$REPO_ROOT/desktop/package.json'))['version'])")"
-APP_BUILD="$(date -u '+%Y%m%d')"
-log "version: $APP_VERSION (build $APP_BUILD)"
+if [[ -n "${SOURCE_DATE_EPOCH:-}" ]]; then
+  if ! [[ "$SOURCE_DATE_EPOCH" =~ ^[0-9]+$ ]]; then
+    die "SOURCE_DATE_EPOCH must be a nonnegative integer, got: '$SOURCE_DATE_EPOCH'"
+  fi
+  APP_BUILD="$(date -u -r "$SOURCE_DATE_EPOCH" '+%Y%m%d')"
+  BUILD_DATE="$(date -u -r "$SOURCE_DATE_EPOCH" '+%Y-%m-%d %H:%M UTC')"
+else
+  APP_BUILD="$(date -u '+%Y%m%d')"
+  BUILD_DATE="$(date -u '+%Y-%m-%d %H:%M UTC')"
+fi
+log "version: $APP_VERSION (build $APP_BUILD, date $BUILD_DATE)"
 
 # --- 1. Build the Swift shell ---------------------------------------------
 # P2.2 (Strategic Revenue Plan): UNIVERSAL build (arm64 + x86_64).
@@ -51,8 +60,8 @@ if [[ ! -x "$BIN" ]]; then
   die "release binary netmax-desktop not found (check Package.swift product/executable name)"
 fi
 log "binary architectures: $(lipo -info "$BIN" 2>/dev/null | sed 's/^[^:]*://')"
-if lipo -info "$BIN" 2>/dev/null | grep -q 'Non-fat'; then
-  log "WARN: binary is NOT universal (single arch) — Intel Macs will not run this build"
+if ! lipo -info "$BIN" 2>/dev/null | grep -q 'arm64' || ! lipo -info "$BIN" 2>/dev/null | grep -q 'x86_64'; then
+  die "binary is NOT universal (must contain both arm64 and x86_64 slices; got: $(lipo -info "$BIN" 2>&1))"
 fi
 
 # --- 2. Assemble bundle skeleton ------------------------------------------
@@ -84,7 +93,6 @@ find "$APP/Contents/Resources" -name "*.pyc" -delete 2>/dev/null || true
 # --- 3. Info.plist ---------------------------------------------------------
 # W12 T1-e: NetMaxBuildDate is stamped here so Settings → About can show the
 # honest build date next to "Check for Updates…".
-BUILD_DATE="$(date -u '+%Y-%m-%d %H:%M UTC')"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

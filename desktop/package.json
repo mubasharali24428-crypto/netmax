@@ -19,8 +19,8 @@
     "test": "node --check netmax-mcp-server.mjs && echo \"Syntax OK - 17 tools ready\""
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
-    "zod": "^3.25"
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "3.25"
   },
   "keywords": [
     "netmax",
