@@ -41,6 +41,12 @@ class FakeRunner:
         return _ok("")
 
 
+@pytest.fixture(autouse=True)
+def isolate_shaping_files(monkeypatch, tmp_path):
+    monkeypatch.setattr(netmax_shape, "LOCK_PATH", str(tmp_path / "test.lock"))
+    monkeypatch.setattr(netmax_shape, "STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setattr(netmax_shape, "STATE_FILE", str(tmp_path / "state" / "owner.json"))
+
 @pytest.fixture
 def as_root(monkeypatch):
     monkeypatch.setattr(netmax_shape.os, "geteuid", lambda: 0)
@@ -52,7 +58,7 @@ def as_user(monkeypatch):
 
 
 def _no_temp(monkeypatch):
-    paths = ["/tmp/netmax-main.conf", "/tmp/netmax-anchor.conf"]
+    paths = ["/tmp/netmax-anchor.conf", "/tmp/netmax-main.conf"]
     monkeypatch.setattr(netmax_shape, "_write_temp", lambda text: paths.pop(0))
     return paths
 
@@ -75,15 +81,15 @@ class TestRateFormat:
 class TestRules:
     def test_anchor_shapes_both_directions_off_lo0(self):
         body = netmax_shape.anchor_rules()
-        assert "pipe 10" in body
+        assert "pipe 20000" in body
         assert "on ! lo0" in body
         assert "dummynet in" in body and "dummynet out" in body
 
     def test_merge_appends_refs_and_preserves_existing(self):
         merged = netmax_shape.merge_main_rules("pass all\n")
         assert merged.startswith("pass all\n")
-        assert 'dummynet-anchor "netmax"' in merged
-        assert 'anchor "netmax"' in merged
+        assert 'dummynet-anchor "netmax_strict_limit"' in merged
+        assert 'anchor "netmax_strict_limit"' in merged
 
     def test_merge_is_idempotent(self):
         once = netmax_shape.merge_main_rules("")
@@ -109,24 +115,25 @@ class TestApply:
         _no_temp(monkeypatch)
         runner = FakeRunner(enabled=True, rules="pass all\n")
         state = netmax_shape.apply(2.0, run=runner)
-        assert state == {"was_enabled": True, "rate": "2000Kbit/s"}
+        assert {k: state[k] for k in ("was_enabled", "rate", "pipe_no", "we_enabled")} == {"was_enabled": True, "rate": "2000Kbit/s", "pipe_no": 20000, "we_enabled": False}
         verbs = [" ".join(c[:3]) for c in runner.calls]
         assert verbs == [
             "pfctl -s info",
             "pfctl -s rules",
-            "pfctl -e",
+            "dnctl list",
+            "dnctl pipe 20000",
+            "pfctl -a netmax_strict_limit",
+            "pfctl -s rules",
             "pfctl -f /tmp/netmax-main.conf",
-            "dnctl pipe 10",
-            "pfctl -a netmax",
         ]
-        assert runner.calls[4][-1] == "2000Kbit/s"  # pipe bw last arg
+        assert runner.calls[3][-1] == "2000Kbit/s"  # pipe bw last arg
 
     def test_anchor_failure_deletes_pipe(self, as_root, monkeypatch):
         _no_temp(monkeypatch)
-        runner = FakeRunner(fail_on={"pfctl -a netmax"})
+        runner = FakeRunner(fail_on={"pfctl -a netmax_strict_limit"})
         with pytest.raises(netmax_shape.ShapeError, match="anchor"):
             netmax_shape.apply(2.0, run=runner)
-        assert ["dnctl", "pipe", "10", "delete"] in runner.calls
+        assert ["dnctl", "pipe", "20000", "delete"] in runner.calls
 
     def test_shape_error_is_dispatch_catchable(self):
         """Dual-module trap: under `python3 netmax.py`, this module's
@@ -140,7 +147,7 @@ class TestRemove:
         runner = FakeRunner()
         netmax_shape.remove({"was_enabled": False}, run=runner)
         verbs = [" ".join(c[:2]) for c in runner.calls]
-        assert verbs == ["pfctl -a", "dnctl pipe", "pfctl -d"]
+        assert verbs == ["pfctl -a", "dnctl pipe", "pfctl -s", "pfctl -d"]
 
     def test_leaves_enabled_pf_on(self, as_root):
         runner = FakeRunner()
@@ -170,7 +177,7 @@ class TestHold:
         out = netmax_shape.hold(2.0, 5, run=runner)
         assert out == 2.0
         assert sleeps, "must actually wait out the window"
-        assert ["dnctl", "pipe", "10", "delete"] in runner.calls
+        assert ["dnctl", "pipe", "20000", "delete"] in runner.calls
 
     def test_ctrl_c_still_cleans_up(self, as_root, monkeypatch):
         _no_temp(monkeypatch)
@@ -182,7 +189,7 @@ class TestHold:
         monkeypatch.setattr(netmax_shape._time, "sleep", interrupt)
         with pytest.raises(KeyboardInterrupt):
             netmax_shape.hold(2.0, 1800, run=runner)
-        assert ["dnctl", "pipe", "10", "delete"] in runner.calls
+        assert ["dnctl", "pipe", "20000", "delete"] in runner.calls
 
     def test_sigterm_guard_installed_fires_restored(
         self, as_root, monkeypatch

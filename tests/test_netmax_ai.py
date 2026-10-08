@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import netmax_ai_provider
 
 from netmax_ai import (
     AISpeedGovernor,
@@ -17,6 +18,13 @@ from netmax_ai import (
     PredictiveAdjustment,
     PredictiveShaper,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fake_provider_is_local(monkeypatch):
+    # These tests validate caller behavior against fake provider responses;
+    # real remote-egress policy has dedicated tests.
+    monkeypatch.setattr(netmax_ai_provider, "_is_loopback", lambda _base: True)
 
 
 def test_governor_decision_defaults():
@@ -77,7 +85,7 @@ def test_decide_success_with_mocked_api(monkeypatch):
                 "message": {
                     "content": json.dumps({
                         "streams": 4,
-                        "pace_bps": 5e6,
+                        "pace_bps": 500_000,
                         "reasoning": "stable link",
                         "confidence": "high",
                     })
@@ -91,8 +99,9 @@ def test_decide_success_with_mocked_api(monkeypatch):
             return self
         def __exit__(self, exc_type, exc, tb):
             return False
-        def read(self):
-            return json.dumps(api_payload).encode("utf-8")
+        def read(self, size=-1):
+            data = json.dumps(api_payload).encode("utf-8")
+            return data if size < 0 else data[:size]
         status = 200
 
     seen = {}
@@ -106,7 +115,7 @@ def test_decide_success_with_mocked_api(monkeypatch):
     d = gov.decide(5.0, {"mbps": 5.1, "streams": 2, "endpoint_health": {}})
     assert d is not None
     assert d.streams == 4
-    assert d.pace_bps == pytest.approx(5e6)
+    assert d.pace_bps == pytest.approx(500_000)
     assert d.reasoning == "stable link"
     assert d.confidence == "high"
     assert seen.get("method") == "POST"
@@ -134,8 +143,9 @@ def test_decide_non_json_content_returns_raw(monkeypatch):
             return self
         def __exit__(self, exc_type, exc, tb):
             return False
-        def read(self):
-            return json.dumps(api_payload).encode("utf-8")
+        def read(self, size=-1):
+            data = json.dumps(api_payload).encode("utf-8")
+            return data if size < 0 else data[:size]
         status = 200
 
     monkeypatch.setattr("netmax_ai_provider.urlopen", lambda req, timeout=None: DummyResp())

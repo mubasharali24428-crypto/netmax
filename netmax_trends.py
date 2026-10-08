@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import re
 import statistics
-from datetime import datetime
+from datetime import datetime, timezone
 
 __all__ = [
     "SUPPORTED_METRICS",
@@ -151,7 +151,7 @@ def _parse_ts(raw: object) -> object:
         return raw
     if isinstance(raw, (int, float)) and not isinstance(raw, bool):
         try:
-            return datetime.utcfromtimestamp(float(raw))
+            return datetime.fromtimestamp(float(raw), timezone.utc)
         except (OverflowError, OSError, ValueError):
             return raw
     if isinstance(raw, str):

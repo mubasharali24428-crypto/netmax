@@ -12,7 +12,7 @@ and the Tier-0 rows of ml-algorithms-research.md.
 from __future__ import annotations
 
 import math
-from typing import Sequence
+from typing import Any, Sequence
 
 
 def _check(series: Sequence[float]) -> list[float]:
@@ -261,3 +261,76 @@ def summarize(series: Sequence[float], period: int = 0,
             "changepoints": changepoints(values),
             "anomalies": anomalies,
             "forecast": holt_forecast(values, horizon)}
+
+
+def sufficient(values: Sequence[float],
+               minimum: int = 8) -> tuple[bool, str]:
+    """Abstention gate (AI-076): is this series enough to reason from?
+
+    Returns (ok, reason). Callers with ok=False must say "not enough data"
+    instead of producing a verdict — silence beats confabulation.
+    """
+    try:
+        series = _check(values)
+    except ValueError as exc:
+        return False, f"unusable series: {exc}"
+    if len(series) < minimum:
+        return False, (f"{len(series)} sample(s); {minimum} needed "
+                       "for a verdict")
+    return True, "sufficient"
+
+
+def check_report(report: dict[str, Any]) -> list[str]:
+    """Tripwires (AI-077) over a stats-bearing output: every violation is a
+    string; [] means the report is internally consistent. Catches corrupted
+    or hallucinated numbers before they reach a user, regardless of source.
+    """
+    violations: list[str] = []
+    try:
+        n = int(report.get("n", 0))
+    except (TypeError, ValueError):
+        return ["n is not an integer"]
+    for cp in report.get("changepoints", []) or []:
+        try:
+            if not 0 <= int(cp) < n:
+                violations.append(f"changepoint {cp} outside 0..{n - 1}")
+        except (TypeError, ValueError):
+            violations.append(f"changepoint {cp!r} is not an integer")
+    for kind_name in ("anomalies",):
+        for item in report.get(kind_name, []) or []:
+            try:
+                idx, score = float(item["index"]), float(item["score"])
+            except (TypeError, ValueError, KeyError):
+                violations.append(f"malformed anomaly entry {item!r}")
+                continue
+            if not 0 <= idx < n:
+                violations.append(f"anomaly index {idx} outside 0..{n - 1}")
+            if not math.isfinite(score) or score < 0:
+                violations.append(f"anomaly score {score} is not sane")
+    forecast = report.get("forecast") or {}
+    for key in ("point", "lo", "hi"):
+        vals = forecast.get(key, [])
+        if not isinstance(vals, list) or not vals:
+            violations.append(f"forecast.{key} missing or empty")
+    points = forecast.get("point", [])
+    los = forecast.get("lo", [])
+    his = forecast.get("hi", [])
+    if (isinstance(points, list) and isinstance(los, list)
+            and isinstance(his, list) and points and los and his):
+        if not (len(points) == len(los) == len(his)):
+            violations.append("forecast bands misaligned with points")
+        else:
+            for p, lo, hi in zip(points, los, his):
+                try:
+                    if not (lo <= p <= hi):
+                        violations.append(
+                            f"forecast point {p} outside band [{lo}, {hi}]")
+                    for v in (p, lo, hi):
+                        if not math.isfinite(float(v)):
+                            violations.append(
+                                f"forecast value {v!r} is not finite")
+                            break
+                except TypeError:
+                    violations.append("forecast values not numeric")
+                    break
+    return violations

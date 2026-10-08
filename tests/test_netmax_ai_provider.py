@@ -23,6 +23,20 @@ import pytest
 import netmax_ai_provider as prov
 
 
+REMOTE_PAYLOAD = {
+    "schema_version": 1,
+    "analysis_id": "governor_preferences",
+    "metrics": {"streams": 2, "download_mbps": 10.0},
+}
+
+
+@pytest.fixture(autouse=True)
+def _allow_remote_transport_unit_tests(monkeypatch):
+    # These tests exercise transport behavior with fake urlopen responses.
+    # Consent enforcement itself is covered independently in test_ai_egress_policy.
+    monkeypatch.setattr(prov, "_read_remote_ai_consent", lambda: True)
+
+
 def _reply(content, *, reject_json_mode=False):
     """Fake urlopen; optionally refuses `response_format` like a local server."""
     state = {"json_mode_seen": False, "calls": 0}
@@ -36,10 +50,11 @@ def _reply(content, *, reject_json_mode=False):
         def __exit__(self, *a):
             return False
 
-        def read(self):
-            return json.dumps({
+        def read(self, size=-1):
+            data = json.dumps({
                 "choices": [{"message": {"content": content}}]
             }).encode("utf-8")
+            return data if size < 0 else data[:size]
 
     def fake(req, timeout=None):
         state["calls"] += 1
@@ -129,6 +144,44 @@ class TestRequestShaping:
         assert "JSON" in body["system"]
         assert all("role" in m for m in body["messages"])
 
+
+class TestBoundedResponses:
+    def test_response_byte_limit_stops_read_and_does_not_retry(self, monkeypatch):
+        body = json.dumps({"choices": [{"message": {"content": '{"ok":true}'}}]}).encode()
+        seen = {"calls": 0, "size": None}
+
+        class Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, size=-1):
+                seen["size"] = size
+                return body[:size]
+
+        def fake(*_args, **_kwargs):
+            seen["calls"] += 1
+            return Resp()
+
+        monkeypatch.setattr(prov, "urlopen", fake)
+        with pytest.raises(prov.ProviderResponseLimitError):
+            prov.chat_json(
+                "hi", provider=prov.Provider("test", "https://example.invalid", "m",
+                                             requires_key=False),
+                max_response_bytes=10, remote_payload=REMOTE_PAYLOAD)
+        assert seen == {"calls": 1, "size": 11}
+
+    def test_model_json_depth_limit_is_enforced(self, monkeypatch):
+        content = "{" * 17 + "\"x\"" + "}" * 17
+        fake, _state = _reply(content)
+        monkeypatch.setattr(prov, "urlopen", fake)
+        with pytest.raises(prov.ProviderResponseLimitError):
+            prov.chat_json(
+                "hi", provider=prov.Provider("test", "https://example.invalid", "m",
+                                             requires_key=False),
+                max_json_depth=16, remote_payload=REMOTE_PAYLOAD)
     def test_bearer_header_when_keyed(self):
         p = prov.resolve({"NETMAX_AI_API_KEY": "k"})
         assert prov._headers(p)["Authorization"] == "Bearer k"
@@ -142,7 +195,8 @@ class TestJsonModeDegradation:
     def test_retries_without_json_mode_when_refused(self, monkeypatch):
         fake, state = _reply(json.dumps({"ok": True}), reject_json_mode=True)
         monkeypatch.setattr(prov, "urlopen", fake)
-        out = prov.chat_json("hi", env={"NETMAX_AI_API_KEY": "k"})
+        out = prov.chat_json("hi", env={"NETMAX_AI_API_KEY": "k"},
+                             remote_payload=REMOTE_PAYLOAD)
         assert out == {"ok": True}
         assert state["calls"] == 2          # refused, then retried
         assert state["json_mode_seen"] is False
@@ -157,7 +211,8 @@ class TestJsonModeDegradation:
     def test_first_attempt_succeeds_without_retrying(self, monkeypatch):
         fake, state = _reply(json.dumps({"ok": True}))
         monkeypatch.setattr(prov, "urlopen", fake)
-        prov.chat_json("hi", env={"NETMAX_AI_API_KEY": "k"})
+        prov.chat_json("hi", env={"NETMAX_AI_API_KEY": "k"},
+                       remote_payload=REMOTE_PAYLOAD)
         assert state["calls"] == 1
 
     def test_hard_failure_is_raised_not_retried_forever(self, monkeypatch):
@@ -165,7 +220,8 @@ class TestJsonModeDegradation:
             raise prov.HTTPError(req.full_url, 500, "server", {}, None)
         monkeypatch.setattr(prov, "urlopen", boom)
         with pytest.raises(prov.HTTPError):
-            prov.chat_json("hi", env={"NETMAX_AI_API_KEY": "k"})
+            prov.chat_json("hi", env={"NETMAX_AI_API_KEY": "k"},
+                           remote_payload=REMOTE_PAYLOAD)
 
 
 class TestLenientParsing:
@@ -275,7 +331,9 @@ class TestKeylessLocalIsActuallyReachable:
         # safely when the endpoint is not there, instead of raising.
         fake, state = _reply(json.dumps({"streams": 2}))
         monkeypatch.setattr(prov, "urlopen", fake)
-        decision = netmax_ai.AISpeedGovernor().decide(5.0, {"mbps": 5})
+        decision = netmax_ai.AISpeedGovernor(
+            api_base="http://127.0.0.1:11434/v1/chat/completions"
+        ).decide(5.0, {"mbps": 5})
         assert state["calls"] == 1
         assert decision.streams == 2
 
@@ -294,7 +352,9 @@ class TestKeylessLocalIsActuallyReachable:
         # A dead endpoint must not raise: decide() swallows the transport
         # error and returns None, which tells the caller to keep the
         # hardcoded pace. That is the whole safety property.
-        assert netmax_ai.AISpeedGovernor().decide(5.0, {"mbps": 5}) is None
+        assert netmax_ai.AISpeedGovernor(
+            api_base="http://127.0.0.1:11434/v1/chat/completions"
+        ).decide(5.0, {"mbps": 5}) is None
 
     def test_analysers_stay_local_with_no_configuration(self, monkeypatch):
         import netmax_ai

@@ -30,6 +30,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -241,6 +243,36 @@ def validate_ranges(
     return None
 
 
+def _open_envelope_parent(path: str | os.PathLike[str]) -> tuple[Path, int]:
+    """Open a safe parent descriptor and reject every existing target entry."""
+    target = Path(path)
+    if target.name in ("", ".", ".."):
+        raise ValueError("envelope target must name a file")
+    parent = target.parent
+    info = parent.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode)
+            or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o022):
+        raise PermissionError(f"unsafe envelope parent: {parent}")
+    parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        opened = os.fstat(parent_fd)
+        if (not stat.S_ISDIR(opened.st_mode) or opened.st_uid != os.getuid()
+                or stat.S_IMODE(opened.st_mode) & 0o022):
+            raise PermissionError(f"unsafe envelope parent: {parent}")
+    except OSError:
+        os.close(parent_fd)
+        raise
+    try:
+        os.stat(target.name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return target, parent_fd
+    except OSError:
+        os.close(parent_fd)
+        raise
+    os.close(parent_fd)
+    raise FileExistsError(f"refusing existing envelope target: {target}")
+
+
 def write_envelope(
     path: str | os.PathLike[str],
     *,
@@ -251,15 +283,12 @@ def write_envelope(
     dropped_flags: list[str] | None = None,
 ) -> dict[str, Any]:
     """Write the C1 envelope to `path`; returns what was written."""
-    target = Path(path)
-    parent = target.parent
-    if str(parent) not in ("", "."):
-        try:
-            parent.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            print(f"engine_bridge: cannot create envelope dir {parent}: {exc}",
-                  file=sys.stderr)
-            raise SystemExit(1)
+    try:
+        target, parent_fd = _open_envelope_parent(path)
+    except (OSError, ValueError) as exc:
+        print(f"engine_bridge: cannot safely open envelope target {path}: {exc}",
+              file=sys.stderr)
+        raise SystemExit(1)
     payload: dict[str, Any] = {
         "success": bool(success),
         "mode": mode,
@@ -270,15 +299,35 @@ def write_envelope(
         # F1 (W4 delta sweep): unsupported per-mode flags are surfaced, never
         # silently lost — the UI can show "measured without --count".
         payload["droppedFlags"] = list(dropped_flags)
+    temp_dir = None
     try:
-        target.write_text(json.dumps(payload), encoding="utf-8")
-    except OSError as exc:
-        # Unwritable --json-out: the envelope contract can't be honored on
-        # disk, so surface it on stderr and exit non-zero (never a raw
-        # traceback). Callers treat missing file + nonzero exit as failure.
-        print(f"engine_bridge: cannot write envelope to {target}: {exc}",
+        serialized = json.dumps(payload)
+        temp_dir = Path(tempfile.mkdtemp(prefix=".netmax-envelope-",
+                                         dir=target.parent))
+        temp_file = temp_dir / "envelope.json"
+        fd = os.open(temp_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(serialized)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temp_file, target.name, dst_dir_fd=parent_fd,
+                follow_symlinks=False)
+        os.fsync(parent_fd)
+    except (OSError, TypeError, ValueError) as exc:
+        print(f"engine_bridge: cannot safely write envelope to {target}: {exc}",
               file=sys.stderr)
         raise SystemExit(1)
+    finally:
+        try:
+            if temp_dir is not None:
+                shutil.rmtree(temp_dir)
+        except OSError as exc:
+            print(f"engine_bridge: cannot clean envelope temp dir: {exc}",
+                  file=sys.stderr)
+            raise SystemExit(1)
+        finally:
+            os.close(parent_fd)
     return payload
 
 
@@ -403,12 +452,13 @@ def run_engine(
     # child writing __pycache__ there breaks codesign -v ("sealed resource
     # added"). Belt-and-braces with the -B the caller passes us.
     child_env["PYTHONDONTWRITEBYTECODE"] = "1"
-    # Stale envelope from a prior run must not outlive this spawn — if the
-    # child dies before write_envelope, callers would read the old JSON.
     try:
-        Path(json_out).unlink(missing_ok=True)
-    except OSError:
-        pass
+        _target, parent_fd = _open_envelope_parent(json_out)
+        os.close(parent_fd)
+    except (OSError, ValueError) as exc:
+        print(f"engine_bridge: refusing unsafe envelope target {json_out}: {exc}",
+              file=sys.stderr)
+        return 1
     try:
         completed = (subprocess.run if runner is None else runner)(
             command,
@@ -509,6 +559,7 @@ def _check_arg_mapping() -> None:
 
 
 def _check_envelope_writer(tmp_dir: str) -> None:
+    Path(tmp_dir, "nested").mkdir(mode=0o700)
     ok_path = os.path.join(tmp_dir, "nested", "ok.json")
     written = write_envelope(
         ok_path, success=True, mode="turbo", data={"mbps": 42.5}, error=None

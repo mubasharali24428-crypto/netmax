@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import math
 import os
 import random
 import re
@@ -988,17 +989,35 @@ def _limit_governor(
                     },
                 )
                 if decision is not None:
-                    ai_governor.record_interval(
-                        achieved_mbps,
-                        streams,
-                        target_mbps,
-                    )
-                    if decision.streams is not None:
-                        streams = decision.streams
-                    if decision.pace_bps is not None:
-                        per_stream_bps = decision.pace_bps / max(streams, 1)
-                    if decision.reasoning:
-                        _progress_emit({"event": "ai", "reasoning": decision.reasoning})
+                    try:
+                        candidate_streams = (
+                            streams if decision.streams is None else decision.streams)
+                        if type(candidate_streams) is not int or not 1 <= candidate_streams <= 50:
+                            raise ValueError("invalid AI stream count")
+                        aggregate_bps = per_stream_bps * streams
+                        if decision.pace_bps is not None:
+                            if (isinstance(decision.pace_bps, bool)
+                                    or not isinstance(decision.pace_bps, (int, float))
+                                    or not math.isfinite(decision.pace_bps)
+                                    or decision.pace_bps < 0):
+                                raise ValueError("invalid AI pace")
+                            aggregate_bps = float(decision.pace_bps)
+                        ai_governor.record_interval(
+                            achieved_mbps, streams, target_mbps)
+                        streams = candidate_streams
+                        per_stream_bps = min(
+                            aggregate_bps / streams, pace_ceiling_bps / streams)
+                        if isinstance(decision.reasoning, str) and decision.reasoning:
+                            _progress_emit({
+                                "event": "ai",
+                                "reasoning": decision.reasoning[:300],
+                            })
+                    except (ValueError, TypeError, OverflowError):
+                        pass
+                    # Reapply the deterministic aggregate ceiling after every
+                    # model decision, including a stream-count-only change.
+                    per_stream_bps = min(
+                        per_stream_bps, pace_ceiling_bps / streams)
             except (OSError, ValueError, TypeError, KeyError):
                 pass
 
@@ -1181,7 +1200,7 @@ AI_RECORD_FIELDS: dict[str, tuple[str, ...]] = {
 # which keeps flat JSON like --input '{"mbps":40}' working.
 AI_SIGNATURES: dict[str, tuple[str | None, dict[str, str]]] = {
     # P1
-    "root_cause": ("diagnostics", {}),
+    "root_cause": ("diagnostics", {"trend_mbps": "trend_mbps"}),
     "chunk_size": (None, {"rtt_ms": "rtt_ms", "jitter_ms": "jitter_ms",
                           "loss_pct": "loss_pct",
                           "throughput_mbps": "throughput_mbps"}),
@@ -1198,7 +1217,8 @@ AI_SIGNATURES: dict[str, tuple[str | None, dict[str, str]]] = {
                                   "endpoint_ms": "endpoint_ms"}),
     "nl_command": ("text", {}),
     # P2
-    "explain": ("diagnostics", {"tone": "tone", "plan_mbps": "plan_mbps"}),
+    "explain": ("diagnostics", {"tone": "tone", "plan_mbps": "plan_mbps",
+                                    "trend_mbps": "trend_mbps"}),
     "wizard": ("symptom", {}),
     "wizard_next": ("step_id", {"answer": "answer"}),
     "wizard_conclude": ("answers", {}),
@@ -1223,10 +1243,12 @@ AI_SIGNATURES: dict[str, tuple[str | None, dict[str, str]]] = {
 }
 
 
-def _load_json_input(spec: str) -> dict[str, Any]:
+def _load_json_input(spec: str, *, allow_file: bool = True) -> dict[str, Any]:
     """Parse --input: inline JSON, or @path to a JSON file."""
     text = (spec or "{}").strip()
     if text.startswith("@"):
+        if not allow_file:
+            raise NetMaxError("--input @path is not allowed for MCP requests; provide inline JSON")
         path = Path(text[1:]).expanduser()
         text = path.read_text(encoding="utf-8")
     try:
@@ -1250,7 +1272,7 @@ def _history_mode(analysis: str) -> str:
     return "baseline" if analysis in {"root_cause", "simulate_change"} else ""
 
 
-def _load_history(path_spec: str, *, mode: str = "") -> list[dict[str, Any]]:
+def _load_history(path_spec: str, *, mode: str = "", mcp: bool = False) -> list[dict[str, Any]]:
     """Read a history JSONL file into the flat rows the analysers read.
 
     The app stores {"ts": ISO8601, "mode", "params", "result_raw": <text>}
@@ -1264,9 +1286,14 @@ def _load_history(path_spec: str, *, mode: str = "") -> list[dict[str, Any]]:
     import netmax_history
 
     try:
-        rows = netmax_history.load_and_normalize(path_spec)
+        rows = (netmax_history.load_mcp_history(path_spec) if mcp
+                else netmax_history.load_and_normalize(path_spec))
     except FileNotFoundError as exc:
         raise NetMaxError(str(exc)) from None
+    except (OSError, ValueError) as exc:
+        if not mcp:
+            raise
+        raise NetMaxError(f"unsafe MCP history: {exc}") from None
     if not mode:
         # No coalescing wanted: every run is its own observation, which is
         # what the time-series analysers need. build_coherent drops rows
@@ -1571,6 +1598,7 @@ def main(argv: list[str] | None = None) -> None:
     sp_fetch = sub.add_parser("fetch", help="multi-stream download accelerator")
     sp_fetch.add_argument("url")
     sp_fetch.add_argument("out", nargs="?", help="output path (default: URL basename)")
+    sp_fetch.add_argument("--mcp-output-name", help=argparse.SUPPRESS)
     sp_fetch.add_argument("--streams", type=int, default=8)
     sp_fetch.add_argument("--adaptive", action="store_true", dest="adaptive",
                           help="auto-adjust stream count from latency/loss feedback")
@@ -1592,6 +1620,7 @@ def main(argv: list[str] | None = None) -> None:
     sp_ai.add_argument("--history", default="",
                        help="path to a history JSONL file to replay "
                             "(overrides --input history field)")
+    sp_ai.add_argument("--mcp-request", action="store_true", help=argparse.SUPPRESS)
     sp_ai.add_argument("--pretty", action="store_true",
                        help="indent the JSON output")
     sp_ai.add_argument("--list-analyses", action="store_true",
@@ -1717,7 +1746,13 @@ def main(argv: list[str] | None = None) -> None:
                 sys.exit(1)
         elif cmd == "fetch":
             import netmax_fetch
-            out_path = _safe_fetch_out(args.out, args.url)
+            if args.mcp_output_name is not None:
+                if args.out is not None:
+                    parser.error("fetch --mcp-output-name cannot be combined with positional out")
+                netmax_fetch.validate_mcp_output_name(args.mcp_output_name)
+                out_path = None
+            else:
+                out_path = _safe_fetch_out(args.out, args.url)
             started = time.monotonic()
 
             def _show(done: int, total: int) -> None:
@@ -1743,11 +1778,16 @@ def main(argv: list[str] | None = None) -> None:
                     print(f"\nadaptive probe skipped ({exc}); "
                           f"using --streams {streams}", file=sys.stderr)
 
-            stats = netmax_fetch.download(
-                args.url, out_path,
-                streams=streams,
-                on_progress=_show,
-            )
+            if args.mcp_output_name is not None:
+                out_path, stats = netmax_fetch.download_mcp(
+                    args.url, args.mcp_output_name,
+                    streams=streams, on_progress=_show)
+            else:
+                stats = netmax_fetch.download(
+                    args.url, out_path,
+                    streams=streams,
+                    on_progress=_show,
+                )
             elapsed = time.monotonic() - started
             print(f"\n✓ {out_path}: {stats['bytes'] / 1e6:.1f} MB in {elapsed:.1f}s "
                   f"({stats['mbps']:.1f} Mbps, {stats['streams_used']} streams)")
@@ -1901,9 +1941,10 @@ def main(argv: list[str] | None = None) -> None:
             if not args.analysis:
                 raise NetMaxError(
                     "ai needs --analysis NAME (or --list-analyses)")
-            input_data = _load_json_input(args.input)
+            input_data = _load_json_input(args.input, allow_file=not args.mcp_request)
             history_rows = (_load_history(args.history,
-                                           mode=_history_mode(args.analysis))
+                                           mode=_history_mode(args.analysis),
+                                           mcp=args.mcp_request)
                             if args.history else None)
             result = run_ai_analysis(args.analysis, input_data, history_rows)
             print(json.dumps(result, indent=2 if args.pretty else None,

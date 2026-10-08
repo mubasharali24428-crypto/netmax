@@ -28,10 +28,16 @@ every history row so all 26 analysers benefit without touching them.
 from __future__ import annotations
 
 import json
+import io
+import os
 import re
+import stat
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+_MCP_HISTORY_MAX_BYTES = 10 * 1024 * 1024
+_MCP_HISTORY_MAX_ROWS = 100_000
 
 # ── timestamp ────────────────────────────────────────────────────────────────
 
@@ -252,6 +258,64 @@ def load_and_normalize(path: str) -> list[dict[str, Any]]:
         try:
             record = json.loads(line)
         except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            records.append(record)
+    return normalize_all(records)
+
+
+def load_mcp_history(path: str) -> list[dict[str, Any]]:
+    """Read only the canonical app history through no-follow descriptors."""
+    home = Path.home()
+    expected = home / "Library" / "Application Support" / "NetMaxDesktop" / "history.jsonl"
+    if Path(path).expanduser() != expected:
+        raise ValueError("MCP history must use the canonical NetMaxDesktop history file")
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    directory_fd = file_fd = -1
+    try:
+        home_stat = home.lstat()
+        if not stat.S_ISDIR(home_stat.st_mode) or home_stat.st_uid != os.getuid():
+            raise ValueError("MCP history home is not a user-owned directory")
+        directory_fd = os.open(home, directory_flags)
+        for component in ("Library", "Application Support", "NetMaxDesktop"):
+            child_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+            child_stat = os.fstat(child_fd)
+            if not stat.S_ISDIR(child_stat.st_mode) or child_stat.st_uid != os.getuid():
+                os.close(child_fd)
+                raise ValueError("MCP history parent is not a user-owned directory")
+            os.close(directory_fd)
+            directory_fd = child_fd
+        file_fd = os.open("history.jsonl", os.O_RDONLY | os.O_NOFOLLOW,
+                          dir_fd=directory_fd)
+        file_stat = os.fstat(file_fd)
+        if (not stat.S_ISREG(file_stat.st_mode) or file_stat.st_uid != os.getuid()
+                or file_stat.st_mode & 0o022):
+            raise ValueError("MCP history must be a user-owned, non-writable regular file")
+        if file_stat.st_size > _MCP_HISTORY_MAX_BYTES:
+            raise ValueError("MCP history exceeds the 10 MiB limit")
+        with os.fdopen(file_fd, "rb") as stream:
+            file_fd = -1
+            data = stream.read(_MCP_HISTORY_MAX_BYTES + 1)
+    except OSError as exc:
+        raise ValueError(f"cannot safely open MCP history: {exc}") from exc
+    finally:
+        if file_fd >= 0:
+            os.close(file_fd)
+        if directory_fd >= 0:
+            os.close(directory_fd)
+    if len(data) > _MCP_HISTORY_MAX_BYTES:
+        raise ValueError("MCP history exceeds the 10 MiB limit")
+    records = []
+    row_count = 0
+    for line in io.BytesIO(data):
+        if not line.strip():
+            continue
+        row_count += 1
+        if row_count > _MCP_HISTORY_MAX_ROWS:
+            raise ValueError("MCP history exceeds the 100,000-row limit")
+        try:
+            record = json.loads(line)
+        except (UnicodeDecodeError, json.JSONDecodeError):
             continue
         if isinstance(record, dict):
             records.append(record)

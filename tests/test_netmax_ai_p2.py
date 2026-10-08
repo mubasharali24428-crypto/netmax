@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 
 import pytest
+import netmax_ai_provider
 
 from netmax_ai_p2 import (
     AccessibilityNarrator,
@@ -25,6 +26,13 @@ from netmax_ai_p2 import (
     TrendForecaster,
     ZeroDayThrottleDetector,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fake_provider_is_local(monkeypatch):
+    # These tests validate caller behavior against fake provider responses;
+    # real remote-egress policy has dedicated tests.
+    monkeypatch.setattr(netmax_ai_provider, "_is_loopback", lambda _base: True)
 
 
 def _reply(content):

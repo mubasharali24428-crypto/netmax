@@ -39,9 +39,10 @@ MAX_LOG_CHARS = 20_000    # log tail cap when include_logs=True
 # Keys whose value is dropped entirely (never sanitized-and-kept): full
 # measurement history, anything env-shaped, and Wi-Fi identity fields.
 DROP_KEYS = {
-    "history", "runs", "all_results", "full_history",
+    "history", "runs", "all_results", "full_history", "raw_history",
     "env", "environ", "environment",
-    "ssid", "wifi_ssid", "network_name",
+    "ssid", "wifi_ssid", "network_name", "bssid", "wifi_bssid", "mac_address",
+    "webhook", "webhook_url",
 }
 
 # Keys kept, but only if the value looks like channel/RSSI data (short,
@@ -50,7 +51,10 @@ WIFI_KEEP_KEYS = {"channel", "wifi_channel", "rssi_dbm", "noise_dbm"}
 _WIFI_VALUE_MAX = 24
 
 # Values under these keys always become "<redacted>".
-REDACT_VALUE_KEYS = {"password", "secret", "token", "api_key"}
+REDACT_VALUE_KEYS = {
+    "password", "secret", "token", "api_key", "apikey",
+    "bearer", "authorization", "auth", "credential", "credentials",
+}
 
 # Where engine-side *.log files live (module-level so tests can redirect).
 LOG_DIRS = (
@@ -64,14 +68,36 @@ LOG_DIRS = (
 def _scrub_string(s: str) -> str:
     """Apply every text-level redaction to one string.
 
-    Unit-clear rule: any substring of the form '/Users/<name>' is replaced
-    with '~user'. Leading slashes collapse so '~user/...' stays a valid
-    relative path shape. SSID mentions are redacted too.
+    Replaces home directory paths (/Users/<name> or /home/<name>) with '~user'.
+    Redacts SSIDs, BSSIDs (MACs), API keys, bearer tokens, webhook URLs, and credentials.
     """
-    s = re.sub(r"/+Users/[^/\s\"'`,;:)\]}]+", "~user", s)
+    # 1. Home paths (/Users/<name> or /home/<name>)
+    s = re.sub(r"/+(?:Users|home)/[^/\s\"',;:)\]}]+", "~user", s)
+
+    # 2. Key-value style secrets (e.g. api_key: xyz, token=abc, bearer: def)
     s = re.sub(
-        r"\b(ssid|wi[-_]?fi[ _-]?name|network[ _-]?name)\s*[:=]\s*\S+",
-        lambda m: m.group(1) + "=<redacted>",
+        r"\b(api[_-]?key|secret|token|password|bearer|auth(?:orization)?|credential(?:s)?)\s*[:=]\s*\S+",
+        r"\1=<redacted>",
+        s,
+        flags=re.IGNORECASE,
+    )
+
+    # 3. Bearer header or tokens
+    s = re.sub(r"\bBearer\s+[a-zA-Z0-9_\-\.=]{12,}\b", "Bearer <redacted>", s, flags=re.IGNORECASE)
+
+    # 4. Common API key formats (sk-..., ghp_..., AIza...)
+    s = re.sub(r"\b(?:sk-[a-zA-Z0-9_\-]{16,}|gh[pousr]_[a-zA-Z0-9]{20,}|AIza[0-9A-Za-z\-_]{30,})\b", "<redacted-key>", s)
+
+    # 5. Webhook URLs (Slack, Discord, generic webhooks)
+    s = re.sub(r"https?://(?:hooks\.(?:slack|discord)\.com/[^\s\"'<>]+|\S*webhook\S*)", "<redacted-webhook>", s, flags=re.IGNORECASE)
+
+    # 6. BSSID / MAC addresses
+    s = re.sub(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b", "<redacted-bssid>", s)
+
+    # 7. Wi-Fi / SSID references
+    s = re.sub(
+        r"\b(ssid|wi[-_]?fi[ _-]?name|network[ _-]?name|bssid)\s*[:=]\s*\S+",
+        r"\1=<redacted>",
         s,
         flags=re.IGNORECASE,
     )

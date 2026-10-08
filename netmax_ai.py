@@ -12,6 +12,7 @@ Design:
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from dataclasses import dataclass, field
@@ -584,7 +585,7 @@ class AISpeedGovernor:
         try:
             payload = self._build_payload(target_mbps, telemetry)
             raw = self._call_api(payload)
-            return self._parse(raw)
+            return self._parse(raw, target_mbps=target_mbps)
         except (OSError, ValueError, TypeError, KeyError):
             return None
 
@@ -673,30 +674,52 @@ class AISpeedGovernor:
             return provider_mod.chat_json(
                 user_prompt, system=system,
                 max_tokens=int(payload.get("max_tokens", 120)),
-                provider=provider)
+                provider=provider,
+                max_response_bytes=1_048_576,
+                max_json_depth=16)
         except (ValueError, TypeError):
             # The governor is a best-effort caller: a model that answers in
             # prose must degrade to "keep the current pace", not abort the
             # run. The hardcoded governor takes over on a None decision.
-            return {"raw": "", "reasoning": "model reply was not JSON"}
+            return {"reasoning": "model reply was not JSON"}
 
 
     @staticmethod
-    def _parse(raw: dict[str, Any]) -> GovernorDecision:
+    def _parse(
+        raw: dict[str, Any], *, target_mbps: float | None = None
+    ) -> GovernorDecision:
         if not isinstance(raw, dict):
             raise TypeError("non-dict governor response")
+        allowed = {"streams", "pace_bps", "reasoning", "confidence"}
+        if raw.keys() - allowed:
+            raise ValueError("unknown governor response key")
         streams = raw.get("streams")
         if streams is not None:
-            streams = int(streams)
-            if not (1 <= streams <= 50):
+            if isinstance(streams, bool) or not isinstance(streams, int):
+                raise ValueError("streams must be an integer")
+            if not 1 <= streams <= 50:
                 raise ValueError(f"streams out of range: {streams}")
         pace_bps = raw.get("pace_bps")
         if pace_bps is not None:
+            if isinstance(pace_bps, bool) or not isinstance(pace_bps, (int, float)):
+                raise ValueError("pace_bps must be numeric")
             pace_bps = float(pace_bps)
+            if not math.isfinite(pace_bps) or pace_bps < 0:
+                raise ValueError("pace_bps must be finite and non-negative")
+            if target_mbps is not None:
+                ceiling = target_mbps * 1_000_000 / 8 * 1.5
+                if pace_bps > ceiling:
+                    raise ValueError("pace_bps exceeds target ceiling")
+        reasoning = raw.get("reasoning", "")
+        confidence = raw.get("confidence", "low")
+        if not isinstance(reasoning, str) or not isinstance(confidence, str):
+            raise ValueError("reasoning and confidence must be strings")
+        if confidence.lower() not in {"low", "medium", "high"}:
+            raise ValueError("invalid confidence")
         return GovernorDecision(
             streams=streams,
             pace_bps=pace_bps,
-            reasoning=str(raw.get("reasoning", "")),
-            confidence=str(raw.get("confidence", "low")).lower(),
-            raw={k: v for k, v in raw.items() if k in {"streams", "pace_bps", "reasoning", "confidence", "raw"}},
+            reasoning=reasoning[:300],
+            confidence=confidence.lower(),
+            raw={k: raw[k] for k in allowed if k in raw},
         )

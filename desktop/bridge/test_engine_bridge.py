@@ -244,6 +244,106 @@ def test_write_envelope_failure_shape(tmp_path):
     assert on_disk["error"] == "boom"
 
 
+def test_write_envelope_is_private_complete_and_atomic(tmp_path):
+    target = tmp_path / "private.json"
+    payload = eb.write_envelope(target, success=True, mode="dns",
+                                data={"ok": True}, error=None)
+    assert json.loads(target.read_text(encoding="utf-8")) == payload
+    assert target.stat().st_mode & 0o777 == 0o600
+    assert list(tmp_path.glob(".netmax-envelope-*")) == []
+
+
+@pytest.mark.parametrize("entry", ["file", "symlink"])
+def test_write_envelope_rejects_existing_file_or_symlink(tmp_path, entry):
+    target = tmp_path / "existing.json"
+    sentinel = tmp_path / "sentinel"
+    sentinel.write_text("preserve", encoding="utf-8")
+    if entry == "file":
+        target.write_text("original", encoding="utf-8")
+    else:
+        target.symlink_to(sentinel)
+
+    with pytest.raises(SystemExit) as exc:
+        eb.write_envelope(target, success=True, mode="dns", data={}, error=None)
+
+    assert exc.value.code == 1
+    if entry == "file":
+        assert target.read_text(encoding="utf-8") == "original"
+    else:
+        assert target.is_symlink()
+        assert sentinel.read_text(encoding="utf-8") == "preserve"
+    assert list(tmp_path.glob(".netmax-envelope-*")) == []
+
+
+def test_write_envelope_rejects_symlinked_parent(tmp_path):
+    real_parent = tmp_path / "real"
+    real_parent.mkdir(mode=0o700)
+    linked_parent = tmp_path / "linked"
+    linked_parent.symlink_to(real_parent, target_is_directory=True)
+
+    with pytest.raises(SystemExit) as exc:
+        eb.write_envelope(linked_parent / "out.json", success=True,
+                          mode="dns", data={}, error=None)
+
+    assert exc.value.code == 1
+    assert list(real_parent.iterdir()) == []
+
+
+def test_write_envelope_no_replace_race_cleans_private_temp_dir(tmp_path):
+    target = tmp_path / "raced.json"
+    original_link = eb.os.link
+
+    def race_link(source, destination, **kwargs):
+        target.write_text("racer", encoding="utf-8")
+        return original_link(source, destination, **kwargs)
+
+    with mock.patch.object(eb.os, "link", side_effect=race_link):
+        with pytest.raises(SystemExit) as exc:
+            eb.write_envelope(target, success=True, mode="dns", data={}, error=None)
+
+    assert exc.value.code == 1
+    assert target.read_text(encoding="utf-8") == "racer"
+    assert list(tmp_path.glob(".netmax-envelope-*")) == []
+
+
+def test_write_envelope_serialization_failure_leaves_no_temp_files(tmp_path):
+    with mock.patch.object(eb.json, "dumps", side_effect=TypeError("not serializable")):
+        with pytest.raises(SystemExit) as exc:
+            eb.write_envelope(tmp_path / "bad.json", success=True,
+                              mode="dns", data=object(), error=None)
+
+    assert exc.value.code == 1
+    assert not (tmp_path / "bad.json").exists()
+    assert list(tmp_path.glob(".netmax-envelope-*")) == []
+
+
+def test_write_envelope_file_failure_leaves_no_partial_target(tmp_path):
+    target = tmp_path / "incomplete.json"
+    with mock.patch.object(eb.os, "fsync", side_effect=OSError("injected fsync failure")):
+        with pytest.raises(SystemExit) as exc:
+            eb.write_envelope(target, success=True, mode="dns", data={}, error=None)
+
+    assert exc.value.code == 1
+    assert not target.exists()
+    assert list(tmp_path.glob(".netmax-envelope-*")) == []
+
+
+def test_run_engine_refuses_preexisting_target_before_spawn(tmp_path):
+    target = tmp_path / "existing.json"
+    target.write_text("owned by caller", encoding="utf-8")
+    spawned = []
+
+    def runner(*args, **kwargs):
+        spawned.append(True)
+        return _completed()
+
+    code = eb.run_engine("dns", None, None, None, str(target), runner=runner)
+
+    assert code == 1
+    assert spawned == []
+    assert target.read_text(encoding="utf-8") == "owned by caller"
+
+
 def test_stderr_tail_caps_at_400_chars():
     assert len(eb.stderr_tail("x" * 500)) == 400
     assert eb.stderr_tail("") == ""
@@ -578,3 +678,25 @@ def test_ai_bad_payload_lands_in_the_envelope(tmp_path):
     envelope = json.loads(out.read_text(encoding="utf-8"))
     assert code == 1
     assert envelope["success"] is False
+
+
+def test_bridge_selftest_and_cli():
+    assert eb.selftest() == 0
+    assert eb.main(["selftest"]) == 0
+
+
+def test_open_envelope_parent_empty_name():
+    with pytest.raises(ValueError, match="envelope target must name a file"):
+        eb._open_envelope_parent("")
+
+
+def test_open_envelope_parent_stat_oserror(tmp_path):
+    target = tmp_path / "file.json"
+    with mock.patch("os.stat", side_effect=OSError("disk fail")):
+        with pytest.raises(OSError, match="disk fail"):
+            eb._open_envelope_parent(str(target))
+
+
+def test_main_unknown_flag_exits():
+    with pytest.raises(SystemExit):
+        eb.main(["--unknown"])

@@ -419,10 +419,26 @@ class RootCauseClassifier(_Base):
                          "Compare single-stream vs multi-stream to size the headroom"],
     }
 
-    def classify(self, diagnostics: dict[str, Any]) -> dict[str, Any]:
-        """Rank causes from a `full_diagnostics`-shaped bundle."""
+    def classify(self, diagnostics: dict[str, Any],
+                 trend_mbps: list[float] | None = None) -> dict[str, Any]:
+        """Rank causes from a `full_diagnostics`-shaped bundle.
+
+        `trend_mbps` is an optional recent series; when given, changepoints
+        ride along as trend context (a step last Tuesday reframes every
+        suspect). Stats failures are swallowed — ranking never depends
+        on them.
+        """
         causes = self._local_causes(diagnostics)
         self._remember({"kind": "classify", "n_causes": len(causes)})
+        trend_context: dict[str, Any] | None = None
+        if trend_mbps:
+            try:
+                import netmax_stats as _stats
+                series = [float(x) for x in trend_mbps]
+                trend_context = {"changepoints": _stats.changepoints(series),
+                                 "n": len(series)}
+            except (ValueError, TypeError, ArithmeticError):
+                trend_context = None
 
         if provider_mod.has_provider(api_key=self.api_key) and causes:
             raw = self._ask(
@@ -439,14 +455,21 @@ class RootCauseClassifier(_Base):
             )
             parsed = self._validate_causes(raw)
             if parsed:
-                return {"summary": str(raw.get("summary", ""))[:400],
-                        "causes": parsed, "source": "ai"}
+                out_ai: dict[str, Any] = {
+                    "summary": str(raw.get("summary", ""))[:400],
+                    "causes": parsed, "source": "ai"}
+                if trend_context is not None:
+                    out_ai["trend_context"] = trend_context
+                return out_ai
 
-        return {
+        out_local: dict[str, Any] = {
             "summary": f"{len(causes)} issue(s) detected",
             "causes": [c.to_dict() for c in causes],
             "source": "local",
         }
+        if trend_context is not None:
+            out_local["trend_context"] = trend_context
+        return out_local
 
     def _local_causes(self, d: dict[str, Any]) -> list[RootCause]:
         found: list[RootCause] = []

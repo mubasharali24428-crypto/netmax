@@ -61,11 +61,15 @@ class ResultExplainer(_Base):
         diagnostics: dict[str, Any],
         tone: str = "plain",
         plan_mbps: float | None = None,
+        trend_mbps: list[float] | None = None,
     ) -> dict[str, Any]:
         """Return statements, a headline, and caveats.
 
         `tone` is plain | technical | minimal. `plan_mbps` is what the user
         says they pay for — without it, no claim about plan shortfall is made.
+        `trend_mbps` is an optional recent series; when given, a Holt
+        projection is stated alongside the snapshot. Stats failures are
+        swallowed — the snapshot explanation never depends on them.
         """
         if tone not in _TONE_OPENERS:
             tone = "plain"
@@ -114,6 +118,20 @@ class ResultExplainer(_Base):
         jitter = diagnostics.get("jitter_ms")
         if isinstance(jitter, (int, float)) and jitter > 30:
             caveats.append(f"jitter of {jitter:.0f} ms is high for calls and gaming")
+
+        if trend_mbps:
+            try:
+                import netmax_stats as _stats
+                holt = _stats.holt_forecast(
+                    [float(x) for x in trend_mbps], horizon=1)
+                nxt, lo, hi = (holt["point"][0], holt["lo"][0],
+                               holt["hi"][0])
+                statements.append(
+                    f"recent trend points to about {nxt:.0f} Mbps "
+                    f"(range {lo:.0f}–{hi:.0f})"
+                )
+            except (ValueError, TypeError, ArithmeticError):
+                pass
 
         headline = statements[0] if statements else "no usable measurement"
         out = {
@@ -454,6 +472,16 @@ class TrendForecaster(_Base):
             "notes": [note],
             "source": "local",
         }
+        # Tier-0 stats ride along: Holt bands say how wide the future is,
+        # changepoints say whether one trend line is even the right shape.
+        # Additive keys only — every existing consumer keeps working.
+        try:
+            import netmax_stats as _stats
+            out["holt"] = _stats.holt_forecast(
+                values, horizon=min(horizon, 6))
+            out["changepoints"] = _stats.changepoints(values)
+        except (ValueError, TypeError, ArithmeticError):
+            pass
         raw = self._ask(
             "Summarise this network trend and note seasonal risk. Return JSON "
             "only.\n"

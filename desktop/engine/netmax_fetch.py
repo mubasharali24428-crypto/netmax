@@ -9,14 +9,24 @@ Falls back to a single stream when the server ignores Accept-Ranges.
 from __future__ import annotations
 
 import http.client
+import ipaddress
 import json
 import os
+import shutil
+import socket
+import ssl
+import stat
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+from urllib.parse import urljoin, urlsplit
+from urllib.request import (
+    HTTPHandler, HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request,
+    build_opener,
+)
 
 try:
     from netmax import NetMaxError
@@ -28,6 +38,9 @@ except ImportError:  # allow running as a bare script
 CHUNK_SUFFIX = ".netmax-part-{}"
 META_SUFFIX = ".netmax-meta.json"
 PROGRESS_EVERY = 65536  # bytes between on_progress callbacks per worker
+MAX_DOWNLOAD_BYTES = 1 << 30
+MAX_REDIRECTS = 5
+_ALLOW_HTTP_LOOPBACK_TESTS = False
 
 # F10 hardening: refuse downloads into WORLD-WRITABLE directories, where a
 # local attacker could pre-place symlinks for our predictable part/meta
@@ -88,6 +101,218 @@ def _open_excl(path: Path) -> int:
     return os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 
 
+def _resolve_download_target(url: str, *, allow_http_loopback: bool = False):
+    """Validate a download URL and pin it to a validated public address."""
+    try:
+        parsed = urlsplit(url)
+        hostname = parsed.hostname
+        explicit_port = parsed.port
+        port = explicit_port if explicit_port is not None else (
+            443 if parsed.scheme.lower() == "https" else 80)
+    except (TypeError, ValueError) as exc:
+        raise NetMaxError("malformed download URL") from exc
+    if (parsed.scheme.lower() not in {"https", "http"} or not hostname
+            or parsed.username is not None or parsed.password is not None
+            or "%" in hostname or not 1 <= port <= 65535
+            or any(ord(char) < 33 for char in hostname)):
+        raise NetMaxError("download URL must have a valid host and no credentials")
+    literal = None
+    try:
+        literal = ipaddress.ip_address(hostname)
+    except ValueError:
+        pass
+    if literal is None:
+        try:
+            ascii_host = hostname.rstrip(".").encode("idna").decode("ascii")
+            labels = ascii_host.split(".")
+            valid_host = (len(ascii_host) <= 253 and all(
+                0 < len(label) <= 63 and label[0].isalnum()
+                and label[-1].isalnum()
+                and all(char.isalnum() or char == "-" for char in label)
+                for label in labels))
+        except UnicodeError:
+            valid_host = False
+        if not valid_host:
+            raise NetMaxError("malformed download host")
+    local_literal = literal is not None and literal.is_loopback
+    local_name = hostname.lower().rstrip(".") == "localhost"
+    if parsed.scheme.lower() == "http" and not (
+            allow_http_loopback and local_literal):
+        raise NetMaxError("downloads require HTTPS")
+    try:
+        records = ([(None, None, None, None, (str(literal), port))]
+                   if literal is not None
+                   else socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM))
+        addresses = [ipaddress.ip_address(record[4][0].split("%", 1)[0])
+                     for record in records]
+    except (OSError, ValueError, IndexError) as exc:
+        raise NetMaxError("download host did not resolve to a valid address") from exc
+    if not addresses:
+        raise NetMaxError("download host did not resolve")
+    test_loopback = (allow_http_loopback and parsed.scheme.lower() == "http"
+                     and local_literal and all(a.is_loopback for a in addresses))
+    if parsed.scheme.lower() != "https" and not test_loopback:
+        raise NetMaxError("downloads require HTTPS")
+    if any(not address.is_global or address.is_multicast or address.is_reserved
+           or address.is_unspecified for address in addresses) and not test_loopback:
+        raise NetMaxError("download host resolves to a non-public address")
+    if local_name and not all(address.is_loopback for address in addresses):
+        raise NetMaxError("localhost resolved outside loopback")
+    return parsed, str(addresses[0])
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, host, address, **kwargs):
+        self._address = address
+        super().__init__(host, **kwargs)
+
+    def connect(self):
+        self.sock = socket.create_connection(
+            (self._address, self.port), self.timeout, self.source_address)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, host, address, server_hostname, **kwargs):
+        self._address = address
+        self._server_hostname = server_hostname
+        super().__init__(host, **kwargs)
+
+    def connect(self):
+        raw = socket.create_connection(
+            (self._address, self.port), self.timeout, self.source_address)
+        self.sock = self._context.wrap_socket(
+            raw, server_hostname=self._server_hostname)
+
+
+class _PinnedHTTPHandler(HTTPHandler):
+    def http_open(self, req):
+        _parsed, address = _resolve_download_target(
+            req.full_url, allow_http_loopback=_ALLOW_HTTP_LOOPBACK_TESTS)
+
+        def factory(host, timeout=socket._GLOBAL_DEFAULT_TIMEOUT):
+            return _PinnedHTTPConnection(host, address, timeout=timeout)
+
+        return self.do_open(factory, req)
+
+
+class _PinnedHTTPSHandler(HTTPSHandler):
+    def https_open(self, req):
+        parsed, address = _resolve_download_target(req.full_url)
+        context = ssl.create_default_context()
+
+        def factory(host, timeout=socket._GLOBAL_DEFAULT_TIMEOUT):
+            return _PinnedHTTPSConnection(
+                host, address, parsed.hostname, timeout=timeout, context=context)
+
+        return self.do_open(factory, req)
+
+
+class _PolicyRedirectHandler(HTTPRedirectHandler):
+    max_repeats = MAX_REDIRECTS
+    max_redirections = MAX_REDIRECTS
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        target = urljoin(req.full_url, newurl)
+        _resolve_download_target(
+            target, allow_http_loopback=_ALLOW_HTTP_LOOPBACK_TESTS)
+        return super().redirect_request(req, fp, code, msg, headers, target)
+
+
+def urlopen(request, timeout=30):
+    """Open only validated URLs, pin DNS results, and revalidate redirects."""
+    opener = build_opener(
+        ProxyHandler({}), _PinnedHTTPHandler(), _PinnedHTTPSHandler(),
+        _PolicyRedirectHandler())
+    try:
+        return opener.open(request, timeout=timeout)
+    except HTTPError as exc:
+        raise NetMaxError(f"HTTP request to {request.full_url} failed: {exc}") from exc
+
+
+def validate_mcp_output_name(name: str) -> str:
+    """Accept one safe MCP basename, never a caller-selected path."""
+    if not isinstance(name, str) or not name or name in {".", ".."}:
+        raise NetMaxError("MCP output name must be a non-empty basename")
+    try:
+        size = len(name.encode("utf-8", "strict"))
+    except UnicodeError as exc:
+        raise NetMaxError("MCP output name is not valid UTF-8") from exc
+    if size > 180 or "/" in name or "\\" in name or any(
+            ord(ch) < 32 or ord(ch) == 127 for ch in name):
+        raise NetMaxError("MCP output name must be a basename of at most 180 UTF-8 bytes")
+    return name
+
+
+def _mcp_output_root() -> tuple[Path, int]:
+    home = Path.home()
+    downloads = home / "Downloads"
+    try:
+        home_stat = home.lstat()
+        if not stat.S_ISDIR(home_stat.st_mode) or home_stat.st_uid != os.getuid():
+            raise NetMaxError("home directory is not a user-owned directory")
+        try:
+            downloads.mkdir(mode=0o700)
+        except FileExistsError:
+            pass
+        downloads_stat = downloads.lstat()
+        if (not stat.S_ISDIR(downloads_stat.st_mode)
+                or stat.S_ISLNK(downloads_stat.st_mode)
+                or downloads_stat.st_uid != os.getuid()
+                or stat.S_IMODE(downloads_stat.st_mode) & 0o022):
+            raise NetMaxError(
+                "Downloads must be user-owned, non-symlink, and not group/world-writable")
+        downloads_fd = os.open(
+            downloads, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as exc:
+        raise NetMaxError(f"cannot safely open MCP download parent: {exc}") from exc
+    try:
+        try:
+            os.mkdir("NetMax", 0o700, dir_fd=downloads_fd)
+        except FileExistsError:
+            pass
+        root_fd = os.open(
+            "NetMax", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            dir_fd=downloads_fd)
+    except OSError as exc:
+        raise NetMaxError(f"cannot safely create MCP download directory: {exc}") from exc
+    finally:
+        os.close(downloads_fd)
+    root_stat = os.fstat(root_fd)
+    if (root_stat.st_uid != os.getuid()
+            or stat.S_IMODE(root_stat.st_mode) != 0o700):
+        os.close(root_fd)
+        raise NetMaxError("~/Downloads/NetMax must be owned by this user with mode 0700")
+    return downloads / "NetMax", root_fd
+
+
+def download_mcp(url: str, output_name: str, streams: int = 8,
+                 on_progress=None) -> tuple[Path, dict]:
+    """Download privately, then atomically publish without replacing a file."""
+    name = validate_mcp_output_name(output_name)
+    root, root_fd = _mcp_output_root()
+    try:
+        try:
+            os.stat(name, dir_fd=root_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            pass
+        else:
+            raise NetMaxError(f"MCP download already exists: {name}")
+        temp_dir = Path(tempfile.mkdtemp(prefix=".netmax-", dir=root))
+        try:
+            temp_file = temp_dir / "payload"
+            result = download(url, temp_file, streams=streams,
+                              on_progress=on_progress)
+            os.link(temp_file, name, dst_dir_fd=root_fd,
+                    follow_symlinks=False)
+            return root / name, result
+        except FileExistsError as exc:
+            raise NetMaxError(f"MCP download already exists: {name}") from exc
+        finally:
+            shutil.rmtree(temp_dir)
+    finally:
+        os.close(root_fd)
+
+
 def _part_path(out_path: Path, index: int) -> Path:
     return out_path.with_name(out_path.name + CHUNK_SUFFIX.format(index))
 
@@ -96,8 +321,8 @@ def _meta_path(out_path: Path) -> Path:
     return out_path.with_name(out_path.name + META_SUFFIX)
 
 
-def _open(url: str, headers: dict[str, str] | None = None):
-    req = Request(url, headers=headers or {})
+def _open(url: str, headers: dict[str, str] | None = None, *, method: str = "GET"):
+    req = Request(url, headers=headers or {}, method=method)
     try:
         return urlopen(req, timeout=30)
     except URLError as exc:
@@ -106,7 +331,7 @@ def _open(url: str, headers: dict[str, str] | None = None):
 
 def _head(url: str) -> tuple[int | None, bool]:
     """HEAD the URL -> (content_length_or_None, server_supports_ranges)."""
-    resp = _open(url)
+    resp = _open(url, method="HEAD")
     try:
         headers = resp.headers
         status = getattr(resp, "status", None) or resp.getcode()
@@ -114,6 +339,8 @@ def _head(url: str) -> tuple[int | None, bool]:
             raise NetMaxError(f"HEAD {url} returned HTTP {status}")
         raw_len = headers.get("Content-Length")
         length = int(raw_len) if raw_len not in (None, "") else None
+        if length is not None and not 0 <= length <= MAX_DOWNLOAD_BYTES:
+            raise NetMaxError("download exceeds the 1 GiB response limit")
         ranges = (headers.get("Accept-Ranges") or "").lower()
         return length, "bytes" in ranges
     finally:
@@ -213,11 +440,15 @@ def _fetch_chunk(
         else:
             fd = _open_excl(part)
         with os.fdopen(fd, "wb") as fh:
+            received = have
             while True:
-                block = _read_block(resp)
+                block = _read_block(resp, min(65536, want_total - received + 1))
                 if not block:
                     break
+                if received + len(block) > want_total:
+                    raise NetMaxError(f"chunk {index}: response exceeds requested range")
                 fh.write(block)
+                received += len(block)
                 counter.add(len(block))
     finally:
         resp.close()
@@ -384,11 +615,16 @@ def download(
                 out_path.unlink()
             out_fd = os.open(out_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(out_fd, "wb") as fh:
+                received = 0
                 while True:
-                    block = _read_block(resp)
+                    limit = min(length, MAX_DOWNLOAD_BYTES) if length is not None else MAX_DOWNLOAD_BYTES
+                    block = _read_block(resp, min(65536, limit - received + 1))
                     if not block:
                         break
+                    if received + len(block) > limit:
+                        raise NetMaxError("download exceeds the 1 GiB response limit")
                     fh.write(block)
+                    received += len(block)
                     counter.add(len(block))
         finally:
             resp.close()
