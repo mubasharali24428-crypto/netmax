@@ -1,0 +1,15 @@
+{
+  "name": "@netmax/landing",
+  "version": "1.0.7",
+  "description": "Truthfulness and accessibility verification for NetMax landing page",
+  "type": "module",
+  "scripts": {
+    "test": "node test_landing_truth.mjs"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.10.1",
+    "@playwright/test": "1.55.1",
+    "playwright": "1.55.1"
+  },
+  "license": "MIT"
+}

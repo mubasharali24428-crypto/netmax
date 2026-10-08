@@ -13,6 +13,7 @@ Base: `3bdd46b`. User review drove scope: "no customization, no other features."
 
 ## Shared contracts (ATLAS-fixed)
 - **P1 prefs keys** (UserDefaults, prefix `netmax.prefs.`): `defaultStreams`(Int,8) `defaultSeconds`(Int,10) `defaultCount`(Int,10) `pythonOverride`(String,""). Lane C writes the UI; A/B read via `AppPreferences` only — never UserDefaults directly.
+- **Remote-AI consent key:** `netmax.prefs.allowRemoteAI` (Bool, default `false`), owned and written only by `AppPreferences.shared`; missing or unreadable means `false`. MCP cannot set or override this preference. Remote provider calls are denied until the user enables it in the desktop Settings UI.
 - **P2 history record** (JSON line in `~/Library/Application Support/NetMaxDesktop/history.jsonl`): `{"ts": iso8601, "mode": str, "params": {...}, "result_raw": str}`. Store owns read/write/clear; views consume.
 - **P3 wiring:** ATLAS integrates tabs (Dashboard / Mode Lab / History / Reports / Settings) into RootView post-delivery — builders do NOT edit RootView/App/MenuBarView.
 

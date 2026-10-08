@@ -109,17 +109,16 @@ python3 netmax.py watch --interval 30     # continuous monitor
 ### Speed cap (v1.0.7)
 
 ```bash
-python3 netmax.py limit --mbps 2 --seconds 1800   # hold 2 Mbps for 30 min
+python3 netmax.py limit --mbps 2 --seconds 1800   # hold 2 Mbps for 30 min (user space)
 python3 netmax.py limit --mbps 10 --streams 4     # cap held across all streams
+sudo python3 netmax.py limit --strict --mbps 5 --seconds 60  # kernel ceiling via dnctl+pf
 ```
 
-`limit` pins the AGGREGATE download rate at the chosen Mbps for the whole
-window — the cap is divided evenly across the streams, so the sum stays at
-the target however many are open. If the line cannot reach the cap, the
-report says so plainly (no software can create bandwidth the ISP doesn't
-deliver). Long runs of every download mode are served as back-to-back
-chunks, so a 15/30-minute test runs its full window instead of stopping
-when the first ~100 MB test file drains.
+`limit` pins the AGGREGATE download rate at the chosen Mbps in user space.
+`limit --strict` enforces a true kernel-level ceiling using macOS `dnctl` dummynet
+pipes and packet filter (`pf`) anchors, requiring root privileges (`sudo`). It uses
+exclusive process locking (`/var/run/netmax-shaping.lock`) and transactional rollback
+to ensure rules are cleanly removed when execution finishes.
 
 ### GUI
 
@@ -129,6 +128,24 @@ python3 netmax_gui.py
 
 Tkinter desktop app wrapping the CLI; each command runs in an isolated
 subprocess so a failed measurement can never take down the UI.
+
+## Security & Privacy Architecture
+
+NetMax follows strict local-first and bounded-operation principles:
+- **Local-first data**: Historical runs are stored locally on your Mac in
+  `~/Library/Application Support/NetMaxDesktop/` with POSIX `0600` permissions.
+- **Network listener boundaries**: The desktop UI and CLI listen on no network ports.
+  The optional MCP HTTP transport (`--http`) binds to loopback (`127.0.0.1:8808`) by default;
+  binding to non-loopback requires a mandatory secret bearer token (`NETMAX_TOKEN`).
+- **Privileged execution**: System-wide shaping (`limit --strict` / `strict_limit`) requires
+  root privileges and executes with pre-elevation ownership checks, atomic state tracking,
+  and automatic cleanup.
+- **Remote AI privacy**: Remote AI analysis is off by default and can only be enabled
+  in Desktop Settings (**Settings → Remote AI Privacy → Allow remote AI analysis**).
+  When enabled, requests transmit only 11 allowlisted numeric/enum metrics — never raw history,
+  prompts, or network credentials.
+- **Data retention & permanent erase**: Includes automated retention archiving, reversible
+  clear with a 30-second holding bin undo window, and explicit irreversible permanent erase.
 
 ## Tests
 

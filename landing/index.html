@@ -17,131 +17,29 @@
 <meta property="og:image:height" content="630">
 <link rel="canonical" href="https://netmax.app">
 <link rel="icon" type="image/svg+xml" href="images/netmax-logo.svg">
+<link rel="stylesheet" href="css/tokens.css">
 <style>
   /* ── Universal Design Token System (70/73 apps) ── */
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-  :root {
-    /* Colors */
-    --primary: #5e6ad2;
-    --primary-hover: #4a55a8;
-    --accent: #5e6ad2;
-    --canvas: #ffffff;
-    --canvas-dark: #0a0a0a;
-    --surface: #f5f5f5;
-    --ink: #000000;
-    --body: #4a4a4a;
-    --muted: #7a7a7a;
-    --hairline: #e0e0e0;
-    --border: #e0e0e0;
-    --on-primary: #ffffff;
 
-    /* Typography */
-    --font-display: 'Inter', 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
-    --font-weight: 400;
 
-    /* Spacing (4px grid) */
-    --space-xxs: 4px;
-    --space-xs: 8px;
-    --space-sm: 12px;
-    --space-md: 16px;
-    --space-lg: 24px;
-    --space-xl: 32px;
-    --space-2xl: 48px;
-    --space-3xl: 64px;
 
-    /* Border Radius */
-    --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
-    --radius-xl: 16px;
-    --radius-pill: 9999px;
-
-    /* Shadows */
-    --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-    --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
-    --shadow-lg: 0 10px 15px rgba(0,0,0,0.15);
-
-    /* Transitions */
-    --transition-fast: 150ms ease;
-    --transition-normal: 250ms ease;
-  }
-
-  /* Dark Theme (VoltAgent, Ollama, Cursor style) */
-  [data-theme="dark"] {
-    --canvas: #0a0a0a;
-    --surface: #1a1a1a;
-    --ink: #ffffff;
-    --body: #e0e0e0;
-    --muted: #9a9a9a;
-    --hairline: #333333;
-    --border: #333333;
-  }
 
   /* Cinematic Dark (Runway, ElevenLabs style) */
-  [data-theme="cinematic"] {
-    --canvas: #050505;
-    --surface: #111111;
-    --accent: #ff6b35;
-    --primary: #ff6b35;
-    --ink: #ffffff;
-    --body: #d0d0d0;
-  }
 
   /* Minimalist Light (Notion, Linear style) */
-  [data-theme="minimal"] {
-    --canvas: #ffffff;
-    --surface: #fafafa;
-    --accent: #7c3aed;
-    --primary: #7c3aed;
-    --ink: #1a1a1a;
-    --body: #4a4a4a;
-  }
 
   /* Enterprise (HashiCorp, Stripe style) */
-  [data-theme="enterprise"] {
-    --canvas: #f8f9fa;
-    --surface: #ffffff;
-    --accent: #635fc7;
-    --primary: #635fc7;
-    --ink: #1a1a1a;
-    --body: #4a4a4a;
-  }
 
   /* Playful (Lovable, Figma style) */
-  [data-theme="playful"] {
-    --canvas: #ffffff;
-    --surface: #f3f4f6;
-    --accent: #ec4899;
-    --primary: #ec4899;
-    --ink: #1a1a1a;
-    --body: #374151;
-  }
 
   /* Fintech (Coinbase, Binance style) */
-  [data-theme="fintech"] {
-    --canvas: #0a0a0a;
-    --surface: #141414;
-    --accent: #f0b90b;
-    --primary: #f0b90b;
-    --ink: #ffffff;
-    --body: #d0d0d0;
-  }
 
   /* Terminal (Ollama, Warp style) */
-  [data-theme="terminal"] {
-    --canvas: #0c0c0c;
-    --surface: #141414;
-    --accent: #00ff88;
-    --primary: #00ff88;
-    --font-display: 'JetBrains Mono', monospace;
-    --ink: #e0e0e0;
-    --body: #a0a0a0;
-  }
 
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--canvas); color:var(--ink);
+  body { margin:0; background:var(--canvas); color:var(--primary-text);
     font: 16px/1.5 var(--font-display);
     -webkit-font-smoothing: antialiased; transition: background .3s, color .3s; }
   .wrap { max-width: 880px; margin: 0 auto; padding: 0 var(--space-lg); }
@@ -153,43 +51,43 @@
   header.top .logo { font-weight:800; font-size:20px; letter-spacing:-.3px;
     font-family: var(--font-display); }
   header.top .logo span { color:var(--accent); }
-  header.top nav a { color:var(--muted); text-decoration:none; margin-left:var(--space-lg);
+  header.top nav a { color:var(--secondary-text); text-decoration:none; margin-left:var(--space-lg);
     font-size:14px; }
-  header.top nav a:hover { color:var(--ink); }
+  header.top nav a:hover { color:var(--primary-text); }
   .gh-badge { display:inline-flex; align-items:center; gap:5px;
     background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-pill);
-    padding:4px 12px; font-size:14px; color:var(--body); text-decoration:none;
+    padding:4px 12px; font-size:14px; color:var(--secondary-text); text-decoration:none;
     margin-left:auto; white-space:nowrap; }
 
   /* Theme toggle button */
   .theme-toggle { display:inline-flex; align-items:center; justify-content:center;
     width:36px; height:36px; border-radius:50%; border:1px solid var(--border);
-    background:var(--card); color:var(--ink); cursor:pointer; font-size:18px;
+    background:var(--surface); color:var(--primary-text); cursor:pointer; font-size:18px;
     transition: transform .2s, background .2s; }
   .theme-toggle:hover { transform: scale(1.1); background:var(--border); }
   .theme-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
   /* Sections — generous whitespace */
   section { padding: var(--space-3xl) 0; }
-  section.alt { background:var(--card); border-top:1px solid var(--border);
+  section.alt { background:var(--surface); border-top:1px solid var(--border);
     border-bottom:1px solid var(--border); }
 
   /* Hero — clear typography hierarchy */
   h1 { font-size: var(--h1); line-height:1.15; letter-spacing:-.8px; margin: 0 0 var(--space-lg); }
-  .hero p.sub { font-size: 19px; color: var(--muted); max-width: 680px; margin-bottom:var(--space-xl); }
+  .hero p.sub { font-size: 19px; color: var(--secondary-text); max-width: 680px; margin-bottom:var(--space-xl); }
   .cta-row { display:flex; gap:var(--space-md); flex-wrap:wrap; margin: 0 0 var(--space-sm); }
+  a { color: var(--accent); }
   .btn { display:inline-block; padding: 14px 24px; border-radius:var(--radius); font-weight:700;
-    font-size:16px; background:var(--accent); color:#fff; text-decoration:none;
+    font-size:16px; background:var(--accent); color:var(--on-accent); text-decoration:none;
     border:none; cursor:pointer; transition:opacity .15s; }
   .btn:hover { opacity:.88; }
-  .btn.ghost { background:transparent; color:var(--ink); border:1.5px solid var(--border); }
+  .btn.ghost { background:transparent; color:var(--primary-text); border:1.5px solid var(--border); }
   .btn.small { padding:8px 16px; font-size:14px; }
-  .note { font-size:var(--caption); color:var(--muted); margin:var(--space-sm) 0; }
+  .note { font-size:var(--caption); color:var(--secondary-text); margin:var(--space-sm) 0; }
 
   /* Code blocks */
-  code.inline { background:#f0efe9; border:1px solid var(--border); border-radius:5px;
-    padding: 1.5px 7px; font-size:.88em; }
-  [data-theme="dark"] code.inline { background:#2a2a2a; }
+  code.inline { background:var(--surface); border:1px solid var(--border); border-radius:5px; padding: 1.5px 7px; font-size:.88em; }
+
   pre { background:#1e1e1e; color:#d4d4d4; border-radius:var(--radius-lg);
     padding: var(--space-lg) var(--space-xl); overflow-x:auto; font-size:13.5px; line-height:1.5; }
   pre .prompt { color:#6a9955; user-select:none; }
@@ -198,27 +96,25 @@
 
   /* Layout */
   .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:var(--space-lg); }
-  .card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:var(--space-lg); }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:var(--space-lg); }
   .card h3 { margin-top:0; font-size:var(--h3); }
   .card p:last-child { margin-bottom:0; }
 
-  .toolchip { display:inline-block; background:#eef1ec; color:#2c3c33; border-radius:20px;
-    padding:4px 12px; margin:3px; font-size:13px; font-family: ui-monospace,monospace; }
-  [data-theme="dark"] .toolchip { background:#2a2a2a; color:#e0e0e0; }
+  .toolchip { display:inline-block; background:var(--surface); color:var(--primary-text); border-radius:20px; padding:4px 12px; margin:3px; font-size:13px; font-family: ui-monospace,monospace; }
+
 
   .price { font-size:40px; font-weight:800; letter-spacing:-1px; margin:0 0 var(--space-sm); }
-  .price small { color:var(--muted); font-size:16px; font-weight:400; }
+  .price small { color:var(--secondary-text); font-size:16px; font-weight:400; }
   ul.check { list-style:none; padding-left:0; margin:0; }
   ul.check li { padding:3px 0; }
   ul.check li::before { content:"✓ "; color:var(--accent); font-weight:800; }
 
-  .warn { border-left:4px solid var(--accent2); background:#fdf6f4;
-    border:1px solid #f0dcd8; border-radius:var(--radius-lg); padding:var(--space-lg); }
-  [data-theme="dark"] .warn { background:#2a1a1a; border-color:#4a2020; }
-  .warn b { color:var(--accent2); }
+  .warn { border-left:4px solid var(--warning); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); padding:var(--space-lg); }
 
-  footer { border-top:1px solid var(--border); padding: var(--space-xl) 0; font-size:var(--caption); color:var(--muted); }
-  footer a { color:var(--muted); }
+  .warn b { color:var(--warning); }
+
+  footer { border-top:1px solid var(--border); padding: var(--space-xl) 0; font-size:var(--caption); color:var(--secondary-text); }
+  footer a { color:var(--secondary-text); }
 
   @media (max-width: 640px) {
     :root { --h1:30px; --h2:22px; --body:16px; }
@@ -255,9 +151,9 @@
 <!-- Phase 2: Dashboard Preview with Charts, Gauges, Skeleton & Empty States -->
 <section id="dashboard-preview">
   <div class="wrap">
-    <h2 style="text-align:center;margin-bottom:var(--space-sm)">Live Dashboard Preview</h2>
-    <p style="text-align:center;color:var(--muted);margin-bottom:var(--space-2xl)">
-      See your network metrics in real-time — AI-powered insights included
+    <h2 style="text-align:center;margin-bottom:var(--space-sm)">Illustrative Sample Preview</h2>
+    <p style="text-align:center;color:var(--secondary-text);margin-bottom:var(--space-2xl)">
+      Sample data preview — actual measurements run locally on your Mac
     </p>
 
     <!-- Dashboard Card Grid -->
@@ -265,9 +161,9 @@
 
       <!-- Throughput Card -->
       <div class="dash-card">
-        <div class="dash-label">📊 Throughput</div>
+        <div class="dash-label">📊 Throughput (Sample Data)</div>
         <div class="dash-value" id="throughputValue">42.7</div>
-        <div class="dash-unit">Mbps</div>
+        <div class="dash-unit">Mbps (sample)</div>
         <!-- SVG Line Chart -->
         <svg class="dash-chart" viewBox="0 0 200 60" preserveAspectRatio="none">
           <polyline points="0,50 20,45 40,48 60,35 80,30 100,28 120,22 140,18 160,15 180,12 200,10"
@@ -277,24 +173,24 @@
 
       <!-- Latency Gauge Card -->
       <div class="dash-card">
-        <div class="dash-label">⏱ Latency</div>
+        <div class="dash-label">⏱ Latency (Sample Data)</div>
         <div class="dash-value" id="latencyValue">12</div>
-        <div class="dash-unit">ms</div>
+        <div class="dash-unit">ms (sample)</div>
         <!-- SVG Gauge -->
         <svg class="dash-gauge" viewBox="0 0 120 70">
           <path d="M10,60 A50,50 0 0,1 110,60" fill="none" stroke="var(--border)" stroke-width="10" stroke-linecap="round"/>
           <path d="M10,60 A50,50 0 0,1 110,60" fill="none" stroke="var(--accent)" stroke-width="10" stroke-linecap="round"
             stroke-dasharray="157" stroke-dashoffset="157" id="gaugeFill"/>
-          <text x="60" y="55" text-anchor="middle" fill="var(--muted)" font-size="10">0ms</text>
-          <text x="60" y="15" text-anchor="middle" fill="var(--muted)" font-size="10">100ms</text>
+          <text x="60" y="55" text-anchor="middle" fill="var(--secondary-text)" font-size="10">0ms</text>
+          <text x="60" y="15" text-anchor="middle" fill="var(--secondary-text)" font-size="10">100ms</text>
         </svg>
       </div>
 
       <!-- Jitter Card -->
       <div class="dash-card">
-        <div class="dash-label">🌊 Jitter</div>
+        <div class="dash-label">🌊 Jitter (Sample Data)</div>
         <div class="dash-value" id="jitterValue">3.2</div>
-        <div class="dash-unit">ms</div>
+        <div class="dash-unit">ms (sample)</div>
         <div class="dash-bar-bg">
           <div class="dash-bar-fill" style="width:15%"></div>
         </div>
@@ -302,17 +198,17 @@
 
       <!-- Packet Loss Card -->
       <div class="dash-card">
-        <div class="dash-label">📦 Packet Loss</div>
+        <div class="dash-label">📦 Packet Loss (Sample Data)</div>
         <div class="dash-value" id="lossValue">0.0</div>
-        <div class="dash-unit">%</div>
-        <div class="dash-badge badge-ok">✅ Healthy</div>
+        <div class="dash-unit">% (sample)</div>
+        <div class="dash-badge badge-ok">Sample</div>
       </div>
 
       <!-- Active Streams Card -->
       <div class="dash-card">
-        <div class="dash-label">🔌 Streams</div>
+        <div class="dash-label">🔌 Streams (Sample Data)</div>
         <div class="dash-value" id="streamsValue">4</div>
-        <div class="dash-unit">active</div>
+        <div class="dash-unit">active (sample)</div>
         <div class="dash-streams">
           <span class="stream-dot"></span><span class="stream-dot"></span>
           <span class="stream-dot"></span><span class="stream-dot"></span>
@@ -321,56 +217,25 @@
 
       <!-- AI Status Card -->
       <div class="dash-card dash-card-ai">
-        <div class="dash-label">🤖 AI Status</div>
-        <div class="dash-value" style="font-size:14px">Active</div>
-        <div class="dash-badge badge-ai">GPT-4o mini</div>
+        <div class="dash-label">🤖 AI Status (Sample Data)</div>
+        <div class="dash-value" style="font-size:14px">Sample</div>
+        <div class="dash-badge badge-ai">Sample Data</div>
       </div>
     </div>
 
-    <!-- Skeleton Loading State -->
-    <div class="skeleton-section" id="skeletonSection">
-      <h3>Loading diagnostics...</h3>
-      <div class="skeleton-grid">
-        <div class="skeleton-card">
-          <div class="skeleton skeleton-title"></div>
-          <div class="skeleton skeleton-value"></div>
-          <div class="skeleton skeleton-chart"></div>
-        </div>
-        <div class="skeleton-card">
-          <div class="skeleton skeleton-title"></div>
-          <div class="skeleton skeleton-value"></div>
-          <div class="skeleton skeleton-chart"></div>
-        </div>
-        <div class="skeleton-card">
-          <div class="skeleton skeleton-title"></div>
-          <div class="skeleton skeleton-value"></div>
-          <div class="skeleton skeleton-chart"></div>
-        </div>
-      </div>
-      <p class="note" style="text-align:center">Simulating network measurement...</p>
-    </div>
-
-    <!-- Empty State -->
-    <div class="empty-state" id="emptyState" style="display:none">
-      <div class="empty-illustration">
-        <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
-          <circle cx="60" cy="60" r="50" stroke="var(--border)" stroke-width="2" stroke-dasharray="8 4"/>
-          <circle cx="60" cy="60" r="35" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 6" opacity="0.5"/>
-          <text x="60" y="55" text-anchor="middle" fill="var(--muted)" font-size="28">📡</text>
-          <text x="60" y="75" text-anchor="middle" fill="var(--muted)" font-size="11">No data yet</text>
-        </svg>
-      </div>
-      <h3 style="text-align:center;margin-bottom:var(--space-sm)">No measurements yet</h3>
-      <p style="text-align:center;color:var(--muted);max-width:400px;margin:0 auto var(--space-lg)">
-        Run your first diagnostic to see your network metrics here. AI insights will appear automatically.
+    <!-- Honest Sample Explanation & Install Link -->
+    <div class="empty-state" id="emptyState" style="text-align:center;margin-top:var(--space-xl)">
+      <p style="color:var(--secondary-text);max-width:520px;margin:0 auto var(--space-md)">
+        The metrics displayed above represent illustrative sample data for demonstration. Live network diagnostics run locally on your system without remote telemetry.
       </p>
-      <div style="text-align:center">
-        <a class="btn" href="#install">Start Diagnostics</a>
+      <div>
+        <a class="btn" href="#install">Install NetMax</a>
       </div>
     </div>
   </div>
 </section>
 
+<link rel="stylesheet" href="css/tokens.css">
 <style>
   /* ── Phase 2: Dashboard Components ── */
 
@@ -378,7 +243,7 @@
   .dashboard-grid { margin-bottom: var(--space-2xl); }
 
   .dash-card {
-    background: var(--card);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: var(--space-lg);
@@ -389,13 +254,11 @@
     transform: translateY(-2px);
     box-shadow: 0 8px 24px rgba(0,0,0,0.08);
   }
-  [data-theme="dark"] .dash-card:hover {
-    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-  }
+
 
   .dash-label {
     font-size: var(--caption);
-    color: var(--muted);
+    color: var(--secondary-text);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     margin-bottom: var(--space-xs);
@@ -405,14 +268,14 @@
     font-size: 36px;
     font-weight: 800;
     letter-spacing: -1px;
-    color: var(--ink);
+    color: var(--primary-text);
     line-height: 1;
     margin-bottom: 2px;
   }
 
   .dash-unit {
     font-size: 12px;
-    color: var(--muted);
+    color: var(--secondary-text);
     margin-bottom: var(--space-sm);
   }
 
@@ -461,10 +324,10 @@
     font-weight: 600;
     margin-top: var(--space-sm);
   }
-  .badge-ok { background: #dcfce7; color: #166534; }
-  [data-theme="dark"] .badge-ok { background: #14532d; color: #86efac; }
-  .badge-ai { background: #dbeafe; color: #1e40af; }
-  [data-theme="dark"] .badge-ai { background: #1e3a5f; color: #93c5fd; }
+  .badge-ok { background: var(--success-bg); color: var(--success); }
+
+  .badge-ai { background: var(--info-bg); color: var(--info); }
+
 
   /* Stream dots */
   .dash-streams {
@@ -502,7 +365,7 @@
   }
 
   .skeleton-card {
-    background: var(--card);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: var(--space-lg);
@@ -559,7 +422,7 @@
   <div class="wrap">
     <div class="card" style="max-width:600px;margin:0 auto;text-align:center">
       <h3 style="margin-top:0">What NetMax found on my network</h3>
-<pre style="text-align:left;font-size:13px"><span style="color:#6a9955"># npx -y @netmax/mcp-server  →  claude: "run full_diagnostics"</span>
+<pre tabindex="0" role="region" aria-label="Sample diagnostic output" style="text-align:left;font-size:13px"><span style="color:#6a9955"># npx -y @netmax/mcp-server  →  claude: "run full_diagnostics"</span>
 
 <span style="color:#9cdcfe">Download (single-stream)</span>    20.6 Mbps
 <span style="color:#9cdcfe">Download (8-stream turbo)</span>   24.6 Mbps  <span style="color:#6a9955">+20% headroom</span>
@@ -578,7 +441,7 @@
     <div class="grid">
       <div class="card">
         <h3>MCP server (free — any harness)</h3>
-        <pre><span class="prompt">$</span> <span class="cmd">npx -y @netmax/mcp-server</span>
+        <pre tabindex="0" role="region" aria-label="MCP server install commands"><span class="prompt">$</span> <span class="cmd">npx -y @netmax/mcp-server</span>
 <span class="out">NetMax MCP server v1.0.3
   Engine root: .../engine
   Python:      /usr/bin/python3
@@ -588,37 +451,37 @@ NetMax MCP server running on stdio</span></pre>
       </div>
       <div class="card">
         <h3>Desktop app (macOS menu bar)</h3>
-        <pre><span class="prompt">$</span> <span class="cmd">brew tap mubasharali24428-crypto/netmax</span>
+        <pre tabindex="0" role="region" aria-label="Desktop app install commands"><span class="prompt">$</span> <span class="cmd">brew tap mubasharali24428-crypto/netmax</span>
 <span class="prompt">$</span> <span class="cmd">brew install --cask netmax</span>
 <span class="out">&#x1f4e5; NetMax Desktop 1.0.0 installed</span></pre>
         <p class="note">Or <a href="https://github.com/mubasharali24428-crypto/netmax/releases">download the DMG</a></p>
       </div>
     </div>
     <div style="text-align:center;margin-top:28px">
-      <p style="margin-bottom:12px;font-size:15px;font-weight:600;color:var(--ink)">Works in every major coding harness</p>
+      <p style="margin-bottom:12px;font-size:15px;font-weight:600;color:var(--primary-text)">Works in every major coding harness</p>
       <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;max-width:680px;margin:0 auto">
-        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
           <span>&#9673;</span> Claude Code <span>&#9673;</span>
         </span>
-        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
           <span>&#9673;</span> Codex CLI <span>&#9673;</span>
         </span>
-        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
           <span>&#9673;</span> Cursor <span>&#9673;</span>
         </span>
-        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
           <span>&#9673;</span> Gemini <span>&#9673;</span>
         </span>
-        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
           <span>&#9673;</span> LM Studio <span>&#9673;</span>
         </span>
-        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
           <span>&#9673;</span> DSH <span>&#9673;</span>
         </span>
-        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
           <span>&#9673;</span> Continue <span>&#9673;</span>
         </span>
-        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
+        <span style="display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:13.5px">
           <span>&#9673;</span> VS Code <span>&#9673;</span>
         </span>
       </div>
@@ -721,7 +584,7 @@ NetMax MCP server running on stdio</span></pre>
 <div class="onboarding-modal" id="onboardingModal">
   <div class="onboarding-content">
     <h2>🚀 Welcome to NetMax</h2>
-    <p style="color:var(--muted)">Get the most out of AI-powered network diagnostics with these quick steps:</p>
+    <p style="color:var(--secondary-text)">Get the most out of AI-powered network diagnostics with these quick steps:</p>
     <ul class="onboarding-steps">
       <li>Run <code class="inline">npx @netmax/mcp-server</code> to start the MCP server</li>
       <li>Ask your AI agent: "run full_diagnostics"</li>
@@ -733,7 +596,7 @@ NetMax MCP server running on stdio</span></pre>
       <button class="btn ghost" id="onboardingSkip">Skip</button>
       <button class="btn" id="onboardingGetStarted">Get Started</button>
     </div>
-    <p style="text-align:center;margin-top:var(--space-md);font-size:12px;color:var(--muted)">
+    <p style="text-align:center;margin-top:var(--space-md);font-size:12px;color:var(--secondary-text)">
       Press <kbd>Ctrl+K</kbd> anytime to see all shortcuts
     </p>
   </div>
@@ -743,7 +606,7 @@ NetMax MCP server running on stdio</span></pre>
 <div class="confirm-dialog" id="confirmDialog">
   <div class="confirm-content">
     <h3 id="confirmTitle">Are you sure?</h3>
-    <p id="confirmMessage" style="color:var(--muted)">This action cannot be undone.</p>
+    <p id="confirmMessage" style="color:var(--secondary-text)">This action cannot be undone.</p>
     <div class="confirm-actions">
       <button class="btn ghost" id="confirmCancel">Cancel</button>
       <button class="btn" id="confirmOk" style="background:var(--accent2)">Confirm</button>
@@ -764,86 +627,20 @@ NetMax MCP server running on stdio</span></pre>
 <!-- Phase 3: Toast Container -->
 <div class="toast-container" id="toastContainer"></div>
 
-<!-- Phase 3: Social Proof / Testimonials -->
-<section class="alt" id="testimonials" style="padding:var(--space-3xl) 0">
-  <div class="wrap">
-    <h2 style="text-align:center;margin-bottom:var(--space-2xl)">What developers say</h2>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--space-lg)">
-      <div class="testimonial">
-        <p class="testimonial-text">"NetMax found a bufferbloat issue my ISP denied existed. The AI diagnostics saved me hours of troubleshooting."</p>
-        <p class="testimonial-author">— Alex K., Network Engineer</p>
-      </div>
-      <div class="testimonial">
-        <p class="testimonial-text">"Finally, a tool that talks to my AI agent directly. No more copy-pasting between terminal and browser."</p>
-        <p class="testimonial-author">— Sarah M., DevOps Lead</p>
-      </div>
-      <div class="testimonial">
-        <p class="testimonial-text">"15 tools, zero bloat, MIT licensed. What more could you ask for from a network diagnostic?"</p>
-        <p class="testimonial-author">— James R., Solo Dev</p>
-      </div>
-    </div>
-  </div>
-</section>
+
+<footer>
   <div class="wrap">
     &copy; 2026 NetMax &middot;
     <a href="https://github.com/mubasharali24428-crypto/netmax">GitHub</a> &middot;
     <a href="https://www.npmjs.com/package/@netmax/mcp-server">npm</a> &middot;
-    <a href="https://github.com/mubasharali24428-crypto/netmax/blob/main/LICENSE">MIT License</a><br>
+    <a href="https://github.com/mubasharali24428-crypto/netmax/blob/main/LICENSE">MIT License</a> &middot;
+    <a href="https://github.com/mubasharali24428-crypto/netmax/releases">Releases</a><br>
     Refunds: <code class="inline">mubasharalikhowaja&#64;proton.me</code> &middot;
     Built by a solo dev in Pakistan &#x1f1f5;&#x1f1f0;
-    <div class="legal-links">
-      <a href="#privacy">Privacy Policy</a>
-      <a href="#terms">Terms of Service</a>
-      <a href="#cookies">Cookie Policy</a>
-      <a href="#gdpr">GDPR Compliance</a>
-      <a href="#ccpa">CCPA Opt-Out</a>
-      <a href="#data">Data Export</a>
-      <a href="#delete">Delete Account</a>
-    </div>
   </div>
 </footer>
 
-<!-- Phase 4: Cookie Consent Banner -->
-<div class="cookie-banner" id="cookieBanner">
-  <div class="cookie-content">
-    <p>We use cookies to improve your experience. Accept all or customize your preferences.</p>
-    <div class="cookie-actions">
-      <button class="btn ghost small" id="cookieReject">Reject All</button>
-      <button class="btn ghost small" id="cookieCustomize">Customize</button>
-      <button class="btn small" id="cookieAccept">Accept All</button>
-    </div>
-  </div>
-</div>
 
-<!-- Phase 4: GDPR/CCPA Consent Panel -->
-<div class="consent-panel" id="consentPanel">
-  <div class="consent-content">
-    <h3>Privacy Preferences</h3>
-    <p style="color:var(--muted);font-size:var(--caption);margin-bottom:var(--space-lg)">
-      Choose which data we collect. You can change these settings anytime.
-    </p>
-    <div class="consent-option">
-      <input type="checkbox" id="consentEssential" checked disabled>
-      <label for="consentEssential">Essential cookies (required for app to function)</label>
-    </div>
-    <div class="consent-option">
-      <input type="checkbox" id="consentAnalytics">
-      <label for="consentAnalytics">Analytics — help us improve NetMax</label>
-    </div>
-    <div class="consent-option">
-      <input type="checkbox" id="consentMarketing">
-      <label for="consentMarketing">Marketing — product updates and offers</label>
-    </div>
-    <div class="consent-option">
-      <input type="checkbox" id="consentThirdParty">
-      <label for="consentThirdParty">Third-party integrations — share data with partners</label>
-    </div>
-    <div class="consent-actions">
-      <button class="btn ghost" id="consentRejectAll">Reject All</button>
-      <button class="btn" id="consentSave">Save Preferences</button>
-    </div>
-  </div>
-</div>
 
 <!-- Phase 4: Activity Log Modal -->
 <div class="confirm-dialog" id="activityLogDialog">
@@ -859,105 +656,9 @@ NetMax MCP server running on stdio</span></pre>
   </div>
 </div>
 
-<!-- Phase 4: Backup/Recovery Section -->
-<section id="backupRecovery" style="padding:var(--space-3xl) 0">
-  <div class="wrap">
-    <h2 style="margin-bottom:var(--space-xl)">Backup & Recovery</h2>
-    <div class="backup-section">
-      <h3>💾 Data Export & Import</h3>
-      <p style="color:var(--muted);font-size:var(--caption);margin-bottom:var(--space-md)">
-        Export your data for safekeeping or restore from a previous backup.
-      </p>
-      <div style="display:flex;gap:var(--space-md);flex-wrap:wrap">
-        <button class="btn small" id="exportDataBtn">Export My Data</button>
-        <button class="btn ghost small" id="restoreDataBtn">Restore from Backup</button>
-      </div>
-    </div>
-    <div class="backup-section" style="margin-top:var(--space-lg)">
-      <h3>🔄 Version History</h3>
-      <p style="color:var(--muted);font-size:var(--caption);margin-bottom:var(--space-md)">
-        Track changes to your configurations and configurations over time.
-      </p>
-      <div style="display:flex;gap:var(--space-md);flex-wrap:wrap">
-        <button class="btn small" id="viewHistoryBtn">View History</button>
-        <button class="btn ghost small" id="rollbackBtn">Rollback</button>
-      </div>
-    </div>
-  </div>
-</section>
 
-<!-- Phase 4: Subscription Management -->
-<section class="alt" id="subscription" style="padding:var(--space-3xl) 0">
-  <div class="wrap">
-    <h2 style="text-align:center;margin-bottom:var(--space-xl)">Choose Your Plan</h2>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:var(--space-lg)">
-      <div class="subscription-card">
-        <h3>Free</h3>
-        <div class="subscription-price">$0</div>
-        <p style="color:var(--muted);margin-bottom:var(--space-md)">Basic network diagnostics</p>
-        <ul class="check" style="text-align:left;max-width:250px;margin:0 auto">
-          <li>5 measurements/day</li>
-          <li>Basic metrics</li>
-          <li>Email support</li>
-        </ul>
-        <button class="btn small" style="margin-top:var(--space-md)">Get Started</button>
-      </div>
-      <div class="subscription-card" style="border:2px solid var(--accent);position:relative">
-        <div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600">POPULAR</div>
-        <h3>Pro</h3>
-        <div class="subscription-price">$9<small>/mo</small></div>
-        <p style="color:var(--muted);margin-bottom:var(--space-md)">AI-powered diagnostics</p>
-        <ul class="check" style="text-align:left;max-width:250px;margin:0 auto">
-          <li>Unlimited measurements</li>
-          <li>AI insights</li>
-          <li>Priority support</li>
-          <li>Historical data</li>
-        </ul>
-        <button class="btn small" style="margin-top:var(--space-md)">Start Free Trial</button>
-      </div>
-      <div class="subscription-card">
-        <h3>Team</h3>
-        <div class="subscription-price">$29<small>/mo</small></div>
-        <p style="color:var(--muted);margin-bottom:var(--space-md)">For teams and enterprises</p>
-        <ul class="check" style="text-align:left;max-width:250px;margin:0 auto">
-          <li>Everything in Pro</li>
-          <li>Collaboration tools</li>
-          <li>Admin controls</li>
-          <li>SLA guarantee</li>
-        </ul>
-        <button class="btn small" style="margin-top:var(--space-md)">Contact Sales</button>
-      </div>
-    </div>
-  </div>
-</section>
 
-<!-- Phase 4: Usage Analytics Dashboard -->
-<section id="analytics" style="padding:var(--space-3xl) 0">
-  <div class="wrap">
-    <h2 style="text-align:center;margin-bottom:var(--space-sm)">Your Analytics</h2>
-    <p style="text-align:center;color:var(--muted);margin-bottom:var(--space-2xl)">
-      Monitor your network performance over time
-    </p>
-    <div class="analytics-grid">
-      <div class="analytics-card">
-        <div class="analytics-value">142</div>
-        <div class="analytics-label">Total Tests Run</div>
-      </div>
-      <div class="analytics-card">
-        <div class="analytics-value">99.2%</div>
-        <div class="analytics-label">Uptime</div>
-      </div>
-      <div class="analytics-card">
-        <div class="analytics-value">42.7</div>
-        <div class="analytics-label">Avg Throughput (Mbps)</div>
-      </div>
-      <div class="analytics-card">
-        <div class="analytics-value">12ms</div>
-        <div class="analytics-label">Avg Latency</div>
-      </div>
-    </div>
-  </div>
-</section>
+
 
 <!-- Phase 4: Changelog -->
 <section id="changelog" style="padding:var(--space-3xl) 0">
@@ -1014,15 +715,7 @@ NetMax MCP server running on stdio</span></pre>
   </div>
 </section>
 
-<!-- Phase 4: Uptime Status -->
-<section style="padding:var(--space-2xl) 0;text:center">
-  <div class="wrap">
-    <div class="uptime-status">
-      <span class="uptime-dot"></span>
-      All systems operational — Last checked: <span id="lastChecked">just now</span>
-    </div>
-  </div>
-</section>
+
 
 <!-- Phase 1: Theme toggle script -->
 <script>
@@ -1049,6 +742,7 @@ NetMax MCP server running on stdio</span></pre>
 </script>
 
 <!-- Phase 3: Onboarding, Keyboard Nav, Error Prevention, Recovery, Social Proof, Micro-interactions -->
+<link rel="stylesheet" href="css/tokens.css">
 <style>
   /* ── Phase 3: Advanced UI Features ── */
 
@@ -1058,7 +752,7 @@ NetMax MCP server running on stdio</span></pre>
     top: -40px;
     left: 0;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-primary, #fff);
     padding: 8px 16px;
     z-index: 100;
     transition: top 0.3s;
@@ -1082,7 +776,7 @@ NetMax MCP server running on stdio</span></pre>
   }
   .onboarding-modal.active { display: flex; }
   .onboarding-content {
-    background: var(--card);
+    background: var(--surface);
     border-radius: var(--radius-lg);
     padding: var(--space-2xl);
     max-width: 500px;
@@ -1102,7 +796,7 @@ NetMax MCP server running on stdio</span></pre>
     padding: var(--space-sm) 0;
     padding-left: var(--space-xl);
     position: relative;
-    color: var(--ink);
+    color: var(--primary-text);
   }
   .onboarding-steps li::before {
     content: "→";
@@ -1124,7 +818,7 @@ NetMax MCP server running on stdio</span></pre>
     position: fixed;
     bottom: var(--space-lg);
     right: var(--space-lg);
-    background: var(--card);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: var(--space-lg);
@@ -1165,7 +859,7 @@ NetMax MCP server running on stdio</span></pre>
     align-items: center;
   }
   .toast {
-    background: var(--card);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: var(--space-md) var(--space-lg);
@@ -1202,7 +896,7 @@ NetMax MCP server running on stdio</span></pre>
   }
   .confirm-dialog.active { display: flex; }
   .confirm-content {
-    background: var(--card);
+    background: var(--surface);
     border-radius: var(--radius-lg);
     padding: var(--space-xl);
     max-width: 400px;
@@ -1219,33 +913,6 @@ NetMax MCP server running on stdio</span></pre>
     margin-top: var(--space-lg);
   }
 
-  /* Testimonials */
-  .testimonial {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    position: relative;
-  }
-  .testimonial::before {
-    content: '"';
-    font-size: 48px;
-    color: var(--accent);
-    opacity: 0.3;
-    position: absolute;
-    top: -10px;
-    left: var(--space-md);
-  }
-  .testimonial-text {
-    font-style: italic;
-    margin-bottom: var(--space-md);
-    color: var(--muted);
-  }
-  .testimonial-author {
-    font-weight: 600;
-    font-size: var(--caption);
-    color: var(--ink);
-  }
 
   /* Micro-interactions */
   .btn {
@@ -1269,10 +936,7 @@ NetMax MCP server running on stdio</span></pre>
   }
 
   /* Toolchip hover */
-  .toolchip {
-    transition: all .15s;
-    cursor: default;
-  }
+  .toolchip { display:inline-block; background:var(--surface); color:var(--primary-text); border-radius:20px; padding:4px 12px; margin:3px; font-size:13px; font-family: ui-monospace,monospace; }
   .toolchip:hover {
     background: var(--accent);
     color: #fff;
@@ -1297,12 +961,12 @@ NetMax MCP server running on stdio</span></pre>
   /* ── Phase 4: Medium-Value Items ── */
 
   /* Color-blind friendly palette — blue/orange instead of red/green */
-  .badge-safe { background: #dbeafe; color: #1e40af; }
-  [data-theme="dark"] .badge-safe { background: #1e3a5f; color: #93c5fd; }
-  .badge-warning { background: #fef3c7; color: #92400e; }
-  [data-theme="dark"] .badge-warning { background: #78350f; color: #fcd34d; }
-  .badge-danger { background: #fee2e2; color: #991b1b; }
-  [data-theme="dark"] .badge-danger { background: #7f1d1d; color: #fca5a5; }
+  .badge-safe { background: var(--info-bg); color: var(--info); }
+
+  .badge-warning { background: var(--warning-bg); color: var(--warning); }
+
+  .badge-danger { background: var(--error-bg); color: var(--error); }
+
 
   /* Touch targets minimum 44x44pt on mobile */
   @media (max-width: 640px) {
@@ -1320,7 +984,7 @@ NetMax MCP server running on stdio</span></pre>
     margin-top: var(--space-md);
   }
   .legal-links a {
-    color: var(--muted);
+    color: var(--secondary-text);
     text-decoration: none;
     font-size: var(--caption);
   }
@@ -1336,7 +1000,7 @@ NetMax MCP server running on stdio</span></pre>
     bottom: 0;
     left: 0;
     right: 0;
-    background: var(--card);
+    background: var(--surface);
     border-top: 1px solid var(--border);
     padding: var(--space-md) var(--space-lg);
     z-index: 1000;
@@ -1355,7 +1019,7 @@ NetMax MCP server running on stdio</span></pre>
   .cookie-content p {
     margin: 0;
     font-size: var(--caption);
-    color: var(--muted);
+    color: var(--secondary-text);
   }
   .cookie-actions {
     display: flex;
@@ -1375,7 +1039,7 @@ NetMax MCP server running on stdio</span></pre>
   }
   .consent-panel.active { display: flex; }
   .consent-content {
-    background: var(--card);
+    background: var(--surface);
     border-radius: var(--radius-lg);
     padding: var(--space-xl);
     max-width: 500px;
@@ -1416,13 +1080,13 @@ NetMax MCP server running on stdio</span></pre>
     border-bottom: 1px solid var(--border);
   }
   .activity-time {
-    color: var(--muted);
+    color: var(--secondary-text);
     font-size: 12px;
   }
 
   /* Backup/Recovery section */
   .backup-section {
-    background: var(--card);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: var(--space-lg);
@@ -1433,25 +1097,6 @@ NetMax MCP server running on stdio</span></pre>
     font-size: var(--h3);
   }
 
-  /* Subscription management */
-  .subscription-card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-lg);
-    text-align: center;
-  }
-  .subscription-price {
-    font-size: 32px;
-    font-weight: 800;
-    letter-spacing: -1px;
-    margin: var(--space-sm) 0;
-  }
-  .subscription-price small {
-    font-size: 16px;
-    font-weight: 400;
-    color: var(--muted);
-  }
 
   /* Usage analytics dashboard */
   .analytics-grid {
@@ -1461,7 +1106,7 @@ NetMax MCP server running on stdio</span></pre>
     margin-top: var(--space-lg);
   }
   .analytics-card {
-    background: var(--card);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: var(--space-md);
@@ -1474,7 +1119,7 @@ NetMax MCP server running on stdio</span></pre>
   }
   .analytics-label {
     font-size: var(--caption);
-    color: var(--muted);
+    color: var(--secondary-text);
     margin-top: var(--space-xs);
   }
 
@@ -1489,10 +1134,7 @@ NetMax MCP server running on stdio</span></pre>
     background: #dcfce7;
     color: #166534;
   }
-  [data-theme="dark"] .uptime-status {
-    background: #14532d;
-    color: #86efac;
-  }
+
   .uptime-dot {
     width: 8px;
     height: 8px;
@@ -1513,7 +1155,7 @@ NetMax MCP server running on stdio</span></pre>
   }
   .changelog-date {
     font-size: 12px;
-    color: var(--muted);
+    color: var(--secondary-text);
   }
   .changelog-list {
     list-style: none;
@@ -1523,7 +1165,7 @@ NetMax MCP server running on stdio</span></pre>
   .changelog-list li {
     padding: 2px 0;
     font-size: var(--caption);
-    color: var(--muted);
+    color: var(--secondary-text);
   }
   .changelog-list li::before {
     content: "• ";
@@ -1536,9 +1178,9 @@ NetMax MCP server running on stdio</span></pre>
     padding: 10px 14px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    font-size: var(--body);
+    font-size: var(--secondary-text);
     background: var(--bg);
-    color: var(--ink);
+    color: var(--primary-text);
     margin-bottom: var(--space-lg);
   }
   .docs-search:focus {
@@ -1554,19 +1196,19 @@ NetMax MCP server running on stdio</span></pre>
   }
   .docs-section p {
     font-size: var(--caption);
-    color: var(--muted);
+    color: var(--secondary-text);
     line-height: 1.6;
   }
 
   /* Breadcrumbs */
   .breadcrumbs {
     font-size: var(--caption);
-    color: var(--muted);
+    color: var(--secondary-text);
     margin-bottom: var(--space-lg);
   }
   .breadcrumbs a {
     color: var(--accent);
-    text-decoration: none;
+    text-decoration: underline;
   }
   .breadcrumbs a:hover {
     text-decoration: underline;
@@ -1588,82 +1230,26 @@ NetMax MCP server running on stdio</span></pre>
   const emptyState = document.getElementById('emptyState');
   const dashboardGrid = document.querySelector('.dashboard-grid');
 
-  // State
-  let hasData = false;
-  let dataInterval = null;
-
-  // Simulated live data update
-  function updateDashboard() {
-    if (!hasData) return;
-
-    // Random fluctuations around realistic values
-    const throughput = (35 + Math.random() * 20).toFixed(1);
-    const latency = Math.round(8 + Math.random() * 15);
-    const jitter = (1 + Math.random() * 5).toFixed(1);
-    const loss = (Math.random() * 0.5).toFixed(1);
-    const streams = Math.round(2 + Math.random() * 4);
-
-    throughputEl.textContent = throughput;
-    latencyEl.textContent = latency;
-    jitterEl.textContent = jitter;
-    lossEl.textContent = loss;
-    streamsEl.textContent = streams;
-
-    // Update gauge (max 100ms = 157px dash, 0ms = 0)
-    const gaugeOffset = 157 - (latency / 100) * 157;
-    gaugeFill.setAttribute('stroke-dashoffset', Math.max(0, gaugeOffset));
-
-    // Update stream dots animation
-    const dots = document.querySelectorAll('.stream-dot');
-    dots.forEach((dot, i) => {
-      dot.style.opacity = i < streams ? '1' : '0.3';
-    });
+  // Illustrative sample preview state — static, no background timers or simulated live animations
+  function initDashboardPreview() {
+    if (skeletonSection) skeletonSection.classList.remove('active');
+    if (dashboardGrid) dashboardGrid.style.display = '';
   }
 
-  // Start live updates
-  function startLiveData() {
-    hasData = true;
-    skeletonSection.classList.remove('active');
-    dashboardGrid.style.display = '';
-    emptyState.style.display = 'none';
-    updateDashboard();
-    dataInterval = setInterval(updateDashboard, 3000);
-  }
-
-  // Show empty state
-  function showEmptyState() {
-    hasData = false;
-    if (dataInterval) clearInterval(dataInterval);
-    dashboardGrid.style.display = 'none';
-    emptyState.style.display = '';
-  }
-
-  // Show skeleton loading
-  function showSkeleton() {
-    hasData = false;
-    if (dataInterval) clearInterval(dataInterval);
-    skeletonSection.classList.add('active');
-    dashboardGrid.style.display = 'none';
-    emptyState.style.display = 'none';
-
-    // Simulate loading delay then show data
-    setTimeout(startLiveData, 2000);
-  }
-
-  // Initialize: show skeleton on load
+  // Initialize: display static sample metrics without interval timers
   document.addEventListener('DOMContentLoaded', function() {
-    // Check if user has seen data before
-    const seenData = localStorage.getItem('netmax-seen-data');
-    if (seenData === 'true') {
-      startLiveData();
-    } else {
-      showSkeleton();
-      localStorage.setItem('netmax-seen-data', 'true');
-    }
+    initDashboardPreview();
   });
 
-  // Expose for manual testing
-  window.NetMaxDemo = { showSkeleton, startLiveData, showEmptyState };
+  // Expose static handlers for deterministic testing
+  window.NetMaxDemo = {
+    showSkeleton: function() {},
+    startLiveData: function() {},
+    showEmptyState: function() {
+      if (dashboardGrid) dashboardGrid.style.display = 'none';
+      if (emptyState) emptyState.style.display = '';
+    }
+  };
 
   // ── Phase 3: Onboarding Modal ──
   const onboardingModal = document.getElementById('onboardingModal');
@@ -1767,60 +1353,14 @@ NetMax MCP server running on stdio</span></pre>
   document.addEventListener('DOMContentLoaded', function() {
     showOnboarding();
     showToast('Welcome to NetMax! Press Ctrl+K for shortcuts.', 'info');
-    
-    // Phase 4: Show cookie banner on first visit
-    const cookieConsent = localStorage.getItem('netmax-cookie-consent');
-    if (!cookieConsent) {
-      setTimeout(function() {
-        document.getElementById('cookieBanner').classList.add('active');
-      }, 1000);
-    }
-    
-    // Phase 4: Cookie banner actions
-    document.getElementById('cookieAccept').addEventListener('click', function() {
-      localStorage.setItem('netmax-cookie-consent', 'accepted');
-      document.getElementById('cookieBanner').classList.remove('active');
-      showToast('Cookies accepted. Thanks!', 'success');
-    });
-    document.getElementById('cookieReject').addEventListener('click', function() {
-      localStorage.setItem('netmax-cookie-consent', 'rejected');
-      document.getElementById('cookieBanner').classList.remove('active');
-      showToast('Only essential cookies will be used.', 'info');
-    });
-    document.getElementById('cookieCustomize').addEventListener('click', function() {
-      document.getElementById('consentPanel').classList.add('active');
-    });
-    
-    // Phase 4: Consent panel actions
-    document.getElementById('consentSave').addEventListener('click', function() {
-      const prefs = {
-        analytics: document.getElementById('consentAnalytics').checked,
-        marketing: document.getElementById('consentMarketing').checked,
-        thirdParty: document.getElementById('consentThirdParty').checked
-      };
-      localStorage.setItem('netmax-consent', JSON.stringify(prefs));
-      document.getElementById('consentPanel').classList.remove('active');
-      showToast('Preferences saved!', 'success');
-    });
-    document.getElementById('consentRejectAll').addEventListener('click', function() {
-      document.getElementById('consentAnalytics').checked = false;
-      document.getElementById('consentMarketing').checked = false;
-      document.getElementById('consentThirdParty').checked = false;
-    });
-    
+
+
     // Phase 4: Activity log
     document.getElementById('activityLogExport').addEventListener('click', function() {
       showToast('Log exported!', 'success');
     });
-    
-    // Phase 4: Backup/Recovery
-    document.getElementById('exportDataBtn').addEventListener('click', function() {
-      showToast('Data export started!', 'success');
-    });
-    document.getElementById('restoreDataBtn').addEventListener('click', function() {
-      showToast('Restore complete!', 'success');
-    });
-    
+
+
     // Phase 4: Documentation search
     window.filterDocs = function() {
       const query = document.getElementById('docsSearch').value.toLowerCase();
@@ -1839,6 +1379,7 @@ NetMax MCP server running on stdio</span></pre>
 </script>
 
 <!-- Phase 5: Small-Value Items — Performance, SEO, Social, Accessibility -->
+<link rel="stylesheet" href="css/tokens.css">
 <style>
   /* ── Phase 5: Small-Value Polish ── */
 
@@ -1856,9 +1397,9 @@ NetMax MCP server running on stdio</span></pre>
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: var(--card);
+    background: var(--surface);
     border: 1px solid var(--border);
-    color: var(--ink);
+    color: var(--primary-text);
     text-decoration: none;
     font-size: 18px;
     transition: all .2s;
@@ -1881,7 +1422,7 @@ NetMax MCP server running on stdio</span></pre>
       background: #fff;
       color: #000;
     }
-    .card, .testimonial, .subscription-card {
+    .card {
       border: 1px solid #ccc;
       box-shadow: none;
       break-inside: avoid;
@@ -1903,7 +1444,7 @@ NetMax MCP server running on stdio</span></pre>
 
   /* Shimmer effect for lazy loading */
   .shimmer {
-    background: linear-gradient(90deg, var(--bg) 25%, var(--card) 50%, var(--bg) 75%);
+    background: linear-gradient(90deg, var(--bg) 25%, var(--surface) 50%, var(--bg) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
   }
@@ -1915,18 +1456,18 @@ NetMax MCP server running on stdio</span></pre>
   /* Breadcrumb navigation */
   .breadcrumbs {
     font-size: var(--caption);
-    color: var(--muted);
+    color: var(--secondary-text);
     margin-bottom: var(--space-lg);
   }
   .breadcrumbs a {
     color: var(--accent);
-    text-decoration: none;
+    text-decoration: underline;
   }
   .breadcrumbs a:hover {
     text-decoration: underline;
   }
   .breadcrumbs span {
-    color: var(--muted);
+    color: var(--secondary-text);
     opacity: 0.5;
   }
 
@@ -1942,7 +1483,7 @@ NetMax MCP server running on stdio</span></pre>
     margin: 0;
   }
   .page-404 p {
-    color: var(--muted);
+    color: var(--secondary-text);
     font-size: var(--h3);
   }
 </style>
@@ -2079,7 +1620,7 @@ NetMax MCP server running on stdio</span></pre>
   // Critical CSS loaded indicator
   document.addEventListener('DOMContentLoaded', function() {
     document.body.classList.add('critical-css-loaded');
-    
+
     // Load deferred CSS after critical content is rendered
     setTimeout(function() {
       loadDeferredCSS();
@@ -2119,6 +1660,7 @@ NetMax MCP server running on stdio</span></pre>
 </script>
 
 <!-- Phase 5: Additional Small Polish Items -->
+<link rel="stylesheet" href="css/tokens.css">
 <style>
   /* ── Phase 5: Additional Small Polish ── */
 
@@ -2173,7 +1715,7 @@ NetMax MCP server running on stdio</span></pre>
   /* Sitemap reference */
   .sitemap {
     font-size: var(--caption);
-    color: var(--muted);
+    color: var(--secondary-text);
     text-align: center;
     padding: var(--space-md);
   }
@@ -2181,7 +1723,7 @@ NetMax MCP server running on stdio</span></pre>
   /* Robots.txt reference */
   .robots-txt {
     font-size: 12px;
-    color: var(--muted);
+    color: var(--secondary-text);
     text-align: center;
     padding: var(--space-sm);
   }
@@ -2276,24 +1818,6 @@ NetMax MCP server running on stdio</span></pre>
     });
   }
 
-  // Preload key resources
-  var preloadDomains = ['https://github.com', 'https://www.npmjs.com'];
-  preloadDomains.forEach(function(url) {
-    var link = document.createElement('link');
-    link.rel = 'preload';
-    link.href = url;
-    link.as = 'document';
-    document.head.appendChild(link);
-  });
-
-  // Prefetch external domains
-  var prefetchDomains = ['https://api.netmax.app'];
-  prefetchDomains.forEach(function(url) {
-    var link = document.createElement('link');
-    link.rel = 'prefetch';
-    link.href = url;
-    document.head.appendChild(link);
-  });
 
   // Sitemap reference
   var sitemapLink = document.createElement('link');
