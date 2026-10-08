@@ -30,7 +30,7 @@ py-modules = [
     "netmax_schedule", "netmax_profiles", "netmax_audit",
     "netmax_wifievents", "netmax_eco", "netmax_eventstore",
     "netmax_history",
-    "netmax_export", "netmax_fetch", "netmax_gui", "netmax_shape",
+    "netmax_export", "netmax_export_manifest", "netmax_fetch", "netmax_gui", "netmax_shape",
     "netmax_throttle", "netmax_upload", "netmax_watch",
 ]
 

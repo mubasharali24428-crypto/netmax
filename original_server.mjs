@@ -30,7 +30,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { execFile } from "node:child_process";
-import { writeFile, unlink } from "node:fs/promises";
+import { writeFile, unlink, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -832,6 +832,137 @@ export function buildServer() {
         node: process.version,
         platform: `${process.platform} ${process.arch}`,
       });
+    }
+  );
+
+
+  // ── Tool: policy_bound_workflow ─────────────────────────────────────────
+  //
+  // Named, envelope-checked measurement workflows. A workflow is a fixed
+  // sequence of engine steps; its envelope (max steps, max duration) is
+  // validated BEFORE any child process spawns. Unknown workflow names are
+  // rejected. Steps run through the same runViaBridge path as the real tools.
+
+  const WORKFLOW_STEP_BUDGET_S = 60; // conservative per-step estimate
+
+  const WORKFLOWS = {
+    network_baseline: {
+      description:
+        "Baseline network health: 10s baseline speed test, DNS ranking, jitter.",
+      steps: [
+        { mode: "baseline", args: ["--seconds", "10"] },
+        { mode: "dns", args: [] },
+        { mode: "jitter", args: [] },
+      ],
+      envelope: { max_steps: 3, max_duration_s: 600 },
+    },
+    dns_audit: {
+      description: "DNS-focused audit: resolver ranking plus jitter.",
+      steps: [
+        { mode: "dns", args: [] },
+        { mode: "jitter", args: [] },
+      ],
+      envelope: { max_steps: 2, max_duration_s: 600 },
+    },
+  };
+
+  server.tool(
+    "policy_bound_workflow",
+    "Execute a named policy-bound workflow: a fixed, envelope-checked sequence of measurements. Available workflows: network_baseline, dns_audit.",
+    {
+      workflow_name: z.string().min(1).describe("Name of the registered workflow to execute"),
+    },
+    async ({ workflow_name }) => {
+      const wf = WORKFLOWS[workflow_name];
+      if (!wf) {
+        throw new Error(
+          `unknown workflow '${workflow_name}'. Available: ${Object.keys(WORKFLOWS).join(", ")}`
+        );
+      }
+      if (wf.steps.length > wf.envelope.max_steps) {
+        throw new Error(`workflow '${workflow_name}' exceeds its step envelope`);
+      }
+      const estimateS = wf.steps.length * WORKFLOW_STEP_BUDGET_S;
+      if (estimateS > wf.envelope.max_duration_s) {
+        throw new Error(`workflow '${workflow_name}' exceeds its duration envelope`);
+      }
+      const steps = [];
+      for (const step of wf.steps) {
+        const shaped = await runTool(
+          `policy_bound_workflow:${workflow_name}:${step.mode}`,
+          () => runViaBridge(step.mode, step.args)
+        );
+        const sc = shaped.structuredContent || {};
+        steps.push({
+          mode: step.mode,
+          status: sc.status || "UNKNOWN",
+          error: sc.error || null,
+        });
+        if (shaped.isError) break; // stop on first failed step — envelope honesty
+      }
+      const ok = steps.filter((s) => s.status === "OK").length;
+      return okResult(
+        "policy_bound_workflow",
+        `Workflow '${workflow_name}' finished: ${ok}/${steps.length} steps OK ` +
+          `(envelope: max ${wf.envelope.max_steps} steps, ${wf.envelope.max_duration_s}s)`,
+        { workflow_name, envelope: wf.envelope, steps }
+      );
+    }
+  );
+
+  // ── Tool: evidence_export ───────────────────────────────────────────────
+  //
+  // Export real measurement records as a redacted evidence bundle. Record IDs
+  // (rec-<index> over the canonical history) are validated BEFORE any child
+  // process spawns; the engine selects and redacts the records.
+
+  server.tool(
+    "evidence_export",
+    "Export measurement records as a structured, redacted evidence bundle (JSON). Pass an array of record IDs (rec-<index> over the canonical history) to include.",
+    {
+      records: z.array(z.string()).describe("Array of measurement record IDs to export (rec-<index>)"),
+    },
+    async ({ records }) => {
+      if (!records || records.length === 0) {
+        throw new Error("evidence_export requires at least one record ID");
+      }
+      for (const id of records) {
+        if (!/^rec-\d+$/.test(id)) {
+          throw new Error(`invalid record id '${id}': expected 'rec-<index>'`);
+        }
+      }
+      const tmp = join(tmpdir(), `netmax-evidence-${Date.now()}-${process.pid}.json`);
+      let engineRes;
+      try {
+        engineRes = await runEngineDirect([
+          "export-evidence",
+          "--records",
+          records.join(","),
+          "--fmt",
+          "json",
+          "--out",
+          tmp,
+        ]);
+      } catch (err) {
+        throw new Error(`evidence export failed: ${err.message}`);
+      }
+      if (!engineRes || engineRes.success === false) {
+        await unlink(tmp).catch(() => {});
+        throw new Error(`evidence export failed: ${engineRes?.error || "engine error"}`);
+      }
+      let manifest;
+      try {
+        manifest = JSON.parse(await readFile(tmp, "utf8"));
+      } finally {
+        await unlink(tmp).catch(() => {});
+      }
+      return okResult(
+        "evidence_export",
+        `Exported ${manifest.records_included} record(s); ` +
+          `${manifest.redaction_summary.ips_anonymized} IP(s) anonymized, ` +
+          `${manifest.redaction_summary.secrets_removed} secret(s) removed`,
+        manifest
+      );
     }
   );
 

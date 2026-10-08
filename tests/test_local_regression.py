@@ -32,11 +32,11 @@ def test_regression_no_alert_if_not_consecutive():
 def history_file(tmp_path):
     # 20 baseline rows + 3 breaching rows (latency metric "jitter_ms").
     rows = [
-        {"ts": 1700000000 + i, "result_raw": f"jitter 10.0 ms, Download: 95 Mbps"}
+        {"ts": 1700000000 + i, "result_raw": "jitter 10.0 ms, Download: 95 Mbps"}
         for i in range(20)
     ]
     rows += [
-        {"ts": 1700001000 + i, "result_raw": f"jitter 100.0 ms, Download: 95 Mbps"}
+        {"ts": 1700001000 + i, "result_raw": "jitter 100.0 ms, Download: 95 Mbps"}
         for i in range(3)
     ]
     path = tmp_path / "history.jsonl"

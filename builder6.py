@@ -904,42 +904,13 @@ code = code.replace(
   'import { tmpdir, homedir } from "node:os";'
 )
 code = code.replace(
-  'import { writeFile, unlink } from "node:fs/promises";',
+  'import { writeFile, unlink, readFile } from "node:fs/promises";',
   'import { writeFile, unlink, readFile, mkdir, rename, chmod } from "node:fs/promises";'
 )
 code = code.replace(
   'import net from "node:net";',
   'import net from "node:net";\nimport dns from "node:dns";'
 )
-stub_tools_code = """
-  // ── Tool: policy_bound_workflow ─────────────────────────────────────────────
-
-  server.tool(
-    "policy_bound_workflow",
-    "Execute a named policy-bound workflow. Workflows enforce measurement budgets, rate limits, and approval gates before running any tools.",
-    {
-      workflow_name: z.string().min(1).describe("Name of the registered workflow to execute"),
-    },
-    async (params, extra) => {
-      const { workflow_name } = params;
-      return okResult("policy_bound_workflow", `Workflow '${workflow_name}' accepted`, { workflow_name });
-    }
-  );
-
-  // ── Tool: evidence_export ───────────────────────────────────────────────────
-
-  server.tool(
-    "evidence_export",
-    "Export measurement records as a structured evidence bundle (JSON). Pass an array of record IDs to include.",
-    {
-      records: z.array(z.string()).describe("Array of measurement record IDs to export"),
-    },
-    async (params, extra) => {
-      const { records } = params;
-      return okResult("evidence_export", `Exported ${records.length} record(s)`, { records, exportedAt: new Date().toISOString() });
-    }
-  );
-"""
 code = code.replace(
   'const TOOL_COUNT = 17;',
   '''// Registry: tool names are recorded as server.tool() runs, so the count
@@ -985,7 +956,7 @@ code = code.replace(
 code = code.replace('const TOOL_NAMES = [', 'let TOOL_NAMES = [')
 code = code.replace(
   '  // ── Resources ──',
-  drift_code + stub_tools_code + '\n  // ── Resources ──'
+  drift_code + '\n  // ── Resources ──'
 )
 
 # Safety net: 805e1b8 dropped extractValue from the output; re-add if missing.

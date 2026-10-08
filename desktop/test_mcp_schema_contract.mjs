@@ -42,7 +42,20 @@ async function setupClient(t) {
     fakePython,
     `#!/usr/bin/env node
 const fs = require('node:fs');
-fs.appendFileSync(process.env.NETMAX_SPAWN_MARKER, process.argv.slice(2).join(' ') + '\\n');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.NETMAX_SPAWN_MARKER, args.join(' ') + '\\n');
+const outIdx = args.indexOf('--out');
+if (args.includes('export-evidence') && outIdx !== -1) {
+  fs.writeFileSync(args[outIdx + 1], JSON.stringify({
+    export_version: "1.0",
+    generated_at: "2026-10-08T00:00:00+00:00",
+    tool: "netmax evidence_export",
+    records_included: 1,
+    records: [{ id: "rec-1", sha256: "0".repeat(64), record: { mbps: 95.5 } }],
+    redaction_summary: { pii_removed: true, ips_anonymized: 1, macs_removed: 0, secrets_removed: 0, synthetic_secrets_removed: false, ip_addresses_anonymized: true },
+    methodology: { formulas: ["median"], units: { latency: "ms", throughput: "Mbps" }, trust_rule: "trust reports require exactly 10 samples" },
+  }));
+}
 process.stdout.write(JSON.stringify({ success: true, mode: "test", data: { raw: "OK" } }) + '\\n');
 `
   );
@@ -201,12 +214,12 @@ const CASES = {
     invalid: [{ action: "unknown" }, { action: "init_baseline", peer_alias: "" }, {}]
   },
   policy_bound_workflow: {
-    valid: [{ workflow_name: "daily-health" }],
-    invalid: [{ workflow_name: 123 }, {}]
+    valid: [{ workflow_name: "network_baseline" }],
+    invalid: [{ workflow_name: 123 }, {}, { workflow_name: "daily-health" }, { workflow_name: "../evil" }]
   },
   evidence_export: {
-    valid: [{ records: ["rec-1"] }, { records: [] }],
-    invalid: [{ records: "rec-1" }, {}]
+    valid: [{ records: ["rec-1"] }],
+    invalid: [{ records: "rec-1" }, {}, { records: [] }, { records: ["../../evil"] }, { records: ["rec-1", "bogus"] }]
   },
 };
 
