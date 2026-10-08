@@ -858,12 +858,14 @@ function buildServer() {
     "ai_analyze",
     "Run an AI-assisted diagnosis over measurements you already have. " +
       "Pass `analysis` (see list_analyses) and `input` (JSON object of the " +
-      "measurements), or `history_path` to replay a saved history file. " +
+      "measurements), or `history_path` to replay a saved JSON history file " +
+      "(`netmax-history-*.json` in the NetMax history directory — the engine " +
+      "rejects any other path). " +
       "Analysis only: it never runs a measurement or changes your system.",
     {
       analysis: z.string().describe("analyser name, e.g. root_cause"),
       input: z.string().optional().describe("JSON object of measurements"),
-      history_path: z.string().optional().describe("history JSONL to replay"),
+      history_path: z.string().optional().describe("JSON history file (netmax-history-*.json) in the NetMax history directory"),
       pretty: z.boolean().optional(),
     },
     async (params, extra) => {
@@ -1205,6 +1207,9 @@ async function main() {
   const httpMode = process.argv.includes("--http") || /^(1|true|yes)$/i.test(process.env.NETMAX_HTTP || "");
 
   if (!httpMode) {
+    // Build first: the tool registry populates TOOL_COUNT/TOOL_NAMES as
+    // server.tool() runs, so the banner must print after registration.
+    const server = buildServer();
     console.error(`NetMax MCP server v1.0.7 (stdio)`);
     console.error(`  Engine root: ${ENGINE_ROOT}`);
     console.error(`  Python:      ${PYTHON}`);
@@ -1213,7 +1218,7 @@ async function main() {
     console.error(`  Config:      NETMAX_ROOT / NETMAX_PYTHON / NETMAX_BRIDGE env vars`);
     console.error("");
     const transport = new StdioServerTransport();
-    await buildServer().connect(transport);
+    await server.connect(transport);
     console.error("NetMax MCP server running on stdio");
     return;
   }
@@ -1311,7 +1316,7 @@ async function main() {
       res.end([
         `NetMax MCP server v1.0.7 (web) — ${scheme}, ${token ? "bearer auth" : "no auth (loopback only)"}`,
         `mcp: ${scheme}://${host}:${port}/mcp`,
-        `uptime: ${upSecs}s  tools: 15  toolCalls: ${toolCallCount}`,
+        `uptime: ${upSecs}s  tools: ${TOOL_COUNT}  toolCalls: ${toolCallCount}`,
         `engine: ${ENGINE_ROOT}  python: ${PYTHON}  bridge: ${HAS_BRIDGE ? "yes" : "no"}`,
       ].join("\n") + "\n");
       return;
@@ -1330,6 +1335,11 @@ async function main() {
       res.end("internal error");
     }
   });
+
+  // Populate the tool registry before the banner and /status read it:
+  // buildServer() is otherwise per-request, which would leave TOOL_COUNT
+  // at 0 on a fresh boot. Registration is idempotent (arrays reset per call).
+  buildServer();
 
   httpServer.listen(port, host, () => {
     console.error(`NetMax MCP server v1.0.7 (web) — Streamable HTTP (${scheme})`);
@@ -1395,9 +1405,14 @@ export function parseFleetConfig(env) {
   const matches = allowlistJson.match(/"([^"\\]+)"\s*:/g) || [];
   const keyNames = matches.map(m => m.split('"')[1]);
   if (new Set(keyNames).size !== keyNames.length) throw new Error("duplicate key");
+  const tokenMatches = tokensJson.match(/"([^"\\]+)"\s*:/g) || [];
+  const tokenKeyNames = tokenMatches.map(m => m.split('"')[1]);
+  if (new Set(tokenKeyNames).size !== tokenKeyNames.length) throw new Error("duplicate key");
 
   const allowlist = JSON.parse(allowlistJson);
   const tokens = JSON.parse(tokensJson);
+  if (allowlist === null || typeof allowlist !== "object" || Array.isArray(allowlist))
+    throw new Error("allowlist must be a JSON object");
 
   for (const k of Object.keys(tokens)) {
     if (!allowlist.hasOwnProperty(k)) throw new Error("unknown alias");
@@ -1412,7 +1427,9 @@ export function parseFleetConfig(env) {
     let u;
     try { u = new URL(origin); } catch { throw new Error("invalid url"); }
     if (u.protocol !== "https:") throw new Error("must be https");
-    if (origin !== "https://" + u.host && origin !== "https://" + u.host + "/") throw new Error("origin must have no path/query/auth/extras");
+    const bareOrigin = origin.endsWith("/") ? origin.slice(0, -1) : origin;
+    if (bareOrigin !== "https://" + u.host && bareOrigin !== "https://" + u.hostname + ":443")
+      throw new Error("origin must have no path/query/auth/extras");
     if (origin.includes("%") || origin.includes("user:")) throw new Error("origin must have no path/query/auth/extras");
 
     peers.set(alias, {

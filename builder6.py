@@ -584,9 +584,14 @@ export function parseFleetConfig(env) {
   const matches = allowlistJson.match(/"([^"\\\\]+)"\\s*:/g) || [];
   const keyNames = matches.map(m => m.split('"')[1]);
   if (new Set(keyNames).size !== keyNames.length) throw new Error("duplicate key");
+  const tokenMatches = tokensJson.match(/"([^"\\\\]+)"\\s*:/g) || [];
+  const tokenKeyNames = tokenMatches.map(m => m.split('"')[1]);
+  if (new Set(tokenKeyNames).size !== tokenKeyNames.length) throw new Error("duplicate key");
 
   const allowlist = JSON.parse(allowlistJson);
   const tokens = JSON.parse(tokensJson);
+  if (allowlist === null || typeof allowlist !== "object" || Array.isArray(allowlist))
+    throw new Error("allowlist must be a JSON object");
 
   for (const k of Object.keys(tokens)) {
     if (!allowlist.hasOwnProperty(k)) throw new Error("unknown alias");
@@ -601,7 +606,9 @@ export function parseFleetConfig(env) {
     let u;
     try { u = new URL(origin); } catch { throw new Error("invalid url"); }
     if (u.protocol !== "https:") throw new Error("must be https");
-    if (origin !== "https://" + u.host && origin !== "https://" + u.host + "/") throw new Error("origin must have no path/query/auth/extras");
+    const bareOrigin = origin.endsWith("/") ? origin.slice(0, -1) : origin;
+    if (bareOrigin !== "https://" + u.host && bareOrigin !== "https://" + u.hostname + ":443")
+      throw new Error("origin must have no path/query/auth/extras");
     if (origin.includes("%") || origin.includes("user:")) throw new Error("origin must have no path/query/auth/extras");
 
     peers.set(alias, {
