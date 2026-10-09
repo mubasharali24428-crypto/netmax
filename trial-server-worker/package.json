@@ -1,0 +1,1 @@
+{"description":"Cloudflare Worker + D1 port of the NetMax hardware-bound trial registry (byte-compatible with trial_server/server.py).","name":"netmax-trial-registry-worker","private":true,"scripts":{"test":"node --test test/trial.test.js"},"type":"module","version":"1.0.0"}

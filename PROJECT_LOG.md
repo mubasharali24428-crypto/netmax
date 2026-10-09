@@ -644,3 +644,91 @@ Repairs the Gate G items downgraded in Phase 0. Commits on local main:
 - pytest tests/test_netmax_trial.py + tests/test_trial_server.py: 39 passed.
 - `ruff check` clean on new files; `netmax audit`: 0 errors (1 pre-existing,
   unrelated TOOL_COUNT warning); `git diff --check` clean.
+
+## 2026-10-09 — Trial registry: Cloudflare Worker + D1 port (trial-server-worker/)
+
+**What:** Edge port of `trial_server/server.py` so the hardware-bound trial
+registry can run serverless on Cloudflare (Workers + D1) instead of a
+self-hosted Python process. Same API, same policy, same tokens — the shipped
+Swift `TrialRegistryClient` works against it unchanged.
+
+**Files** (`trial-server-worker/`, 8 files):
+- `src/worker.js` — Worker entry point (fetch handler; wiring only).
+- `src/trial.js` — pure policy logic (fingerprint validation, HMAC tokens,
+  activate/status endpoint logic). Zero Workers/D1 imports; runs in plain
+  node >= 18 via WebCrypto.
+- `src/store.js` — storage adapters: `createD1Store` (production) and
+  `createMemoryStore` (in-memory shim, identical contract, for tests/dev).
+- `schema.sql` — D1 schema: `trials` (mirrors the Python SQLite table) plus
+  `rate_hits` (rolling-window rate state; D1 chosen over KV for strong
+  consistency and a single binding).
+- `wrangler.toml` — worker name, D1 binding, compatibility date; HMAC secret
+  via `wrangler secret put` only (never in the file).
+- `test/trial.test.js` — `node --test` suite; `package.json`, `README.md`.
+
+**Token compatibility (critical, verified):** message
+`"<fp_hex>|<trial_start>|<trial_end>"` (UTF-8), HMAC-SHA256 hex; timestamps
+`YYYY-MM-DDTHH:MM:SSZ` with milliseconds stripped (matches Python
+`strftime`); constant-time compare. A Python-generated token vector
+verifies byte-for-byte in the Worker code, and a live cross-check
+(JS-minted vs Python-computed) returned identical.
+
+**Tests:** `node --test` — 28/28 pass (fingerprint validation, timestamp
+format, token determinism/tamper/window checks, activate incl. duplicate +
+abuse-signal + concurrent-race-as-consumed, VM deny toggle, status
+active/expired/bad-token/unknown-fp, per-IP rate limits). Run on the agent
+VM (no node on this Mac); reproducible via `npm test` once node is
+installed here.
+
+**Not deployed.** Deploy steps for MAX in `trial-server-worker/README.md`:
+`wrangler d1 create`, `d1 execute --file schema.sql`, `wrangler secret put
+NETMAX_TRIAL_HMAC_SECRET` (same value as the Swift `embeddedHMACSecret`),
+`wrangler deploy`; then set `TrialRegistryClient.defaultBaseURLString`.
+
+**Verification (2026-10-09):** 8 files added under `trial-server-worker/`;
+`node --test` 28/28 green; JS↔Python token interop confirmed True on live
+inputs; no existing files touched.
+
+## 2026-10-09 — Trial registry: Cloudflare Worker + D1 port (trial-server-worker/)
+
+**What:** Edge port of `trial_server/server.py` so the hardware-bound trial
+registry can run serverless on Cloudflare (Workers + D1) instead of a
+self-hosted Python process. Same API, same policy, same tokens — the shipped
+Swift `TrialRegistryClient` works against it unchanged.
+
+**Files** (`trial-server-worker/`, 8 files):
+- `src/worker.js` — Worker entry point (fetch handler; wiring only).
+- `src/trial.js` — pure policy logic (fingerprint validation, HMAC tokens,
+  activate/status endpoint logic). Zero Workers/D1 imports; runs in plain
+  node >= 18 via WebCrypto.
+- `src/store.js` — storage adapters: `createD1Store` (production) and
+  `createMemoryStore` (in-memory shim, identical contract, for tests/dev).
+- `schema.sql` — D1 schema: `trials` (mirrors the Python SQLite table) plus
+  `rate_hits` (rolling-window rate state; D1 chosen over KV for strong
+  consistency and a single binding).
+- `wrangler.toml` — worker name, D1 binding, compatibility date; HMAC secret
+  via `wrangler secret put` only (never in the file).
+- `test/trial.test.js` — `node --test` suite; `package.json`, `README.md`.
+
+**Token compatibility (critical, verified):** message
+`"<fp_hex>|<trial_start>|<trial_end>"` (UTF-8), HMAC-SHA256 hex; timestamps
+`YYYY-MM-DDTHH:MM:SSZ` with milliseconds stripped (matches Python
+`strftime`); constant-time compare. A Python-generated token vector
+verifies byte-for-byte in the Worker code, and a live cross-check
+(JS-minted vs Python-computed HMAC) returned identical.
+
+**Tests:** `node --test` — 28/28 pass (fingerprint validation, timestamp
+format, token determinism/tamper/window checks, activate incl. duplicate +
+abuse-signal + concurrent-race-as-consumed, VM deny toggle, status
+active/expired/bad-token/unknown-fp, per-IP rate limits). Run on the agent
+VM (no node on this Mac); reproducible via `npm test` once node is
+installed here.
+
+**Not deployed.** Deploy steps for MAX in `trial-server-worker/README.md`:
+`wrangler d1 create`, `d1 execute --file schema.sql`, `wrangler secret put
+NETMAX_TRIAL_HMAC_SECRET` (same value as the Swift `embeddedHMACSecret`),
+`wrangler deploy`; then set `TrialRegistryClient.defaultBaseURLString`.
+
+**Verification (2026-10-09):** 8 files added under `trial-server-worker/`;
+`node --test` 28/28 green; JS/Python token interop confirmed True on live
+inputs; no existing files touched.

@@ -1,0 +1,13 @@
+# NetMax trial-registry Worker.
+# Deploy steps are in README.md. The HMAC secret is NEVER stored here —
+# set it with:  wrangler secret put NETMAX_TRIAL_HMAC_SECRET
+
+name = "netmax-trial-registry"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+
+[[d1_databases]]
+binding = "TRIAL_DB"
+database_name = "netmax-trial-registry"
+# Paste the id printed by `wrangler d1 create netmax-trial-registry` here:
+database_id = "REPLACE_WITH_WRANGLER_D1_ID"
