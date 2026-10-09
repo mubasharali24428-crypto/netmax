@@ -635,7 +635,18 @@ struct SettingsView: View {
                     .foregroundColor(DesignTokens.accent)
                     .accessibilityLabel(Text("Trial active until \(ends)"))
             case .Free:
-                if license.trialStartedAt.isEmpty && license.trialEndsAt.isEmpty {
+                if license.trialNeedsConnection {
+                    Label("Couldn't reach the trial server — check your connection and try again.", systemImage: "wifi.exclamationmark")
+                        .foregroundColor(DesignTokens.secondaryText)
+                        .accessibilityLabel(Text("Couldn't reach the trial server."))
+                    Button("Start 14-day trial") { license.startTrial() }
+                        .accessibilityLabel(Text("Start 14-day free trial"))
+                        .accessibilityIdentifier("license.startTrial")
+                } else if let denial = LicenseGate.trialDenialMessage(for: license.trialDenialReason) {
+                    Label(denial, systemImage: "lock.fill")
+                        .foregroundColor(DesignTokens.secondaryText)
+                        .accessibilityLabel(Text(denial))
+                } else if license.trialStartedAt.isEmpty && license.trialEndsAt.isEmpty {
                     Button("Start 14-day trial") { license.startTrial() }
                         .accessibilityLabel(Text("Start 14-day free trial"))
                         .accessibilityHint(Text("Unlocks Pro features for 14 days. Starts once — cannot be restarted after it expires."))
@@ -662,9 +673,10 @@ struct SettingsView: View {
         } header: {
             Text("License")
         } footer: {
-            Text("FREE keeps every current feature. PRO unlocks scheduled reports, PDF report cards, and exports. Validation is offline (no network call).")
+            Text("FREE keeps every current feature. PRO unlocks scheduled reports, PDF report cards, and exports. Trials are bound to this Mac and verified online (internet needed to start). License keys validate offline.")
         }
         .id(SettingsSection.license.id)
+        .onAppear { license.refreshTrialStatusInBackground() }
     }
 
     private var tierLabel: String {

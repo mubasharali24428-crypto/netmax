@@ -31,7 +31,7 @@ py-modules = [
     "netmax_wifievents", "netmax_eco", "netmax_eventstore",
     "netmax_history",
     "netmax_export", "netmax_export_manifest", "netmax_fetch", "netmax_gui", "netmax_shape",
-    "netmax_throttle", "netmax_upload", "netmax_watch",
+    "netmax_throttle", "netmax_trial", "netmax_upload", "netmax_watch",
 ]
 
 [tool.coverage.run]

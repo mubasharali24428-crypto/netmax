@@ -605,3 +605,42 @@ Repairs the Gate G items downgraded in Phase 0. Commits on local main:
   desktop/MCP-README.md, desktop/package.json,
   desktop/test_mcp_download_boundary.mjs, docs/reviews/upgrade-evidence.md,
   ~10 untracked helper scripts.
+
+- **Trial-abuse hardening (2026-10-09)**: closed the UserDefaults-only 14-day
+  trial hole (deletable plist = infinite re-trials, same class as IDM's
+  registry keys). Trials are now hardware-bound + server-recorded:
+  `desktop/SwiftNetMax/Sources/netmax-desktop/MachineFingerprint.swift`
+  (SHA-256 of IOPlatformUUID; raw UUID never logged/transmitted; injectable
+  for tests), `VMDetector.swift` (hw.model markers + kern.hv_vmm_present;
+  injectable), `TrialRegistryClient.swift` (POST /v1/trial/activate, GET
+  /v1/trial/status; HMAC-SHA256 token binding fingerprint|start|end; Keychain
+  storage, service "netmax.trial", ThisDeviceOnly; 72h offline grace).
+  `LicenseGate.startTrial` now requires a successful server activation; an
+  already-consumed fingerprint stays Free with "trial already used on this
+  Mac"; offline/unconfigured server fails closed and non-destructively.
+  Invariants preserved: trial never auto-starts (H8), DEBUG dev overrides
+  intact, legacy local-only windows migrated away at launch (owners get one
+  server-bound trial). `trial_server/` (stdlib-only Python reference server:
+  SQLite registry, per-IP rate limits, DENY_VM_TRIALS=True; README with
+  deployment options — NOT deployed, no accounts, no spend). `netmax_trial.py`
+  engine parity (macOS ioreg / Windows wmic+winreg UUID, per-platform VM
+  heuristics; stdlib only; declared in pyproject py-modules). SettingsView
+  surfaces denied/offline states and revalidates in background on appear.
+  OPEN (needs MAX): choose and host the registry server, then set
+  `TrialRegistryClient.defaultBaseURLString` and `embeddedHMACSecret` to match
+  the server's NETMAX_TRIAL_HMAC_SECRET. Until then the Start Trial button
+  reports "couldn't reach the trial server" (fail-closed).
+
+**Verification (2026-10-09, Mac, swift 6.3.3 / python 3.13)**:
+- `swift test` (desktop/SwiftNetMax): all suites pass, incl. 28/28 harnesses
+  (LicenseGateTests extended: fingerprint determinism/format, VM heuristics,
+  token tamper rejection with test-known secret, server-allowed/denied/offline
+  integration, 72h grace, revalidation drop, legacy migration).
+- Live IOKit probe on this Mac: fingerprint computes (64-hex), vm_suspected=false.
+- Live server e2e on localhost: activate -> 14-day window; Swift-recomputed
+  HMAC token matched the Python server token byte-for-byte; duplicate
+  activate -> 403 trial_already_consumed; vm_suspected -> 403 vm_not_allowed;
+  status?fp&token -> active:true.
+- pytest tests/test_netmax_trial.py + tests/test_trial_server.py: 39 passed.
+- `ruff check` clean on new files; `netmax audit`: 0 errors (1 pre-existing,
+  unrelated TOOL_COUNT warning); `git diff --check` clean.
