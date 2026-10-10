@@ -515,12 +515,12 @@ code = code.replace(
   '''  const server = new McpServer({
     name: "netmax-mcp-server",
     version: "1.0.7",
-    description: "NetMax Desktop network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
+    description: "Drift Workbench network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
   });''',
   '''  const server = new McpServer({
     name: "netmax-mcp-server",
     version: "1.0.7",
-    description: "NetMax Desktop network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
+    description: "Drift Workbench network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
   });\n''' + budget_code
 )
 
@@ -934,12 +934,12 @@ code = code.replace(
   '''  const server = new McpServer({
     name: "netmax-mcp-server",
     version: "1.0.7",
-    description: "NetMax Desktop network diagnostics \u2014 throughput, bufferbloat, DNS, WiFi, and more",
+    description: "Drift Workbench network diagnostics \u2014 throughput, bufferbloat, DNS, WiFi, and more",
   });''',
   '''  const server = new McpServer({
     name: "netmax-mcp-server",
     version: "1.0.7",
-    description: "NetMax Desktop network diagnostics \u2014 throughput, bufferbloat, DNS, WiFi, and more",
+    description: "Drift Workbench network diagnostics \u2014 throughput, bufferbloat, DNS, WiFi, and more",
   });
 
   // Tool registry: record every tool name as it registers. TOOL_COUNT and

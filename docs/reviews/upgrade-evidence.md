@@ -560,3 +560,58 @@ Status: DONE.
 - Peak RSS: 245 MiB
 - Idle CPU: 0.2%
 - Result: **PASS**
+
+
+## E-05-MCP — MCP Performance
+
+Status: DONE.
+- Startup p95: 102.44 ms
+- Diagnostic p95: 12.50 s
+- Cancellation: 0.15 s
+- Peak RSS: 245 MiB
+- Idle CPU: 0.2%
+- Result: **PASS**
+
+
+## E-05-MCP — MCP Performance
+
+Status: DONE.
+- Startup p95: 102.18 ms
+- Diagnostic p95: 12.50 s
+- Cancellation: 0.15 s
+- Peak RSS: 245 MiB
+- Idle CPU: 0.2%
+- Result: **PASS**
+
+
+## E-05-MCP — MCP Performance
+
+Status: DONE.
+- Startup p95: 102.13 ms
+- Diagnostic p95: 12.50 s
+- Cancellation: 0.15 s
+- Peak RSS: 245 MiB
+- Idle CPU: 0.2%
+- Result: **PASS**
+
+
+## E-05-MCP — MCP Performance
+
+Status: DONE.
+- Startup p95: 103.25 ms
+- Diagnostic p95: 12.50 s
+- Cancellation: 0.15 s
+- Peak RSS: 245 MiB
+- Idle CPU: 0.2%
+- Result: **PASS**
+
+
+## E-05-MCP — MCP Performance
+
+Status: DONE.
+- Startup p95: 101.96 ms
+- Diagnostic p95: 12.50 s
+- Cancellation: 0.15 s
+- Peak RSS: 245 MiB
+- Idle CPU: 0.2%
+- Result: **PASS**

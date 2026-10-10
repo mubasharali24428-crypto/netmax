@@ -14,6 +14,15 @@ import subprocess
 import time
 
 from netmax import NetMaxError
+from netmax_platform import (
+    PLATFORM,
+    parse_netsh_wlan,
+    parse_ping_loss,
+    parse_ping_times,
+    ping_cmd,
+    ping_timeout_s,
+    wifi_cmd,
+)
 
 
 def _run(cmd: list[str], timeout: float) -> subprocess.CompletedProcess:
@@ -29,30 +38,29 @@ def packet_loss(host: str = "1.1.1.1", count: int = 10, interval: float = 0.3) -
 
     Ping exits non-zero when the host blocks ICMP but still prints a
     statistics block with 100.0% loss — we parse stdout, not the exit code.
+    On Windows the flags and output format differ; netmax_platform handles it.
     """
-    proc = _run(["ping", "-c", str(count), "-i", str(interval), host],
-                timeout=count * interval + 15)
-    m = re.search(r"(\d+(?:\.\d+)?)% packet loss", proc.stdout)
-    if not m:
+    proc = _run(ping_cmd(host, count, interval),
+                timeout=ping_timeout_s(count, interval))
+    try:
+        return parse_ping_loss(proc.stdout, host)
+    except NetMaxError:
         raise NetMaxError(
             f"ping to {host} produced no loss statistics: "
             f"{proc.stderr.strip()[:120] or 'no output'}"
-        )
-    return float(m.group(1))
+        ) from None
 
 
 def jitter_ms(host: str = "1.1.1.1", count: int = 10, interval: float = 0.3) -> float:
     """Mean absolute delta between consecutive RTTs (ms), RFC 3550 style.
 
     Parses every `time=X ms` reply line; skips `time<0.1 ms` lines (localhost),
-    which break the float regex.
+    which break the float regex. Windows `time<1ms` lines are likewise
+    skipped — never fabricated.
     """
-    proc = _run(["ping", "-c", str(count), "-i", str(interval), host],
-                timeout=count * interval + 15)
-    times = [
-        float(t)
-        for t in re.findall(r"time=(\d+(?:\.\d+)?)\s*ms", proc.stdout)
-    ]
+    proc = _run(ping_cmd(host, count, interval),
+                timeout=ping_timeout_s(count, interval))
+    times = parse_ping_times(proc.stdout)
     if len(times) < 2:
         raise NetMaxError(
             f"insufficient RTT samples from ping to {host} "
@@ -78,8 +86,12 @@ def wifi_info(iface_hint: str | None = None) -> dict:
 
     Uses `system_profiler SPAirPortDataType` (the airport binary was removed
     in modern macOS). Prefers -json; falls back to plain-text regexes.
+    On Windows uses `netsh wlan show interfaces` (signal % → estimated dBm,
+    flagged). On Linux raises NetMaxError honestly (no universal CLI).
     """
     del iface_hint  # reserved; system_profiler reports all interfaces
+    if PLATFORM == "windows":
+        return _wifi_info_windows()
     now = time.monotonic()
     if _WIFI_CACHE["info"] is not None and now - _WIFI_CACHE["at"] < WIFI_CACHE_TTL_S:
         return dict(_WIFI_CACHE["info"])
@@ -87,6 +99,16 @@ def wifi_info(iface_hint: str | None = None) -> dict:
     _WIFI_CACHE["at"] = now
     _WIFI_CACHE["info"] = info
     return dict(info)
+
+
+def _wifi_info_windows() -> dict:
+    """Windows Wi-Fi info via netsh. netsh is fast; no cache needed."""
+    proc = _run(wifi_cmd(), timeout=30)
+    if proc.returncode != 0:
+        raise NetMaxError(
+            f"netsh wlan failed: {proc.stderr.strip()[:120]}"
+        )
+    return parse_netsh_wlan(proc.stdout)
 
 
 def _wifi_info_uncached() -> dict:

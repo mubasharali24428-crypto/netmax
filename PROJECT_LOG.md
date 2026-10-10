@@ -732,3 +732,25 @@ NETMAX_TRIAL_HMAC_SECRET` (same value as the Swift `embeddedHMACSecret`),
 **Verification (2026-10-09):** 8 files added under `trial-server-worker/`;
 `node --test` 28/28 green; JS/Python token interop confirmed True on live
 inputs; no existing files touched.
+
+## 2026-10-10 — Rename: NetMax → Drift Workbench (pre-application)
+
+MiroFish naming mission (2026-10-10) recommended **Drift Workbench**: "Drift"
+describes the diagnosed problem (never a speed promise), "Workbench" signals
+tool/evidence; zero booster/scam flags across all simulated lanes; the product
+already ships `fleet_drift_workbench` (name-is-function). Banned word family:
+Max/Boost/Turbo/Ultra/Hyper/Speed/Quick/Fast.
+
+Renamed user-facing surfaces (internal module names `netmax_*`, `NETMAX_*`
+env vars, and the `Application Support/NetMaxDesktop` data path intentionally
+unchanged — invisible, and the Swift app shares the path):
+- desktop/package.json: `@netmax/mcp-server` → `@drift-workbench/mcp-server`
+- desktop/MCP-README.md, README.md, landing/index.html: display strings
+- original_server.mjs + desktop/netmax-mcp-server.mjs: tool descriptions
+- builder5.py/builder6.py: description strings (pipeline stays consistent)
+- mubasharbuilds-site: netmax/ → drift/, branding updated
+- Share links: netmax.app → drift.mubasharbuilds.com
+
+Backups: *.bak-rename alongside each edited file.
+Still open: GitHub repo rename (Settings → rename; GitHub redirects),
+Gumroad listing copy, Swift app UI strings.

@@ -40,6 +40,7 @@ test("download_file validates basenames before spawning and uses the private CLI
 
   const invalidNames = [
     "", ".", "..", "../escape", "/tmp/escape", "a/b", "a\\b", "C:escape",
+    "C:/a.json", "\\\\?\\C:\\evil", "\\\\server\\share",
     "bad\0name", "bad\nname", "x".repeat(181), "é".repeat(91),
   ];
   for (const output of invalidNames) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * NetMax MCP Server - exposes NetMaxDesktop network diagnostics as MCP tools.
+ * Drift Workbench MCP Server - exposes Drift Workbench network diagnostics as MCP tools.
  *
  * Zero changes to the app.  Calls the Python engine scripts directly (same
  * scripts the Swift GUI uses via engine_bridge.py).  Runs as a stdio MCP
@@ -121,7 +121,7 @@ function notifySlack(mode, reason) {
   try {
     const url = new URL(SLACK_WEBHOOK);
     const firstLine = String(reason).split("\n")[0].slice(0, 200);
-    const body = JSON.stringify({ text: `NetMax \`${mode}\` failed: ${firstLine}` });
+    const body = JSON.stringify({ text: `Drift Workbench \`${mode}\` failed: ${firstLine}` });
     const transport = url.protocol === "https:"
       ? import("node:https")
       : import("node:http");
@@ -369,7 +369,7 @@ export function buildServer() {
   const server = new McpServer({
     name: "netmax-mcp-server",
     version: "1.0.7",
-    description: "NetMax Desktop network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
+    description: "Drift Workbench Desktop network diagnostics — throughput, bufferbloat, DNS, WiFi, and more",
   });
 
   // ── Tool: measure_speed ─────────────────────────────────────────────────────
@@ -418,7 +418,7 @@ export function buildServer() {
 
   server.tool(
     "full_diagnostics",
-    "Run the full NetMax diagnostic suite: speed test (baseline+boost), DNS ranking, bufferbloat grade, and TCP tuning notes in one shot.",
+    "Run the full Drift Workbench diagnostic suite: speed test (baseline+boost), DNS ranking, bufferbloat grade, and TCP tuning notes in one shot.",
     {
       streams: z.number().int().min(1).max(50).default(8).describe("Parallel streams for turbo/boost"),
       seconds: z.number().int().min(5).max(21600).default(10).describe("Test duration per phase"),
@@ -531,7 +531,7 @@ export function buildServer() {
       const bloatResult = await runEngineDirect(["bloat-eco"]);
 
       const lines = [];
-      lines.push("=== NetMax Quick Diagnostic Summary ===");
+      lines.push("=== Drift Workbench Quick Diagnostic Summary ===");
       lines.push("");
 
       if (speedEnv.success) {
@@ -769,13 +769,13 @@ export function buildServer() {
     "Run an AI-assisted diagnosis over measurements you already have. " +
       "Pass `analysis` (see list_analyses) and `input` (JSON object of the " +
       "measurements), or `history_path` to replay a saved JSON history file " +
-      "(`netmax-history-*.json` in the NetMax history directory — the engine " +
+      "(`netmax-history-*.json` in the Drift Workbench history directory — the engine " +
       "rejects any other path). " +
       "Analysis only: it never runs a measurement or changes your system.",
     {
       analysis: z.string().describe("analyser name, e.g. root_cause"),
       input: z.string().optional().describe("JSON object of measurements"),
-      history_path: z.string().optional().describe("JSON history file (netmax-history-*.json) in the NetMax history directory"),
+      history_path: z.string().optional().describe("JSON history file (netmax-history-*.json) in the Drift Workbench history directory"),
       pretty: z.boolean().optional(),
     },
     async ({ analysis, input, history_path, pretty }) => {
@@ -1028,11 +1028,11 @@ export function buildServer() {
   );
 
   // The project's defining constraint, stated so an agent cannot contradict
-  // it. NetMax measures; it does not make a line faster.
+  // it. Drift Workbench measures; it does not make a line faster.
   jsonResource(
     "netmax://limits",
     "netmax-limits",
-    "What NetMax can and cannot do. Read before reporting any result to a user.",
+    "What Drift Workbench can and cannot do. Read before reporting any result to a user.",
     async () => ({
       can_do: [
         "Measure download throughput, baseline and multi-stream, and explain the difference.",
@@ -1068,7 +1068,7 @@ async function main() {
     // Build first: the tool registry populates TOOL_COUNT/TOOL_NAMES as
     // server.tool() runs, so the banner must print after registration.
     const server = buildServer();
-    console.error(`NetMax MCP server v1.0.7 (stdio)`);
+    console.error(`Drift Workbench MCP server v1.0.7 (stdio)`);
     console.error(`  Engine root: ${ENGINE_ROOT}`);
     console.error(`  Python:      ${PYTHON}`);
     console.error(`  Bridge:      ${HAS_BRIDGE ? BRIDGE : "none (direct mode)"}`);
@@ -1077,7 +1077,7 @@ async function main() {
     console.error("");
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error("NetMax MCP server running on stdio");
+    console.error("Drift Workbench MCP server running on stdio");
     return;
   }
 
@@ -1160,7 +1160,7 @@ async function main() {
         `<style>body{font-family:system-ui;background:#0d1117;color:#e6edf3;padding:20px}` +
         `table{border-collapse:collapse}td{border:1px solid #30363d;padding:8px 12px}` +
         `.hint{color:#8b949e}</style></head><body>` +
-        `<h1>NetMax fleet (${peers.length} peer${peers.length === 1 ? '' : 's'})</h1>` +
+        `<h1>Drift Workbench fleet (${peers.length} peer${peers.length === 1 ? '' : 's'})</h1>` +
         (peers.length
           ? `<table>${rows}</table>`
           : `<p class="hint">No peers configured — set NETMAX_FLEET=` +
@@ -1172,7 +1172,7 @@ async function main() {
       const upSecs = Math.floor((Date.now() - SERVER_START.getTime()) / 1000);
       res.writeHead(200, { "content-type": "text/plain" });
       res.end([
-        `NetMax MCP server v1.0.7 (web) — ${scheme}, ${token ? "bearer auth" : "no auth (loopback only)"}`,
+        `Drift Workbench MCP server v1.0.7 (web) — ${scheme}, ${token ? "bearer auth" : "no auth (loopback only)"}`,
         `mcp: ${scheme}://${host}:${port}/mcp`,
         `uptime: ${upSecs}s  tools: ${TOOL_COUNT}  toolCalls: ${toolCallCount}`,
         `engine: ${ENGINE_ROOT}  python: ${PYTHON}  bridge: ${HAS_BRIDGE ? "yes" : "no"}`,
@@ -1200,7 +1200,7 @@ async function main() {
   buildServer();
 
   httpServer.listen(port, host, () => {
-    console.error(`NetMax MCP server v1.0.7 (web) — Streamable HTTP (${scheme})`);
+    console.error(`Drift Workbench MCP server v1.0.7 (web) — Streamable HTTP (${scheme})`);
     console.error(`  Endpoint:     ${scheme}://${host === "127.0.0.1" ? "localhost" : host}:${port}/mcp`);
     console.error(`  Dashboard:    ${scheme}://${host === "127.0.0.1" ? "localhost" : host}:${port}/`);
     console.error(`  Engine root:  ${ENGINE_ROOT}`);

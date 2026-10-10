@@ -1,21 +1,21 @@
-# NetMax
+# Drift Workbench
 
 > Network diagnostics for AI coding agents. Local-first, honest limits.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![npm](https://img.shields.io/npm/v/@netmax/mcp-server)](https://www.npmjs.com/package/@netmax/mcp-server)
+[![npm](https://img.shields.io/npm/v/@drift-workbench/mcp-server)](https://www.npmjs.com/package/@drift-workbench/mcp-server)
 [![GitHub stars](https://img.shields.io/github/stars/mubasharali24428-crypto/netmax?style=social)](https://github.com/mubasharali24428-crypto/netmax)
-[![Landing page](https://img.shields.io/badge/🌐-landing%20page-2f6f4f)](https://mubasharali24428-crypto.github.io/netmax/)
+[![Landing page](https://img.shields.io/badge/🌐-landing%20page-2f6f4f)](https://drift.mubasharbuilds.com)
 [![Buy $29](https://img.shields.io/badge/💳-Founding%20License%20%2429-c0392b)](https://mubasharali03.gumroad.com/l/yzkuez)
 
-**Website:** https://mubasharali24428-crypto.github.io/netmax/  
-**npm (MCP server):** `npx -y @netmax/mcp-server`  
-**macOS app:** `brew tap mubasharali24428-crypto/netmax && brew install --cask netmax`
+**Website:** https://drift.mubasharbuilds.com  
+**npm (MCP server):** `npx -y @drift-workbench/mcp-server`  
+**macOS app:** `brew tap mubasharali24428-crypto/drift-workbench && brew install --cask drift-workbench`
 
-**15 network-diagnostic tools for AI coding agents.** Run speed tests, DNS ranking, bufferbloat
+**20 network-diagnostic tools for AI coding agents.** Run speed tests, DNS ranking, bufferbloat
 grading, jitter, packet loss, WiFi diagnostics — all from inside your AI coding agent.
 
-**Honest bandwidth maximizer for macOS.** NetMax squeezes every bit your plan
+**Honest bandwidth maximizer for macOS.** Drift Workbench squeezes every bit your plan
 actually pays for: it measures true single-stream throughput, claims a larger
 per-flow share of a *contended* WiFi pipe using N parallel TCP streams
 (standard fairness, no tricks), ranks public DNS resolvers by latency, and
@@ -23,13 +23,13 @@ grades your connection's bufferbloat on the Waveform A+–F rubric.
 
 ## Honest limits — read this first
 
-- **NetMax cannot exceed your ISP cap.** No software can — the cap is enforced
+- **Drift Workbench cannot exceed your ISP cap.** No software can — the cap is enforced
   on the provider's side. Anyone promising "10x your speed" is selling scamware.
 - Gains from `turbo`/`boost` appear **only when the pipe is contended** (other
   devices are pulling traffic). On an idle line, baseline is already the plan.
 - Router-side QoS caps override everything here; only the router admin or a
   plan upgrade changes those.
-- Zero-throughput windows on shared WiFi are real (airtime starvation). NetMax
+- Zero-throughput windows on shared WiFi are real (airtime starvation). Drift Workbench
   reports them as dropouts rather than inventing a flattering percentage.
 
 ## MCP Server — use from any AI coding agent (free, MIT)
@@ -37,7 +37,7 @@ grades your connection's bufferbloat on the Waveform A+–F rubric.
 Install in 10 seconds — works in Claude Code, Cursor, Codex CLI, Gemini, LM Studio, and more:
 
 ```bash
-npx -y @netmax/mcp-server
+npx -y @drift-workbench/mcp-server
 ```
 
 Then ask your agent to run `full_diagnostics` — it will measure your real network speed, DNS
@@ -62,7 +62,7 @@ brew tap mubasharali24428-crypto/netmax
 brew install --cask netmax
 ```
 
-Or visit the [landing page](https://mubasharali24428-crypto.github.io/netmax/) for the $29
+Or visit the [landing page](https://drift.mubasharbuilds.com) for the $29
 Founding License: menu-bar app with history, scheduled tests, and anomaly detection.
 
 ---
@@ -131,7 +131,7 @@ subprocess so a failed measurement can never take down the UI.
 
 ## Security & Privacy Architecture
 
-NetMax follows strict local-first and bounded-operation principles:
+Drift Workbench follows strict local-first and bounded-operation principles:
 - **Local-first data**: Historical runs are stored locally on your Mac in
   `~/Library/Application Support/NetMaxDesktop/` with POSIX `0600` permissions.
 - **Network listener boundaries**: The desktop UI and CLI listen on no network ports.

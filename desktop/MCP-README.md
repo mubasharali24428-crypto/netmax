@@ -1,6 +1,6 @@
-# NetMax MCP Server
+# Drift Workbench MCP Server
 
-Exposes NetMaxDesktop network diagnostics as MCP (Model Context Protocol) tools
+Exposes Drift Workbench network diagnostics as MCP (Model Context Protocol) tools
 that AI coding agents can call directly.
 
 ## Zero changes to your app
@@ -9,7 +9,7 @@ The MCP server calls the **same Python engine scripts** that the Swift GUI uses
 via `engine_bridge.py`. Your app, its data, its running state, its daemons —
 **nothing is modified**.
 
-## 17 Tools exposed
+## 20 Tools exposed
 
 | Tool | What it does |
 |---|---|---|
@@ -55,7 +55,7 @@ kernel packet filtering (`pf`) and dummynet pipes (`dnctl`).
 
 - **Privilege requirement**: Controlling kernel packet filters requires the MCP
   server to execute with root privileges (`sudo`).
-- **Owner locking & safety**: NetMax acquires an exclusive `fcntl.flock` on
+- **Owner locking & safety**: Drift Workbench acquires an exclusive `fcntl.flock` on
   `/var/run/netmax-shaping.lock`, allocates an unused pipe ID (20000–29999), and
   atomically records the session in `/var/run/netmax-shaping/owner.json` (mode 0600).
 - **Transactional rollback**: Failures during rule injection automatically roll back
@@ -100,8 +100,8 @@ Same server, web transport — no stdio wiring needed. Point any MCP client
 that supports remote servers (Claude, Cursor, DSH, inspectors) at a URL:
 
 ```bash
-npx -y @netmax/mcp-server@latest --http          # http://127.0.0.1:8808/mcp
-NETMAX_PORT=9000 npx -y @netmax/mcp-server --http # custom port
+npx -y @drift-workbench/mcp-server@latest --http          # http://127.0.0.1:8808/mcp
+NETMAX_PORT=9000 npx -y @drift-workbench/mcp-server --http # custom port
 ```
 
 Client config (Claude / Cursor / DSH remote MCP):
@@ -156,7 +156,7 @@ Client config (Claude / Cursor / DSH remote MCP):
 
 Already done! The web profile at `~/.dsh/profiles/web/cordis.patch.yml` has
 the MCP client entry. After restarting DSH, the agent will have access to all
-NetMax tools.
+Drift Workbench tools.
 
 ## Debug
 
